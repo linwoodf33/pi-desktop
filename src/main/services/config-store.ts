@@ -7,6 +7,7 @@ import { IpcFailure } from '../../shared/contracts/result'
 import { DEFAULT_APPROVAL_TOOLS } from '../../shared/contracts/permission'
 import { SECRET_FIELD_PATTERN, type ConfigUpdateInput } from '../../shared/contracts/schemas'
 import { appConfigViewSchema, type AppConfigView } from '../../shared/contracts/types'
+import { normalizeThemeId } from '../../shared/contracts/theme'
 
 /**
  * ConfigStore（架构文档 §5.2）：偏好持久化 `userData/config.json` + schema 校验 + 迁移。
@@ -110,11 +111,11 @@ export function migrateConfig(
     }
     const retried = appConfigViewSchema.safeParse(merged)
     return {
-      config: retried.success ? retried.data : { ...defaults },
+      config: normalizeTheme(retried.success ? retried.data : { ...defaults }),
       warnings
     }
   }
-  return { config: parsed.data, warnings }
+  return { config: normalizeTheme(parsed.data), warnings }
 }
 
 export function createConfigStore(options: ConfigStoreOptions = {}): ConfigStore {
@@ -211,7 +212,7 @@ function mergePatch(current: AppConfigView, patch: ConfigUpdateInput): AppConfig
   if (patch.workspaceRoots !== undefined) next.workspaceRoots = [...patch.workspaceRoots]
   if (patch.maxActiveSessions !== undefined) next.maxActiveSessions = patch.maxActiveSessions
   if (patch.idleRecycleMinutes !== undefined) next.idleRecycleMinutes = patch.idleRecycleMinutes
-  if (patch.theme !== undefined) next.theme = patch.theme
+  if (patch.theme !== undefined) next.theme = normalizeThemeId(patch.theme)
   if (patch.sessionDir !== undefined) {
     const trimmed = patch.sessionDir.trim()
     if (trimmed.length === 0) delete next.sessionDir
@@ -250,4 +251,14 @@ function cloneView(view: AppConfigView): AppConfigView {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * 归一主题字段（读盘/写盘两侧都走这里）。
+ *
+ * 历史配置里 `theme` 只有 `dark` / `light`（v0.1 只持久化、未应用）；
+ * 映射到同族主题而不是回退 `system`，避免升级后用户「主题被悄悄重置」。
+ */
+function normalizeTheme(config: AppConfigView): AppConfigView {
+  return { ...config, theme: normalizeThemeId(config.theme) }
 }

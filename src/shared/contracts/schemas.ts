@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { IPC_INVOKE_CHANNELS, type InvokeChannel } from '../ipc-channels'
 import { sessionKeySchema } from './common'
 import { permissionPolicySchema } from './types'
+import { THEME_IDS } from './theme'
 
 /**
  * 各 invoke 通道的入参 schema（架构文档 §5.4 入参列）。
@@ -103,7 +104,8 @@ const configPatchShape = z
     workspaceRoots: z.array(z.string().min(1).max(1024)).max(64).optional(),
     maxActiveSessions: z.number().int().min(1).max(10).optional(),
     idleRecycleMinutes: z.number().int().min(1).max(1440).optional(),
-    theme: z.enum(['dark', 'light', 'system']).optional(),
+    // 接受现役主题 id + 历史值（`dark`/`light`，v0.1 遗留），写入前由 config-store 归一
+    theme: z.enum([...THEME_IDS, 'dark', 'light']).optional(),
     /** M5：审批策略（整对象替换；下次 spawn 时随环境下发给扩展） */
     permission: permissionPolicySchema.optional()
   })

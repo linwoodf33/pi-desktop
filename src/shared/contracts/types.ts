@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { THEME_IDS } from './theme'
 
 /**
  * DTO 定义（架构文档 §5.4 出参）。M1 只落到骨架需要的字段，
@@ -34,7 +35,7 @@ export const appConfigViewSchema = z.object({
   workspaceRoots: z.array(z.string()),
   maxActiveSessions: z.number().int().positive(),
   idleRecycleMinutes: z.number().int().positive(),
-  theme: z.enum(['dark', 'light', 'system']),
+  theme: z.enum([...THEME_IDS, 'dark', 'light']),
   /** M5：工具审批策略（随子进程环境下发给 pi-desktop-permission 扩展） */
   permission: permissionPolicySchema
 })

@@ -21,6 +21,7 @@ import {
 } from '../lib/actions'
 import { getApi, subscribeEvents } from '../lib/client'
 import { initialChatState } from '../lib/reducer'
+import { useAppliedTheme } from '../lib/theme'
 import { useAppStore } from '../stores/appStore'
 import { useArtifactStore } from '../stores/artifactStore'
 import { useRunStore } from '../stores/runStore'
@@ -41,6 +42,9 @@ export function App() {
   const bridge = useAppStore((state) => state.bridge)
   const probeBridge = useAppStore((state) => state.probeBridge)
   const config = useAppStore((state) => state.config)
+
+  // 主题在 config 到达后立即生效（首帧用样式表里的默认暗色兜底）
+  useAppliedTheme(config?.theme)
 
   const tasks = useSessionStore((state) => state.tasks)
   const loaded = useSessionStore((state) => state.loaded)

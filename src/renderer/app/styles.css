@@ -23,6 +23,16 @@
   --ok: #3fb27f;
   --warn: #d3a03a;
   --error: #e0625e;
+  /* 代码高亮 token 色：跟随主题（浅色主题里不能沿用暗色语法色） */
+  --code-comment: #6a737d;
+  --code-keyword: #c792ea;
+  --code-string: #9ecb7a;
+  --code-number: #f2b26b;
+  --code-title: #6fb3f2;
+  --code-builtin: #4fd1c5;
+  --code-deletion: #e0625e;
+  /* 原生控件（滚动条/输入框/select）跟随明暗；运行时由 useAppliedTheme 按主题覆盖 */
+  color-scheme: dark;
   --mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, 'Courier New', monospace;
   --sans: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
 }
@@ -644,43 +654,43 @@ kbd {
   text-decoration: underline dotted;
 }
 
-/* highlight.js 主题（暗色，仅用到的 token 类别） */
+/* highlight.js 主题（仅用到的 token 类别）；颜色随主题变量走 */
 .hljs-comment,
 .hljs-quote {
-  color: #6a737d;
+  color: var(--code-comment);
   font-style: italic;
 }
 
 .hljs-keyword,
 .hljs-selector-tag,
 .hljs-literal {
-  color: #c792ea;
+  color: var(--code-keyword);
 }
 
 .hljs-string,
 .hljs-attr,
 .hljs-addition {
-  color: #9ecb7a;
+  color: var(--code-string);
 }
 
 .hljs-number,
 .hljs-symbol {
-  color: #f2b26b;
+  color: var(--code-number);
 }
 
 .hljs-title,
 .hljs-section,
 .hljs-name {
-  color: #6fb3f2;
+  color: var(--code-title);
 }
 
 .hljs-built_in,
 .hljs-type {
-  color: #4fd1c5;
+  color: var(--code-builtin);
 }
 
 .hljs-deletion {
-  color: #e0625e;
+  color: var(--code-deletion);
 }
 
 /* ---------------------------------------------------------------- 工具卡片 */

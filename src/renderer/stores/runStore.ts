@@ -131,7 +131,15 @@ export const useRunStore = create<RunStoreState>()((set, get) => ({
       message,
       ...(detail === undefined ? {} : { detail })
     }
-    set((state) => ({ banners: [...state.banners, banner].slice(-5) }))
+    set((state) => ({
+      // 同一条文案重复触发时**替换**而不是追加：连续点「保存设置」不该堆出一摞一样的提示
+      banners: [
+        ...state.banners.filter(
+          (item) => !(item.level === level && item.message === message && item.detail === detail)
+        ),
+        banner
+      ].slice(-5)
+    }))
   },
 
   dismissBanner: (id) => {

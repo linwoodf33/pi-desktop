@@ -9,6 +9,7 @@ import type {
 import { locatePi, saveSettings } from '../../lib/actions'
 import { APPROVAL_TOOL_CHOICES } from '../../lib/approval'
 import { getApi } from '../../lib/client'
+import { THEMES } from '../../../shared/contracts/theme'
 
 /**
  * Settings（§5.5 features/settings，M4 完整版）：
@@ -246,10 +247,15 @@ export function SettingsPanel({ config, piStatus }: SettingsPanelProps) {
               }}
             >
               <option value="system">跟随系统</option>
-              <option value="dark">深色</option>
-              <option value="light">浅色</option>
+              {THEMES.map((theme) => (
+                <option key={theme.id} value={theme.id}>
+                  {theme.label}
+                </option>
+              ))}
             </select>
-            <span className="settings__note">视觉沿用 pi（Q6）；M4 只持久化选择</span>
+            <span className="settings__note">
+              立即生效并持久化；默认「pi 深色」沿用 pi 的视觉（Q6），另附几个常用社区配色
+            </span>
           </dd>
         </div>
         <div className="settings__row">

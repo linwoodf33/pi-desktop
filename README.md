@@ -3,7 +3,9 @@
 pi（`@earendil-works/pi-coding-agent`）的桌面客户端，Electron + React + TypeScript。
 架构与里程碑见 [`docs/architecture.md`](docs/architecture.md)。
 
-当前状态：**M3 界面层**。在 M1 骨架与 M2 通道层之上完成三栏工作台：
+当前状态：**Phase 1 MVP 完成**（M1–M6 全部落地，另有 A7 长会话内存、A9 安全审计、A11 打包），
+已发布 [v0.1.0](https://github.com/linwoodf33/pi-desktop/releases/tag/v0.1.0)（Windows x64，未签名）。
+下面是 M3 界面层的实现摘要：
 
 - **布局**：左「任务列表」/ 中「对话」/ 右「产物」（可折叠，M6 才填内容）；暗色、等宽字体显示代码与工具输出，1280×800 与 1920×1080 均不破版
 - **任务列表**：`session:list` 读本地会话索引（标题/时间/cwd/token/成本，缺失显示「—」）；点击选中即**只读回放** JSONL（`session:history`，不启动子进程）；「新建任务」先弹原生目录选择（`fs:pickDirectory`）再 `session:create`
@@ -12,7 +14,9 @@ pi（`@earendil-works/pi-coding-agent`）的桌面客户端，Electron + React +
 - **错误条**：`evt:diagnostic`、IPC `Result.error`、渲染期未捕获异常（`ErrorBoundary`）统一展示，不白屏
 - **状态管理**：zustand `sessionStore` / `runStore` / `artifactStore`（占位），事件归约统一在 `lib/reducer.ts` 纯函数
 
-尚未实现：新建任务弹层（模型/推理档位/会话名）、恢复与分叉、成本展示（M4）、审批扩展（M5）、产物面板（M6）。
+M4–M6 已补：新建任务弹层（模型/推理档位）、恢复与分叉、成本/token 展示、审批扩展（fail-closed）、
+产物面板（git 优先 + 快照兜底、diff、打开文件）。发布流程见 [`docs/release.md`](docs/release.md)，
+主题见 [`docs/themes.md`](docs/themes.md)。
 
 历史版本（M2 通道层）摘要：`JsonlReader`（只在 LF 切分）、`LocalConnection`/`LocalTransport`（一会话一子进程、关停阶梯）、`PiLocator` 三步自检、`SessionService`（串行化 + 按 id 关联 + 并行上限/空闲回收）、`SessionIndex`。
 

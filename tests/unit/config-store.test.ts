@@ -48,7 +48,7 @@ describe('默认值与启动', () => {
 describe('持久化与迁移', () => {
   it('update 落盘为带版本号的结构，重启后可读回', async () => {
     const store = createConfigStore({ filePath })
-    const view = await store.update({ maxActiveSessions: 5, idleRecycleMinutes: 15, theme: 'dark' })
+    const view = await store.update({ maxActiveSessions: 5, idleRecycleMinutes: 15, theme: 'nord' })
     expect(view.maxActiveSessions).toBe(5)
 
     const raw = JSON.parse(await readFile(filePath, 'utf8')) as Record<string, unknown>
@@ -57,7 +57,7 @@ describe('持久化与迁移', () => {
 
     const reopened = createConfigStore({ filePath })
     expect(reopened.getConfigView().maxActiveSessions).toBe(5)
-    expect(reopened.getConfigView().theme).toBe('dark')
+    expect(reopened.getConfigView().theme).toBe('nord')
   })
 
   it('会话目录覆盖：空字符串表示恢复 pi 默认（落盘后字段消失）', async () => {
@@ -101,7 +101,7 @@ describe('持久化与迁移', () => {
         permission: { enabled: true, tools: ['bash'], timeoutMs: 120_000 }
       }
     )
-    expect(migrated.config.theme).toBe('dark')
+    expect(migrated.config.theme).toBe('pi-dark')
     expect(migrated.warnings.join()).toContain('忽略未知配置字段')
   })
 
@@ -118,7 +118,7 @@ describe('持久化与迁移', () => {
       }
     )
     expect(migrated.config.maxActiveSessions).toBe(3)
-    expect(migrated.config.theme).toBe('dark')
+    expect(migrated.config.theme).toBe('pi-dark')
     expect(migrated.warnings.join()).toContain('maxActiveSessions')
   })
 
@@ -159,5 +159,40 @@ describe('安全：禁止落盘任何密钥（§9.1 U14 / §7 约束 9、12）',
     await store.update({ piCommand: 'C:/tools/pi.cmd' })
     const text = await readFile(filePath, 'utf8')
     expect(text.toLowerCase()).not.toMatch(/token|password|secret|apikey/)
+  })
+})
+
+describe('主题字段归一（升级兼容）', () => {
+  it('历史值 dark / light 读盘时映射到同族主题，不重置为 system', async () => {
+    await writeFile(
+      filePath,
+      JSON.stringify({ version: CONFIG_VERSION, config: { theme: 'dark' } }),
+      'utf8'
+    )
+    expect(createConfigStore({ filePath }).getConfigView().theme).toBe('pi-dark')
+
+    await writeFile(
+      filePath,
+      JSON.stringify({ version: CONFIG_VERSION, config: { theme: 'light' } }),
+      'utf8'
+    )
+    expect(createConfigStore({ filePath }).getConfigView().theme).toBe('pi-light')
+  })
+
+  it('新主题 id 可持久化并读回', async () => {
+    const store = createConfigStore({ filePath })
+    await store.update({ theme: 'catppuccin-mocha' })
+    const raw = JSON.parse(await readFile(filePath, 'utf8')) as { config: { theme: string } }
+    expect(raw.config.theme).toBe('catppuccin-mocha')
+    expect(createConfigStore({ filePath }).getConfigView().theme).toBe('catppuccin-mocha')
+  })
+
+  it('非法主题值回退 system 并给出警告', async () => {
+    await writeFile(
+      filePath,
+      JSON.stringify({ version: CONFIG_VERSION, config: { theme: 'no-such-theme' } }),
+      'utf8'
+    )
+    expect(createConfigStore({ filePath }).getConfigView().theme).toBe('system')
   })
 })
