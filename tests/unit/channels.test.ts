@@ -45,6 +45,8 @@ describe('IPC 通道白名单（§5.4）', () => {
         'models:removeModel',
         'extui:respond',
         'fs:pickDirectory',
+        // A22 补充：引用工作区文件（返回工作区相对路径）
+        'fs:pickWorkspaceFile',
         'fs:listArtifacts',
         'fs:readText',
         'fs:diff',

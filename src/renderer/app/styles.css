@@ -835,6 +835,84 @@ kbd {
   background: var(--bg-panel);
 }
 
+/* 消息里的图片缩略图（A21）：点开看原图 */
+.msg__images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.msg__image-button {
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  cursor: zoom-in;
+  line-height: 0;
+}
+
+.msg__image-button:hover,
+.msg__image-button:focus-visible {
+  border-color: var(--accent);
+}
+
+.msg__image-button img {
+  display: block;
+  max-width: 180px;
+  max-height: 120px;
+  border-radius: 5px;
+  object-fit: contain;
+}
+
+/* 原图查看器：整屏遮罩 + 居中大图 */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: var(--scrim);
+}
+
+.lightbox__figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.lightbox__figure img {
+  display: block;
+  max-width: min(92vw, 1600px);
+  max-height: 82vh;
+  object-fit: contain;
+  border-radius: 8px;
+  background: var(--code-bg);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 45%);
+}
+
+.lightbox__caption {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.lightbox__close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+
 /* 拖拽悬停：整块输入区高亮，明确「松手就加进来」 */
 .composer--dragover {
   outline: 2px dashed var(--accent);

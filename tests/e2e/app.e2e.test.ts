@@ -631,3 +631,48 @@ describe('E14 新建任务的「起始模式」→ pi 工具参数（A17）', ()
       .toContain('--exclude-tools write,edit,bash,powershell')
   })
 })
+
+describe('E18 引用工作区文件（A22）', () => {
+  it('点「引用文件」把工作区相对路径插进输入框；选到工作区外会被拒', async () => {
+    // 新建一个任务，确保有活跃会话（边界校验需要 workspaceOf）
+    await stubDirectoryPicker(workDir)
+    await page.click('[data-testid="new-task-button"]')
+    await page.waitForSelector('[data-testid="new-task-dialog"]', { timeout: 20_000 })
+    await page.click('[data-testid="new-task-pick-directory"]')
+    await expect
+      .poll(async () => page.inputValue('[data-testid="new-task-cwd"]'), { timeout: 10_000 })
+      .toBe(workDir)
+    await page.click('[data-testid="new-task-submit"]')
+    await page.waitForSelector('[data-testid="task-item"]', { timeout: 30_000 })
+
+    // 在工作区里放一个文件，并让对话框返回它
+    const notePath = join(workDir, 'note.txt')
+    await writeFile(notePath, 'hello', 'utf8')
+    await app.evaluate(({ dialog }, picked) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [picked] })
+    }, notePath)
+
+    await page.click('[data-testid="pick-file-button"]')
+    await expect
+      .poll(async () => page.inputValue('.composer__input'), { timeout: 20_000 })
+      .toBe('note.txt')
+
+    // 选到工作区外 → 明确报错，且不插入任何路径
+    const outsideDir = await mkdtemp(join(tmpdir(), 'pi-desktop-outside-'))
+    const outsideFile = join(outsideDir, 'secret.txt')
+    await writeFile(outsideFile, 'secret', 'utf8')
+    try {
+      await app.evaluate(({ dialog }, picked) => {
+        dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [picked] })
+      }, outsideFile)
+      await page.fill('.composer__input', '')
+      await page.click('[data-testid="pick-file-button"]')
+      await expect
+        .poll(async () => page.textContent('.banner--error'), { timeout: 20_000 })
+        .toContain('工作区内')
+      expect(await page.inputValue('.composer__input')).toBe('')
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true })
+    }
+  })
+})

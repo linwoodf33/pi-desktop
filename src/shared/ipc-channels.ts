@@ -42,6 +42,8 @@ export const IPC_INVOKE_CHANNELS = {
   /** M5：回 `extension_ui_response`（只接受当前通道、未决的 requestId） */
   extuiRespond: 'extui:respond',
   fsPickDirectory: 'fs:pickDirectory',
+  /** A22：选择工作区内的单个文件（返回工作区相对路径，供消息里引用） */
+  fsPickWorkspaceFile: 'fs:pickWorkspaceFile',
   fsListArtifacts: 'fs:listArtifacts',
   fsReadText: 'fs:readText',
   fsDiff: 'fs:diff',

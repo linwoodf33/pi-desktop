@@ -172,6 +172,16 @@ export interface PiInvokeApi {
    */
   fs: {
     pickDirectory(input?: { defaultPath?: string }): Promise<Result<{ path: string }>>
+    /**
+     * A22：选择工作区内的文件，返回**工作区相对路径**（POSIX）。
+     * 为什么不是 `@path`：pi 的 `@file` 只在 CLI 生效，RPC 模式明确拒绝；
+     * 所以这里只把相对路径插进消息，让模型用自己的 read 工具去读。
+     * 取消返回 `canceled: true`（不是错误）。
+     */
+    pickWorkspaceFile(input: {
+      sessionKey: string
+      defaultPath?: string
+    }): Promise<Result<{ canceled: boolean; path?: string; relative?: string }>>
     /** 产物列表（会话 settled 后 / 手动刷新时调用；仅 git 与非 git 快照两种模式） */
     listArtifacts(input: ArtifactRefInput): Promise<Result<ArtifactList>>
     /** 文本预览（默认前 64KB，`offset` 分页；二进制文件返回 `binary: true` 且 text 为空） */

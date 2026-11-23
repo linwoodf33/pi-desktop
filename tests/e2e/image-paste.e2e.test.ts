@@ -207,3 +207,43 @@ describe('拖拽图片（A20）', () => {
       .toBe(0)
   })
 })
+
+describe('对话里的图片缩略图与查看器（A21）', () => {
+  it('发送后用户消息显示缩略图，点击可看原图并可关闭', async () => {
+    await page.evaluate((base64) => {
+      const binary = atob(base64)
+      const bytes = new Uint8Array(binary.length)
+      for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+      const file = new File([bytes], 'thumb.png', { type: 'image/png' })
+      const data = new DataTransfer()
+      data.items.add(file)
+      const input = document.querySelector('.composer__input')
+      if (!(input instanceof HTMLTextAreaElement)) throw new Error('找不到输入框')
+      input.focus()
+      input.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true })
+      )
+    }, 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+
+    await page.waitForSelector('[data-testid="composer-attachment"]', { timeout: 20_000 })
+    await page.click('[data-testid="send-button"]')
+
+    // 用户消息里出现缩略图（图来自消息本身，不是输入框里的待发送缩略图）
+    const thumb = page.locator('[data-testid="msg-user-image"]').first()
+    await thumb.waitFor({ timeout: 30_000 })
+    const src = await thumb.locator('img').getAttribute('src')
+    expect(src?.startsWith('data:image/png;base64,')).toBe(true)
+
+    // 点击 → 查看器打开
+    await thumb.click()
+    await page.waitForSelector('[data-testid="image-lightbox"]', { timeout: 20_000 })
+    const fullSrc = await page.locator('[data-testid="image-lightbox-img"]').getAttribute('src')
+    expect(fullSrc).toBe(src)
+
+    // Esc 关闭
+    await page.keyboard.press('Escape')
+    await expect
+      .poll(async () => page.locator('[data-testid="image-lightbox"]').count(), { timeout: 10_000 })
+      .toBe(0)
+  })
+})

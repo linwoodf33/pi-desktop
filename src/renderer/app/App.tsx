@@ -10,6 +10,7 @@ import { NewTaskDialog } from '../features/tasks/NewTaskDialog'
 import { TaskList } from '../features/tasks/TaskList'
 import {
   abortRun,
+  pickWorkspaceFile,
   continueConversation,
   forkTask,
   loadForkPoints,
@@ -170,6 +171,7 @@ export function App() {
           onAbort={() => {
             void abortRun()
           }}
+          onPickFile={pickWorkspaceFile}
           onNewTask={openDialog}
           onLocate={() => {
             useRunStore.getState().setLocating(true)

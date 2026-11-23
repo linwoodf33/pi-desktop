@@ -461,7 +461,8 @@ export async function sendMessage(text: string, options: SendMessageOptions = {}
   const phase = run.phases[task.id] ?? 'idle'
   const busy = phase !== 'idle'
 
-  store.appendUserMessage(task.id, message)
+  // 乐观消息也带图片：发送后立刻能在对话里看到缩略图（A21）
+  store.appendUserMessage(task.id, message, images)
   if (task.kind === 'live') store.setTaskTitle(task.id, titleFromMessage(message))
   run.clearAborted(task.id)
 
@@ -494,6 +495,36 @@ export async function sendMessage(text: string, options: SendMessageOptions = {}
     // 扩展命令：本轮不会有 agent_settled，保持 idle 由用户继续
     useRunStore.getState().setPhase(task.id, 'idle')
   }
+}
+
+/**
+ * A22：选一个工作区文件，返回**工作区相对路径**（取消/失败返回 undefined）。
+ *
+ * 为什么不插入 `@path`：pi 的 `@file` 只在 CLI 解析，RPC 模式明确拒绝
+ * （docs/cli.md#rpc-mode-rejects-file-arguments）。所以这里只把相对路径插进消息，
+ * 让模型用自己的 read 工具去读 —— 这是 RPC 集成下唯一真实可行的引用方式。
+ */
+export async function pickWorkspaceFile(deps: ActionDeps = {}): Promise<string | undefined> {
+  const api = resolveApi(deps)
+  if (api === undefined) return undefined
+  const task = selectedTask()
+  if (task === undefined) return undefined
+  const sessionKey = task.sessionKey
+  if (sessionKey === undefined) {
+    useRunStore.getState().pushBanner({
+      level: 'warn',
+      message: '该任务没有活跃会话，无法选择文件（先继续对话）'
+    })
+    return undefined
+  }
+
+  const result = await api.fs.pickWorkspaceFile({ sessionKey })
+  if (!result.ok) {
+    reportError(result.error)
+    return undefined
+  }
+  if (result.data.canceled) return undefined
+  return result.data.relative
 }
 
 /**

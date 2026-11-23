@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { describe, expect, it, vi } from 'vitest'
 
 import { IpcRouter } from '../../src/main/ipc/router'
@@ -7,7 +11,7 @@ import { createAuditLog } from '../../src/main/services/audit-log'
 import { createConfigStore } from '../../src/main/services/config-store'
 import { createAgentCatalog } from '../../src/main/services/agent-catalog'
 import { createModelConfigStore } from '../../src/main/services/model-config-store'
-import { createFsBridge } from '../../src/main/services/fs-bridge'
+import { createFsBridge, type FsBridge } from '../../src/main/services/fs-bridge'
 import { createPiLocator } from '../../src/main/services/pi-locator'
 import { createSessionHistory } from '../../src/main/services/session-history'
 import { createSessionIndex } from '../../src/main/services/session-index'
@@ -42,7 +46,8 @@ function stubSessionService(overrides: Partial<SessionService> = {}): SessionSer
 
 function buildRouter(
   overrides: Partial<SessionService> = {},
-  timeouts?: Partial<Record<InvokeChannel, number>>
+  timeouts?: Partial<Record<InvokeChannel, number>>,
+  fsBridgeOverride?: FsBridge
 ): IpcRouter {
   const sessionService = stubSessionService(overrides)
   return createRouter(
@@ -53,7 +58,9 @@ function buildRouter(
       piLocator: createPiLocator(),
       sessionService,
       // M3 新增通道：目录对话框与历史回放（默认不应被调用，需要时在用例里覆盖）
-      fsBridge: createFsBridge({ showOpenDialog: () => Promise.reject(new Error('不应弹目录')) }),
+      fsBridge:
+        fsBridgeOverride ??
+        createFsBridge({ showOpenDialog: () => Promise.reject(new Error('不应弹目录')) }),
       sessionHistory: createSessionHistory({
         sessionRoot: () => 'C:/nonexistent-pi-sessions'
       }),
@@ -265,5 +272,82 @@ describe('IpcRouter.registerAll', () => {
       cursor: 1
     })
     expect(invalid).toMatchObject({ ok: false, error: { code: 'VALIDATION' } })
+  })
+})
+
+describe('A22：引用工作区文件', () => {
+  it('选到工作区外 → VALIDATION（边界必须由主进程判定）', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-ws-'))
+    const outside = mkdtempSync(join(tmpdir(), 'pi-outside-'))
+    const outsideFile = join(outside, 'secret.txt')
+    writeFileSync(outsideFile, 'secret', 'utf8')
+
+    try {
+      const fsBridge: FsBridge = {
+        pickDirectory: () => Promise.resolve({ path: workspace }),
+        pickFile: () => Promise.resolve({ canceled: false, path: outsideFile })
+      }
+      const router = buildRouter(
+        { workspaceOf: (sessionKey: string) => (sessionKey === 'k1' ? workspace : undefined) },
+        undefined,
+        fsBridge
+      )
+
+      const result = await router.dispatch(IPC_INVOKE_CHANNELS.fsPickWorkspaceFile, {
+        sessionKey: 'k1'
+      })
+      expect(result).toMatchObject({ ok: false })
+      if (!result.ok) {
+        expect(result.error.code).toBe('VALIDATION')
+        expect(result.error.message).toContain('工作区内')
+      }
+    } finally {
+      rmSync(workspace, { recursive: true, force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('工作区内 → 返回 POSIX 相对路径；取消不算错误', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-ws-'))
+    const file = join(workspace, 'src', 'main.ts')
+    mkdirSync(join(workspace, 'src'), { recursive: true })
+    writeFileSync(file, '// x', 'utf8')
+
+    try {
+      const fsBridge: FsBridge = {
+        pickDirectory: () => Promise.resolve({ path: workspace }),
+        pickFile: () => Promise.resolve({ canceled: false, path: file })
+      }
+      const router = buildRouter({ workspaceOf: () => workspace }, undefined, fsBridge)
+
+      const ok = await router.dispatch(IPC_INVOKE_CHANNELS.fsPickWorkspaceFile, {
+        sessionKey: 'k1'
+      })
+      expect(ok).toMatchObject({ ok: true })
+      if (ok.ok) {
+        expect(ok.data).toMatchObject({ canceled: false, relative: 'src/main.ts' })
+      }
+
+      // 取消：拿到 canceled 而不是错误
+      const canceledRouter = buildRouter({ workspaceOf: () => workspace }, undefined, {
+        pickDirectory: () => Promise.resolve({ path: workspace }),
+        pickFile: () => Promise.resolve({ canceled: true })
+      })
+      const canceled = await canceledRouter.dispatch(IPC_INVOKE_CHANNELS.fsPickWorkspaceFile, {
+        sessionKey: 'k1'
+      })
+      expect(canceled).toMatchObject({ ok: true, data: { canceled: true } })
+    } finally {
+      rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it('会话没有活跃进程 → NOT_FOUND（不猜工作区）', async () => {
+    const router = buildRouter({ workspaceOf: () => undefined })
+    const result = await router.dispatch(IPC_INVOKE_CHANNELS.fsPickWorkspaceFile, {
+      sessionKey: 'k1'
+    })
+    expect(result).toMatchObject({ ok: false })
+    if (!result.ok) expect(result.error.code).toBe('NOT_FOUND')
   })
 })

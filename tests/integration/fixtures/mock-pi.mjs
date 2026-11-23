@@ -328,7 +328,7 @@ async function completeRun(text) {
 function drainQueue() {
   const next = queuedPrompts.shift()
   if (next === undefined) return
-  agentRun(next)
+  agentRun(next.text, next.images)
 }
 
 /** 中止当前 run：与真实 pi 一致，先补 message_end(aborted) 再收尾到 agent_settled */
@@ -357,19 +357,41 @@ function abortRun() {
   return true
 }
 
-function agentRun(promptText) {
+/**
+ * 组装 user 消息的 content。
+ *
+ * 真实 pi 把用户消息（含图片）原样存进会话记录，所以 mock 也要回显图片块 ——
+ * 否则「发了截图 → 回显只有文字」，客户端的缩略图就会依赖本地兜底而不是上游事实。
+ */
+function userContent(promptText, images) {
+  // 无图片时保持字符串形状：既有集成用例（I3 followUp/steer）按字符串断言 content
+  if (images.length === 0) return promptText
+  const blocks = []
+  if (promptText.length > 0) blocks.push({ type: 'text', text: promptText })
+  for (const image of images) {
+    blocks.push({
+      type: 'image',
+      data: String(image?.data ?? ''),
+      mimeType: String(image?.mimeType ?? '')
+    })
+  }
+  return blocks.length > 0 ? blocks : promptText
+}
+
+function agentRun(promptText, images = []) {
   streaming = true
   const userTimestamp = Date.now()
   userEntries.push({ entryId: `entry-${userEntries.length + 1}`, text: promptText })
   writeRecord({ type: 'agent_start' })
   writeRecord({ type: 'turn_start' })
+  const userPayload = userContent(promptText, images)
   writeRecord({
     type: 'message_start',
-    message: { role: 'user', content: promptText, timestamp: userTimestamp }
+    message: { role: 'user', content: userPayload, timestamp: userTimestamp }
   })
   writeRecord({
     type: 'message_end',
-    message: { role: 'user', content: promptText, timestamp: userTimestamp }
+    message: { role: 'user', content: userPayload, timestamp: userTimestamp }
   })
   writeRecord({
     type: 'message_start',
@@ -436,6 +458,7 @@ function handleCommand(command) {
        * A19：记录收到的 prompt 载荷（含图片），供 E2E 断言「粘贴的截图真的发出去了」。
        * 只记数量与 MIME，不落图片内容（夹具不处理真实像素）。
        */
+      const promptImages = Array.isArray(command.images) ? command.images : []
       if (process.env['MOCK_PI_PROMPT_FILE'] !== undefined) {
         try {
           const images = Array.isArray(command.images) ? command.images : []
@@ -471,16 +494,20 @@ function handleCommand(command) {
           userEntries.push({ entryId: `entry-${userEntries.length + 1}`, text })
           writeRecord({
             type: 'message_end',
-            message: { role: 'user', content: text, timestamp: Date.now() }
+            message: {
+              role: 'user',
+              content: userContent(text, promptImages),
+              timestamp: Date.now()
+            }
           })
         } else {
           // followUp：本轮 settled 之后执行（drainQueue）
-          queuedPrompts.push(text)
+          queuedPrompts.push({ text, images: promptImages })
         }
         return
       }
       respond(id, 'prompt', { disposition: 'started' })
-      agentRun(text)
+      agentRun(text, promptImages)
       return
     }
     case 'abort':

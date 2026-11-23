@@ -45,6 +45,12 @@ export interface ChatMessage {
   timestamp?: number
   /** 该消息声明/关联的工具调用（按 toolCallId 去重） */
   tools?: ToolItem[]
+  /**
+   * A21：用户消息里的图片（data URL）。
+   * pi 的会话 JSONL 把图片存成 `{type:'image', data, mimeType}` 的内容块，
+   * 归约时转成 data URL，回放与实时走同一条路径。
+   */
+  images?: string[]
 }
 
 export interface ChatState {
@@ -359,8 +365,14 @@ function applyMessageEnd(build: Build, record: JsonRecord): void {
   }
 
   const text = extractText(message['content'])
+  const images = role === 'user' ? extractImages(message['content']) : []
   const timestamp = message['timestamp']
-  const key = `${role}:${typeof timestamp === 'number' ? timestamp : 'na'}:${text}`
+  /**
+   * key：文本消息保持原有形状（`role:ts:text`），只在**带图片**时追加 `:img<N>`。
+   * 这样「同一句话配不同截图」不会被当成重复消息吞掉，又不改动绝大多数消息的 key。
+   */
+  const keyBase = `${role}:${typeof timestamp === 'number' ? timestamp : 'na'}:${text}`
+  const key = images.length === 0 ? keyBase : `${keyBase}:img${images.length}`
   if (keyIndexOf(build).has(key)) {
     // 重复到达：幂等，连引用都不变（U6）
     if (build.streaming === '' && build.streamingTools.length === 0) return
@@ -379,14 +391,24 @@ function applyMessageEnd(build: Build, record: JsonRecord): void {
     role,
     text,
     ...(typeof timestamp === 'number' ? { timestamp } : {}),
-    ...(tools.length === 0 ? {} : { tools })
+    ...(tools.length === 0 ? {} : { tools }),
+    ...(images.length === 0 ? {} : { images })
   }
 
   // optimistic 插入的用户消息会被 pi 原样回显一条 message_end(user)：
   // 用权威消息**就地替换**，避免同一句话出现两轮（§6.2 第一步的实现细节）
   const optimistic = findReplacedOptimisticUser(build.messages, role, text)
   if (optimistic !== undefined) {
-    replaceMessage(build, optimistic, nextMessage)
+    /**
+     * A21：权威消息若没带图片块（上游/夹具可能只回显文本），保留本地已发送的图片。
+     * 否则「发了截图 → 回显时图没了」，而这张图**确实**进了会话。
+     */
+    const localImages = build.messages[optimistic]?.images
+    const merged: ChatMessage =
+      nextMessage.images === undefined && localImages !== undefined && localImages.length > 0
+        ? { ...nextMessage, images: localImages }
+        : nextMessage
+    replaceMessage(build, optimistic, merged)
   } else {
     appendMessage(build, nextMessage)
   }
@@ -577,6 +599,28 @@ export function extractText(content: unknown): string {
       parts.push(record['text'])
   }
   return parts.join('')
+}
+
+/**
+ * 从消息 content 里取出图片，转成 data URL。
+ *
+ * pi 的形态：`{ type: 'image', data: '<base64>', mimeType: 'image/png' }`（ImageContent）。
+ * 客户端内部统一用 data URL 表示（与 `session:prompt` 的 images 约定一致），
+ * 这样 UI 里 `<img src>` 直接可用，不必再拼前缀。
+ */
+export function extractImages(content: unknown): string[] {
+  if (!Array.isArray(content)) return []
+  const images: string[] = []
+  for (const block of content) {
+    const record = asRecord(block)
+    if (record?.['type'] !== 'image') continue
+    const data = asString(record['data'])
+    const mimeType = asString(record['mimeType'])
+    if (data === undefined || mimeType === undefined) continue
+    // 已经是 data URL 就原样用（历史记录里可能是这个形态）
+    images.push(data.startsWith('data:') ? data : `data:${mimeType};base64,${data}`)
+  }
+  return images
 }
 
 /** 从工具结果（`tool_execution_end.result` / `toolResult` 消息）中取输出与完整输出路径 */

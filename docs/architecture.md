@@ -310,6 +310,7 @@ interface PiTransport {
 | `config:update`         | `{ piCommand?, sessionDir?, workspaceRoots?, maxActiveSessions?, idleRecycleMinutes?, theme? }` | `AppConfigView`                                                   | **M4 补充**：偏好持久化（拒疑似密钥字段）                                                                                    |
 | `extui:respond`         | `{ sessionKey, requestId, response }`                                                           | `{ ok: true }`                                                    | **M5**：回 `extension_ui_response`；`response` 收窄为 `{kind:'select',value}` / `{kind:'cancel'}`                            |
 | `permission:status`     | `{}`                                                                                            | `PermissionStatus`                                                | **M5 补充**：审批扩展安装/协议状态（只读）                                                                                   |
+| `fs:pickWorkspaceFile`  | `{ sessionKey, defaultPath? }`                                                                  | `{ canceled, path?, relative? }`                                  | **A22**：选工作区内文件，主进程判定边界，返回 POSIX 相对路径；取消返回 `canceled:true`（非错误）                             |
 | `fs:pickDirectory`      | `{ defaultPath? }`                                                                              | `{ path }`                                                        | 原生对话框                                                                                                                   |
 | `fs:listArtifacts`      | `{ sessionKey?, sessionFile? }`                                                                 | `ArtifactList`（M6）                                              | 工作区变更列表；**M6**：会话引用二选一，出参包上 `mode/truncated/totalCount/note`                                            |
 | `fs:readText`           | `{ path, maxBytes?, offset?, sessionKey?, sessionFile? }`                                       | `ReadTextResult`（M6）                                            | **M6**：默认前 64KB、`offset` 分页、二进制标记；路径必须在会话工作区（或主进程已知根）内                                     |
@@ -414,6 +415,16 @@ interface PiTransport {
   - 否则等比缩放到长边 2000，先试 PNG（保透明），仍超标才退化到 JPEG q0.85 → q0.7；
   - 缩略图标注「已压缩」，`title` 里给原图尺寸与体积（用户能判断画质是否被牺牲）。
 - 8MB 是**硬上限**（超过直接拒绝并说明原因），2MB 是**压缩阈值**，两者是不同的事。
+
+#### 消息里的图片与文件引用（A21/A22，v0.8）
+
+**A21 图片缩略图**：用户消息里的图片在对话中显示为缩略图，点击打开应用内查看器（点遮罩/点关闭/`Esc` 三种方式都能退，多图可用左右键切换）。图片在会话里的形态是 pi 的内容块 `{type:'image', data, mimeType}`，归约时统一转成 **data URL**（与 `session:prompt` 的 images 约定一致），实时与历史回放走同一条路径。一个实现细节：乐观消息被权威 `message_end` 替换时，若权威消息没有图片块（上游/夹具只回显文本），**保留本地已发送的图片** —— 否则「发了截图，回显时图没了」。
+
+**A22 引用工作区文件**：输入框的「引用文件」按钮选一个文件，把**工作区相对路径**插进消息。
+
+- 为什么不是 `@path`：pi 的 `@file` **只在 CLI 解析**，`docs/cli.md` 明确写着「RPC mode rejects `@file` arguments」。所以客户端不能假装 `@` 语法能附文件；插入相对路径、让模型用自己的 `read` 工具去读，是 RPC 集成下唯一真实可行的引用方式。
+- 边界由主进程判定：用户可以在原生对话框里导航到工作区外，renderer 无权决定「这算不算本任务的文件」。主进程用会话的 `workspaceOf(sessionKey)` 取根，`realpath` 两侧归一后判前缀，越界直接 `VALIDATION`（与 §5.4 路径校验同一套规则）。
+- 取消不是错误：返回 `canceled: true`，UI 静默忽略（不弹红条）。
 
 **M5 审批的三个语义点（已在实现层钉死）**：
 
@@ -717,6 +728,8 @@ Phase 2 的连接级断连/重连见附录 A.5。
 - A13 会话 `agent_settled` 后产物面板显示工作区变更（git：`status`+`diff`；非 git：快照比对并**显式标注**），单文件 diff 超 2MB 截断有提示，越权路径 100% `PATH_DENIED`，「用系统程序打开」需用户确认且经主进程校验后走 `shell.openPath`。
 - A14 模型管理：客户端可列出 / 新增 / 编辑 / 删除 pi `models.json` 里的 provider 与模型，可设默认模型；**apiKey 明文不出主进程**（界面只有掩码）；写回保留客户端未建模字段；写入原子替换 + 备份，坏 JSON 拒绝改动；改动对已在运行的会话不生效且有明示。
 - A15 主题：内置 9 套主题 + 跟随系统，切换立即生效并持久化；每个主题正文对比度 ≥ 4.5、强调/状态/代码 token ≥ 3（单测按 WCAG 断言），浅色主题下代码高亮可读；历史配置值不致主题被重置。
+- A22 文件引用：输入框可「引用文件」（限本会话工作区内），插入工作区相对路径；越界被主进程拒绝；取消不报错。不提供 `@path` 语义（RPC 不支持）。
+- A21 图片缩略图：用户消息里的图片显示缩略图，点击可在应用内查看原图（Esc/遮罩/按钮关闭，多图可切换）。
 - A20 拖拽与压缩：可把图片文件拖入输入区（含窗口级导航兜底）；超过 2000px 长边或 2MB 的图片在客户端先等比压缩，缩略图标注「已压缩」并保留原图尺寸信息；8MB 以上直接拒绝并说明原因。
 - A19 粘贴图片：`Ctrl+V` 可把剪贴板截图粘进对话框（png/jpeg/webp/gif，单张 ≤8MB、每条 ≤4 张），发送时以 data URL 交给 pi；只有图无文字也可发送；超限/类型不符显式提示原因。
 - A18 会话身份 agent：新建任务可从扫描到的 agent 定义中选择（`--agent`）；`pi --help` 无该 flag 时不显示选择器，未知名字被客户端拒绝（不依赖 pi 的静默忽略）；子 agent（subagent）的中间过程不在父会话里，UI 不假装能看到。

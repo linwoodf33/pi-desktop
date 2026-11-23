@@ -23,8 +23,15 @@ export interface FsBridgeDeps {
   }) => Promise<{ canceled: boolean; filePaths: string[] }>
 }
 
+export interface PickFileResult {
+  canceled: boolean
+  path?: string
+}
+
 export interface FsBridge {
   pickDirectory(input: { defaultPath?: string }): Promise<PickDirectoryResult>
+  /** A22：选择单个文件（用于「引用工作区文件」；路径由调用方再校验是否在工作区内） */
+  pickFile(input: { defaultPath?: string }): Promise<PickFileResult>
 }
 
 export function createFsBridge(deps: FsBridgeDeps): FsBridge {
@@ -42,6 +49,20 @@ export function createFsBridge(deps: FsBridgeDeps): FsBridge {
         throw new IpcFailure('CANCELLED', '已取消目录选择')
       }
       return { path: picked }
+    },
+
+    async pickFile(input) {
+      const result = await deps.showOpenDialog({
+        title: '引用工作区文件',
+        ...(input.defaultPath === undefined ? {} : { defaultPath: input.defaultPath }),
+        properties: ['openFile']
+      })
+      const picked = result.filePaths[0]
+      if (result.canceled || picked === undefined || picked.length === 0) {
+        // 取消不是错误：返回 canceled 标志，由上层静默忽略（不要把取消做成红色报错）
+        return { canceled: true }
+      }
+      return { canceled: false, path: picked }
     }
   }
 }

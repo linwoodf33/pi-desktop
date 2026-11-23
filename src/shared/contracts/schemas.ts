@@ -216,6 +216,14 @@ function refineSessionRef<
   }
 }
 
+/** A22：选择工作区文件：需要会话上下文（用于确定工作区根） */
+export const fsPickWorkspaceFileInputSchema = z
+  .object({
+    sessionKey: sessionKeySchema,
+    defaultPath: z.string().min(1).max(2048).optional()
+  })
+  .strict()
+
 export const fsListArtifactsInputSchema = z
   .object({ ...sessionRefShape })
   .strict()
@@ -298,6 +306,7 @@ export const invokeInputSchemas = {
   [IPC_INVOKE_CHANNELS.permissionStatus]: emptyInputSchema,
   [IPC_INVOKE_CHANNELS.extuiRespond]: extuiRespondInputSchema,
   [IPC_INVOKE_CHANNELS.fsPickDirectory]: fsPickDirectoryInputSchema,
+  [IPC_INVOKE_CHANNELS.fsPickWorkspaceFile]: fsPickWorkspaceFileInputSchema,
   [IPC_INVOKE_CHANNELS.fsListArtifacts]: fsListArtifactsInputSchema,
   [IPC_INVOKE_CHANNELS.fsReadText]: fsReadTextInputSchema,
   [IPC_INVOKE_CHANNELS.fsDiff]: fsDiffInputSchema,

@@ -26,9 +26,19 @@ export interface ComposerProps {
   /** `images` 是 data URL 数组（A19：粘贴截图） */
   onSend: (text: string, images: string[]) => void
   onAbort: () => void
+  /** A22：选工作区文件（返回相对路径；取消返回 undefined） */
+  onPickFile?: () => Promise<string | undefined>
 }
 
-export function Composer({ phase, aborting, aborted, disabled, onSend, onAbort }: ComposerProps) {
+export function Composer({
+  phase,
+  aborting,
+  aborted,
+  disabled,
+  onSend,
+  onAbort,
+  onPickFile
+}: ComposerProps) {
   const [input, setInput] = useState('')
   /** 已粘贴、待发送的图片（A19） */
   const [images, setImages] = useState<ImageAttachment[]>([])
@@ -166,6 +176,23 @@ export function Composer({ phase, aborting, aborted, disabled, onSend, onAbort }
           {/* E4：点击停止就立即提示「已中止」，不依赖 abort 响应到达 */}
           {aborted ? '已中止' : aborting ? '正在中止…' : phaseLabel(phase)}
         </span>
+        <button
+          type="button"
+          className="btn btn--ghost"
+          data-testid="pick-file-button"
+          disabled={disabled || onPickFile === undefined}
+          title="插入工作区文件的相对路径（模型会用自己的 read 工具去读）"
+          onClick={() => {
+            if (onPickFile === undefined) return
+            void onPickFile().then((relative) => {
+              if (relative === undefined) return
+              // 插在光标处更符合直觉；没有光标位置信息时追加到末尾
+              setInput((current) => (current.length === 0 ? relative : `${current} ${relative}`))
+            })
+          }}
+        >
+          引用文件
+        </button>
         <button
           type="button"
           className="btn btn--ghost"

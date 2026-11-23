@@ -1,10 +1,11 @@
-import { memo, useCallback, useEffect, useMemo, type RefObject } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState, type RefObject } from 'react'
 
 import type { ChatMessage } from '../../lib/reducer'
 import { useThrottledStreaming } from '../../lib/streaming-throttle'
 import { groupTimeline, turnToolCount, type TimelineTurn } from '../../lib/timeline'
 import { useVirtualTimeline, type VirtualTimelineControls } from '../../lib/use-virtual-timeline'
 import { TURN_GAP_PX } from '../../lib/virtual-window'
+import { ImageLightbox } from './ImageLightbox'
 import { Markdown } from './Markdown'
 import { ToolCard } from './ToolCard'
 
@@ -156,6 +157,8 @@ export function Timeline({
 /** 单轮渲染（memo：已完成轮次在后续流式增量里不重渲染） */
 const TimelineTurnView = memo(function TimelineTurnView({ turn }: { turn: TimelineTurn }) {
   const toolCount = turnToolCount(turn)
+  /** A21：点缩略图放大看原图（undefined = 未打开） */
+  const [lightboxIndex, setLightboxIndex] = useState<number | undefined>(undefined)
   return (
     <section className="turn" data-testid="timeline-turn" data-turn-number={turn.index}>
       <div className="turn__axis" aria-hidden="true">
@@ -172,9 +175,38 @@ const TimelineTurnView = memo(function TimelineTurnView({ turn }: { turn: Timeli
           <div className="msg msg--user" data-testid="msg-user">
             <div className="msg__role">你</div>
             <div className="msg__body">
-              <Markdown text={turn.user.text} />
+              {turn.user.text.length === 0 ? null : <Markdown text={turn.user.text} />}
+              {turn.user.images === undefined || turn.user.images.length === 0 ? null : (
+                <ul className="msg__images" data-testid="msg-user-images">
+                  {turn.user.images.map((image, index) => (
+                    <li key={`${turn.id}-img-${index}`}>
+                      <button
+                        type="button"
+                        className="msg__image-button"
+                        data-testid="msg-user-image"
+                        title="点击查看原图"
+                        onClick={() => {
+                          setLightboxIndex(index)
+                        }}
+                      >
+                        <img src={image} alt={`消息图片 ${index + 1}`} loading="lazy" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
+        )}
+
+        {lightboxIndex === undefined || turn.user?.images === undefined ? null : (
+          <ImageLightbox
+            images={turn.user.images}
+            initialIndex={lightboxIndex}
+            onClose={() => {
+              setLightboxIndex(undefined)
+            }}
+          />
         )}
 
         {turn.items.map((message) => (

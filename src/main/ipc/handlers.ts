@@ -29,6 +29,8 @@ import type { AppConfigView, BootState, PermissionStatus } from '../../shared/co
 import { IpcFailure } from '../../shared/contracts/result'
 
 import type { AgentCatalog } from '../services/agent-catalog'
+import { isInsideRoot, toPosixRelative } from '../services/path-guard'
+import { realpathNative } from '../services/realpath-native'
 import type { ModelConfigStore } from '../services/model-config-store'
 
 import { IpcRouter, type HandlerMap } from './router'
@@ -104,7 +106,9 @@ const DEFAULT_TIMEOUTS: Partial<Record<InvokeChannel, number>> = {
   [IPC_INVOKE_CHANNELS.modelsUpsertModel]: 10_000,
   [IPC_INVOKE_CHANNELS.modelsRemoveModel]: 10_000,
   // agent 目录：扫本地目录 + 一次 `pi --help` 能力探测（有 60s 缓存）
-  [IPC_INVOKE_CHANNELS.agentsList]: 20_000
+  [IPC_INVOKE_CHANNELS.agentsList]: 20_000,
+  // 选文件走原生对话框（用户可能停留很久），给足预算；取消不算失败
+  [IPC_INVOKE_CHANNELS.fsPickWorkspaceFile]: 300_000
 }
 
 type SessionListInput = z.infer<typeof sessionListInputSchema>
@@ -160,6 +164,43 @@ export function createRouter(
         ...(input.maxRecords === undefined ? {} : { maxRecords: input.maxRecords }),
         ...(input.allowMissing === undefined ? {} : { allowMissing: input.allowMissing })
       })
+    },
+
+    /**
+     * A22：选工作区文件。
+     *
+     * 为什么需要主进程做：① 原生对话框只能在主进程弹；② **工作区边界必须由主进程判定** ——
+     * 用户可以在对话框里导航到工作区外，renderer 无权决定「这算不算这个任务的文件」。
+     * 返回工作区相对路径（POSIX），消息里直接引用，模型用自己的 read 工具读取。
+     */
+    [IPC_INVOKE_CHANNELS.fsPickWorkspaceFile]: async (raw) => {
+      const input = raw as { sessionKey: string; defaultPath?: string }
+      const workspaceRoot = service.workspaceOf(input.sessionKey)
+      if (workspaceRoot === undefined) {
+        throw new IpcFailure('NOT_FOUND', '该会话没有活跃进程，无法确定工作区（先继续对话）')
+      }
+      const realRoot = await realpathNative(workspaceRoot).catch(() => workspaceRoot)
+
+      // 默认打开位置限制在工作区内：默认路径在工作区外时退回工作区根
+      const requested = input.defaultPath
+      const defaultPath =
+        requested !== undefined && isInsideRoot(realRoot, requested) ? requested : realRoot
+
+      const picked = await deps.fsBridge.pickFile({ defaultPath })
+      if (picked.canceled) return { canceled: true }
+      const pickedPath = picked.path
+      if (pickedPath === undefined) return { canceled: true }
+
+      // 取局部常量后再传给 realpath：闭包里引用 `picked.path` 会把类型放宽回 string|undefined
+      const realPicked = await realpathNative(pickedPath).catch(() => pickedPath)
+      if (!isInsideRoot(realRoot, realPicked)) {
+        throw new IpcFailure('VALIDATION', '只能引用工作区内的文件（选到了工作区外）', pickedPath)
+      }
+      return {
+        canceled: false,
+        path: realPicked,
+        relative: toPosixRelative(realRoot, realPicked)
+      }
     },
 
     [IPC_INVOKE_CHANNELS.fsPickDirectory]: (raw) => {

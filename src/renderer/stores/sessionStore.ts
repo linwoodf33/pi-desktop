@@ -70,7 +70,7 @@ export interface SessionStoreState {
   /** 归约一条记录，返回归约后的对话状态（调用方据此同步 runStore） */
   applyRecord: (taskId: string, record: { type: string; [key: string]: unknown }) => ChatState
   replay: (taskId: string, records: Array<{ type: string; [key: string]: unknown }>) => ChatState
-  appendUserMessage: (taskId: string, text: string) => void
+  appendUserMessage: (taskId: string, text: string, images?: readonly string[]) => void
   setTaskTitle: (taskId: string, title: string) => void
   markTruncated: (taskId: string) => void
   taskIdForSession: (sessionKey: string) => string | undefined
@@ -114,13 +114,18 @@ export function mergeTasks(history: TaskItem[], live: TaskItem[]): TaskItem[] {
 let messageSeq = 0
 
 /** 乐观插入的用户消息（§6.2 第一步；key 前缀与 reducer 的替换逻辑同源） */
-export function optimisticUserMessage(text: string, now = Date.now()): ChatMessage {
+export function optimisticUserMessage(
+  text: string,
+  now = Date.now(),
+  images: readonly string[] = []
+): ChatMessage {
   messageSeq += 1
   return {
     key: `${OPTIMISTIC_USER_KEY_PREFIX}${now}:${messageSeq}`,
     role: 'user',
     text,
-    timestamp: now
+    timestamp: now,
+    ...(images.length === 0 ? {} : { images: [...images] })
   }
 }
 
@@ -213,7 +218,7 @@ export const useSessionStore = create<SessionStoreState>()((set, get) => ({
     return next
   },
 
-  appendUserMessage: (taskId, text) => {
+  appendUserMessage: (taskId, text, images) => {
     set((state) => {
       const current = state.chats[taskId] ?? initialChatState
       return {
@@ -221,7 +226,7 @@ export const useSessionStore = create<SessionStoreState>()((set, get) => ({
           ...state.chats,
           [taskId]: {
             ...current,
-            messages: [...current.messages, optimisticUserMessage(text)]
+            messages: [...current.messages, optimisticUserMessage(text, Date.now(), images)]
           }
         }
       }
