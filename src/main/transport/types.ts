@@ -26,6 +26,8 @@ export interface OpenChannelOptions {
   thinkingLevel?: string
   /** 起始模式 → pi 的工具选择参数（`full` 不加参数） */
   toolMode?: 'full' | 'readonly' | 'no-tools'
+  /** 会话身份 agent（`--agent`，由 pi-open-agents 扩展注册；名字需客户端自己校验） */
+  agent?: string
   sessionFile?: string
   /** 覆盖 pi 会话目录（`--session-dir`，docs/cli.md） */
   sessionDir?: string
@@ -42,6 +44,8 @@ export interface TransportStartOptions {
   thinkingLevel?: string
   /** 起始模式 → pi 的工具选择参数（`full` 不加参数） */
   toolMode?: 'full' | 'readonly' | 'no-tools'
+  /** 会话身份 agent（`--agent`） */
+  agent?: string
   sessionFile?: string
   sessionDir?: string
   sessionName?: string

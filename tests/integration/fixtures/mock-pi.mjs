@@ -84,6 +84,24 @@ function recordPidFile() {
     /* 夹具落盘失败不影响协议行为 */
   }
 }
+/**
+ * A18：`--help` 也要能应答 —— 客户端用它探测 `--agent` 是否可用
+ * （该 flag 由 pi-open-agents 扩展注册；未装时传它 pi 会直接 `Error: Unknown option`）。
+ * `MOCK_PI_HELP_HAS_AGENT=0` 可模拟「扩展没装」的情形。
+ */
+if (argv.includes('--help') || argv.includes('-h')) {
+  const withAgent = process.env['MOCK_PI_HELP_HAS_AGENT'] !== '0'
+  process.stdout.write(
+    [
+      'Usage: pi [options]',
+      '  --mode <mode>                  Output mode: text (default), json, or rpc',
+      withAgent ? '  --agent <value>             Default agent to use at startup' : '',
+      ''
+    ].join(String.fromCharCode(10))
+  )
+  process.exit(0)
+}
+
 // E2E：pi 自检第一步是 `pi --version`（docs/cli.md），mock 也要能应答
 if (argv.includes('--version') || argv.includes('-v')) {
   process.stdout.write(`${process.env['MOCK_PI_VERSION'] ?? '1.5.2'}

@@ -6,7 +6,9 @@ import {
   THINKING_LEVELS,
   type SessionToolMode
 } from '../../../shared/contracts/types'
+import type { AgentCatalogView } from '../../../shared/contracts/agents'
 import { createTask, loadModels } from '../../lib/actions'
+import { getApi } from '../../lib/client'
 import { shortenPath } from '../../lib/format'
 import { useSessionStore } from '../../stores/sessionStore'
 
@@ -44,12 +46,30 @@ export function NewTaskDialog({
   const [thinkingLevel, setThinkingLevel] = useState('off')
   const [name, setName] = useState('')
   const [toolMode, setToolMode] = useState<SessionToolMode>('full')
+  /** A18：可用 agent（`null` = 还没探测完；`supportsAgentFlag=false` 时不显示选择器） */
+  const [agentCatalog, setAgentCatalog] = useState<AgentCatalogView | undefined>(undefined)
+  const [agent, setAgent] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | undefined>()
 
   useEffect(() => {
     if (models.length === 0) void loadModels()
   }, [models.length])
+
+  // A18：列 agent 目录。带上已选工作目录，才能扫到项目级 `.pi/agents`。
+  // 支持与否由主进程探测 `pi --help`（`--agent` 是扩展 flag，未装扩展时传它会启动失败）。
+  useEffect(() => {
+    const api = getApi()
+    if (api === undefined) return
+    let live = true
+    void api.agents.list(cwd.trim().length === 0 ? {} : { cwd: cwd.trim() }).then((result) => {
+      if (!live || !result.ok) return
+      setAgentCatalog(result.data)
+    })
+    return () => {
+      live = false
+    }
+  }, [cwd])
 
   const pick = async (): Promise<void> => {
     const picked = await pickDirectory(cwd.length > 0 ? cwd : undefined)
@@ -66,7 +86,8 @@ export function NewTaskDialog({
         ...(model.length === 0 ? {} : { model }),
         ...(model.length === 0 ? {} : { thinkingLevel }),
         ...(name.trim().length === 0 ? {} : { name: name.trim() }),
-        toolMode
+        toolMode,
+        ...(agent.length === 0 ? {} : { agent })
       })
       if (taskId === undefined) {
         // 具体错误已由 actions 推进错误条；这里给出就近提示
@@ -185,6 +206,34 @@ export function NewTaskDialog({
               }}
             />
           </label>
+
+          {agentCatalog?.supportsAgentFlag === true ? (
+            <label className="field">
+              <span className="field__label">Agent（会话身份）</span>
+              <select
+                className="field__input"
+                data-testid="new-task-agent"
+                value={agent}
+                disabled={agentCatalog.agents.length === 0}
+                onChange={(event) => {
+                  setAgent(event.target.value)
+                }}
+              >
+                <option value="">默认（不加 --agent）</option>
+                {agentCatalog.agents.map((item) => (
+                  <option key={item.name} value={item.name} title={item.description}>
+                    {item.name}
+                    {item.scope === 'project' ? '（项目）' : ''}
+                  </option>
+                ))}
+              </select>
+              <span className="field__hint">
+                {agentCatalog.agents.length === 0
+                  ? '未发现 agent 定义：放到 ~/.pi/agent/agents/ 或项目 .pi/agents/'
+                  : '以该 agent 的 system prompt / 模型 / 工具开始这个会话；pi 对未知名字会静默忽略，所以这里只列扫描到的定义'}
+              </span>
+            </label>
+          ) : null}
 
           <label className="field">
             <span className="field__label">起始模式</span>

@@ -1,5 +1,38 @@
 # 更新日志（Changelog）
 
+## v0.5.0（2026-11-23）
+
+新建任务可选「会话身份 agent」（A18）：让会话带着某个 agent 的 prompt / 模型 / 工具开始。
+
+### 新增
+
+- 新建任务弹层新增 **Agent** 选择器（`--agent <name>`），只列**扫描到的**定义：
+  `<agent-dir>/agents/**/*.md`、`<workspace>/.pi/agents/**/*.md`、`<workspace>/.agents/agents/**/*.md`
+  （项目级同名覆盖全局；`.chain.md` 跳过）。
+- 新增只读通道 `agents:list`（带 `cwd` 以扫描项目级 agent）。
+
+### 两个上游事实（决定了实现方式，均已实测）
+
+1. **`--agent` 不是 pi core 的参数**，而是 `pi-open-agents` 扩展注册的 flag — 未安装时传它会让 pi
+   `Error: Unknown option: --agent` 直接起不来。因此客户端先探测 `pi --help`（60s 缓存），
+   **探测不到就不显示选择器**。
+2. **非法 agent 名会被 pi 静默忽略**（照常启动、回落默认模型）→ 客户端用自己的扫描结果校验名字，
+   UI 不提供手打入口，避免「选了 architect 实际还是默认身份」的假象。
+
+### 说明与边界
+
+- agent 与「起始模式」相互独立：agent 决定「谁来思考」，起始模式决定工具白名单。
+- **子 agent（subagent）不是这个**：它由 `pi-subagents` 扩展在会话内部派生，子会话记录写在
+  `sessions/<cwd-key>/subagents/*.jsonl`；客户端只回放父会话，因此能看到 subagent 工具卡片，
+  看不到子会话的中间过程（不假装能看到）。
+
+### 测试
+
+unit 684（含 U26：目录扫描 / 覆盖 / capability 探测缓存 / 名字校验）、
+integration 52（含 `--agent` argv 断言）、e2e 42（含 E15）。
+
+---
+
 ## v0.4.0（2026-11-23）
 
 新建任务的「起始模式」从占位变成真的（A17）。

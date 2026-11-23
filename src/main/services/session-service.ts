@@ -105,6 +105,8 @@ export interface SessionService {
     name?: string
     /** 起始模式 = pi 的工具选择（full / readonly / no-tools） */
     toolMode?: SessionToolMode
+    /** 会话身份 agent（`--agent`，名字已由调用方按目录校验） */
+    agent?: string
   }): Promise<{
     sessionKey: string
     sessionId: string
@@ -726,6 +728,7 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
             cwd: input.cwd,
             ...(input.model === undefined ? {} : { model: input.model }),
             ...(input.toolMode === undefined ? {} : { toolMode: input.toolMode }),
+            ...(input.agent === undefined ? {} : { agent: input.agent }),
             ...(input.name === undefined ? {} : { sessionName: input.name }),
             ...(sessionDir === undefined ? {} : { sessionDir })
           }),

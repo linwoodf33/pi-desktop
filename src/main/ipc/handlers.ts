@@ -26,6 +26,9 @@ import type {
 } from '../../shared/contracts/model-config'
 import type { AppConfigView, BootState, PermissionStatus } from '../../shared/contracts/types'
 
+import { IpcFailure } from '../../shared/contracts/result'
+
+import type { AgentCatalog } from '../services/agent-catalog'
 import type { ModelConfigStore } from '../services/model-config-store'
 
 import { IpcRouter, type HandlerMap } from './router'
@@ -72,6 +75,8 @@ export interface RouterDeps {
   permissionDeps?: PermissionExtensionDeps
   /** A14：pi 的模型配置读写（`models:*`；apiKey 只进不出） */
   modelConfigStore: ModelConfigStore
+  /** A18：agent 目录（只读；同时回报 pi 是否支持 `--agent`） */
+  agentCatalog: AgentCatalog
 }
 
 /** 短命令的通道级超时预算（§7 约束 13；比 pi 侧单命令 60s 略宽，pi 侧先超时） */
@@ -97,7 +102,9 @@ const DEFAULT_TIMEOUTS: Partial<Record<InvokeChannel, number>> = {
   [IPC_INVOKE_CHANNELS.modelsUpsertProvider]: 10_000,
   [IPC_INVOKE_CHANNELS.modelsRemoveProvider]: 10_000,
   [IPC_INVOKE_CHANNELS.modelsUpsertModel]: 10_000,
-  [IPC_INVOKE_CHANNELS.modelsRemoveModel]: 10_000
+  [IPC_INVOKE_CHANNELS.modelsRemoveModel]: 10_000,
+  // agent 目录：扫本地目录 + 一次 `pi --help` 能力探测（有 60s 缓存）
+  [IPC_INVOKE_CHANNELS.agentsList]: 20_000
 }
 
 type SessionListInput = z.infer<typeof sessionListInputSchema>
@@ -196,13 +203,30 @@ export function createRouter(
 
     [IPC_INVOKE_CHANNELS.sessionCreate]: (raw) => {
       const input = raw as SessionCreateInput
-      return service.create({
-        cwd: input.cwd,
-        ...(input.model === undefined ? {} : { model: input.model }),
-        // 起始模式（工具白名单）必须透传：handler 逐字段重建对象时最容易漏新字段
-        ...(input.toolMode === undefined ? {} : { toolMode: input.toolMode }),
-        ...(input.name === undefined ? {} : { name: input.name })
-      })
+      return (async () => {
+        // agent 名字必须自己校验：pi 对未知 agent 是**静默忽略**（照常启动、回落默认模型），
+        // 不校验就会出现「界面选了 architect，实际还是默认身份」的假象。
+        if (input.agent !== undefined) {
+          const view = await deps.agentCatalog.list(input.cwd)
+          if (!view.supportsAgentFlag) {
+            throw new IpcFailure(
+              'VALIDATION',
+              '当前 pi 未注册 --agent（需要安装 pi-open-agents 扩展）'
+            )
+          }
+          if (!deps.agentCatalog.has(view, input.agent)) {
+            throw new IpcFailure('VALIDATION', `未知 agent：${input.agent}`)
+          }
+        }
+        return service.create({
+          cwd: input.cwd,
+          ...(input.model === undefined ? {} : { model: input.model }),
+          // 起始模式（工具白名单）与 agent 必须逐字段透传：handler 重建对象时最容易漏字段
+          ...(input.toolMode === undefined ? {} : { toolMode: input.toolMode }),
+          ...(input.agent === undefined ? {} : { agent: input.agent }),
+          ...(input.name === undefined ? {} : { name: input.name })
+        })
+      })()
     },
 
     [IPC_INVOKE_CHANNELS.sessionResume]: (raw) =>
@@ -229,6 +253,12 @@ export function createRouter(
      * 与 `model:set`（会话内切换）不同，这里改的是磁盘配置，**对已在运行的会话不生效**。
      * 入参已由 router 的 zod schema 校验过；服务层再做一次（纵深防御）。
      */
+    /** A18：可用 agent 目录（只读）。`supportsAgentFlag=false` 时 UI 不显示选择器。 */
+    [IPC_INVOKE_CHANNELS.agentsList]: (raw) => {
+      const input = raw as { cwd?: string }
+      return deps.agentCatalog.list(input.cwd)
+    },
+
     [IPC_INVOKE_CHANNELS.modelsRead]: (): Promise<ModelConfigView> =>
       Promise.resolve(deps.modelConfigStore.read()),
 

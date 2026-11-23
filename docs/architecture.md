@@ -383,6 +383,19 @@ interface PiTransport {
 
 「办公 / 编程」这类预设属于 `AGENTS.md` / skills / extensions 范畴（不是启动参数），**不做假开关**。
 
+**「会话身份 agent」（A18，v0.5）**
+
+新建任务可以选一个 agent，让它带着**自己的 system prompt / 模型 / 工具 / 规则**开始会话（`--agent <name>`）。两个必须知道的事实：
+
+1. **`--agent` 不是 pi core 的参数**，而是 `pi-open-agents` 扩展注册的启动 flag。扩展没装时传它 → pi 直接 `Error: Unknown option: --agent` 起不来。因此客户端先跑一次 `pi --help` 探测（60s 缓存），**探测不到就不显示选择器**。
+2. **非法名字会被静默忽略**：`pi --agent nosuchagent` 照常启动并回落到默认模型，不报错。所以客户端用自己的扫描结果白名单校验名字（`agents:list` + `handler` 里的 `has()`），UI 不提供手打入口。
+
+**目录扫描**（只读，project 覆盖 global 同名）：`<agent-dir>/agents/**/*.md`、`<workspace>/.pi/agents/**/*.md`、`<workspace>/.agents/agents/**/*.md`；跳过 `.chain.md`（那是 workflow 链）。`name` 取 frontmatter，缺省用文件名。列表里带 `scope`（global/project）与 `description`，供选择器显示。
+
+**与「起始模式」的关系**：两者独立。agent 决定「谁来思考」（prompt/模型/工具集），起始模式决定「工具白名单」；同时选时参数都下发，冲突以 pi 的实际解析为准（例如 agent 自带 `tools` 时，`--exclude-tools` 仍在其之后生效）。
+
+**子 agent（subagent）不是这个**：subagent 由 `pi-subagents` 扩展在会话**内部**派生（工具调用），子会话记录写在 `sessions/<cwd-key>/subagents/*.jsonl`（带 `parentSession`）；客户端只回放父会话 JSONL，因此看得到「调用了 subagent 的工具卡片」，看不到子会话的中间过程。
+
 **M5 审批的三个语义点（已在实现层钉死）**：
 
 1. **执行前同步询问**：pi 的 `tool_call` 事件在工具执行**之前**触发，返回 `{block:true, reason}` 即阻止执行（`docs/extensions.md#tool_call`）。这不是事后审计。
@@ -685,6 +698,7 @@ Phase 2 的连接级断连/重连见附录 A.5。
 - A13 会话 `agent_settled` 后产物面板显示工作区变更（git：`status`+`diff`；非 git：快照比对并**显式标注**），单文件 diff 超 2MB 截断有提示，越权路径 100% `PATH_DENIED`，「用系统程序打开」需用户确认且经主进程校验后走 `shell.openPath`。
 - A14 模型管理：客户端可列出 / 新增 / 编辑 / 删除 pi `models.json` 里的 provider 与模型，可设默认模型；**apiKey 明文不出主进程**（界面只有掩码）；写回保留客户端未建模字段；写入原子替换 + 备份，坏 JSON 拒绝改动；改动对已在运行的会话不生效且有明示。
 - A15 主题：内置 9 套主题 + 跟随系统，切换立即生效并持久化；每个主题正文对比度 ≥ 4.5、强调/状态/代码 token ≥ 3（单测按 WCAG 断言），浅色主题下代码高亮可读；历史配置值不致主题被重置。
+- A18 会话身份 agent：新建任务可从扫描到的 agent 定义中选择（`--agent`）；`pi --help` 无该 flag 时不显示选择器，未知名字被客户端拒绝（不依赖 pi 的静默忽略）；子 agent（subagent）的中间过程不在父会话里，UI 不假装能看到。
 - A17 起始模式：新建任务可选「完整工具 / 只读 / 纯对话」，分别翻译成 pi 的默认工具集、`--exclude-tools write,edit,bash,powershell`、`--no-tools`（`tests/unit/local-connection.test.ts` + 集成断言 argv + E2E E14）；不在 UI 里假装能回显 pi 实际生效的工具集。
 - A16 发布工程：`v*` tag 一键构建 NSIS 安装包并创建 Release（含 SHA-256 校验和与 CHANGELOG 段落）；产物带应用图标与正确版本资源；CI 失败可用 `junit-*`/`build-log` artifact 诊断（本机网络不可达 Actions 日志主机时仍然可查）。
 

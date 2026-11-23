@@ -49,6 +49,9 @@ const api: PiApi = {
     state: (input) => invoke(IPC_INVOKE_CHANNELS.sessionState, input),
     stats: (input) => invoke(IPC_INVOKE_CHANNELS.sessionStats, input)
   },
+  agents: {
+    list: (input) => invoke(IPC_INVOKE_CHANNELS.agentsList, input ?? {})
+  },
   models: {
     read: () => invoke(IPC_INVOKE_CHANNELS.modelsRead, {}),
     setDefault: (input) => invoke(IPC_INVOKE_CHANNELS.modelsSetDefault, input),

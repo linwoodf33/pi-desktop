@@ -11,6 +11,7 @@ import { createArtifactsService } from '../../src/main/services/artifacts'
 import { realpathNative } from '../../src/main/services/realpath-native'
 import { createAuditLog, type AuditEntry } from '../../src/main/services/audit-log'
 import { createConfigStore } from '../../src/main/services/config-store'
+import { createAgentCatalog } from '../../src/main/services/agent-catalog'
 import { createModelConfigStore } from '../../src/main/services/model-config-store'
 import { createFsBridge } from '../../src/main/services/fs-bridge'
 import { createPiLocator } from '../../src/main/services/pi-locator'
@@ -86,7 +87,8 @@ function buildHarness(workspaceRoot: string): Harness {
     sessionHistory: createSessionHistory({ sessionRoot: () => join(workspaceRoot, '.sessions') }),
     artifacts,
     // A14：本用例不碰模型管理通道，但 RouterDeps 要求注入（指向临时 agent 目录，绝不写用户真配置）
-    modelConfigStore: createModelConfigStore({ agentDir: join(workspaceRoot, '.agent') })
+    modelConfigStore: createModelConfigStore({ agentDir: join(workspaceRoot, '.agent') }),
+    agentCatalog: createAgentCatalog({})
   })
 
   return { dispatch: (channel, payload) => router.dispatch(channel, payload), audit, opened }

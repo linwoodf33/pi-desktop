@@ -33,6 +33,8 @@ export const IPC_INVOKE_CHANNELS = {
   modelsRemoveProvider: 'models:removeProvider',
   modelsUpsertModel: 'models:upsertModel',
   modelsRemoveModel: 'models:removeModel',
+  /** A18：可用的 agent 目录（只读；同时回报 pi 是否支持 `--agent`） */
+  agentsList: 'agents:list',
   /** M4：偏好持久化（并行上限 / 空闲回收 / pi 路径 / 会话目录，§5.4 注） */
   configUpdate: 'config:update',
   /** M5：审批扩展的安装/协议状态（只读，不返回任何内容） */

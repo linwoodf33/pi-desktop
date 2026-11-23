@@ -757,4 +757,31 @@ describe('起始模式 → pi 工具参数', () => {
     expect(argv).toContain('--no-tools')
     expect(argv).not.toContain('--exclude-tools')
   })
+
+  /**
+   * A18：会话身份 agent → `--agent <name>`。
+   *
+   * 名字由 main 侧按目录校验（pi 对未知 agent 静默忽略，见 agent-catalog 注释），
+   * 这里只确认「选中的名字真的进了子进程参数」，而不是只改 UI。
+   */
+  it('agent：子进程收到 --agent <name>', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pi-desktop-agent-'))
+    const argvFile = join(dir, 'argv.json')
+    try {
+      const harness = createHarness({ MOCK_PI_ARGV_FILE: argvFile })
+      const created = await harness.service.create({ cwd: dir, agent: 'scout' })
+      await harness.service.dispose({ sessionKey: created.sessionKey })
+      await harness.waitFor(() => harness.statuses.includes('settled'), 10_000)
+
+      const text = await readFile(argvFile, 'utf8')
+      const argv = JSON.parse(text) as string[]
+      const at = argv.indexOf('--agent')
+      expect(at).toBeGreaterThanOrEqual(0)
+      expect(argv[at + 1]).toBe('scout')
+      // 仍然固定 RPC 输出接口
+      expect(argv.slice(0, 2)).toEqual(['--mode', 'rpc'])
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  })
 })

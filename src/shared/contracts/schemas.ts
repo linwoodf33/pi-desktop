@@ -41,8 +41,15 @@ export const sessionCreateInputSchema = z
     model: z.string().min(1).optional(),
     name: z.string().min(1).optional(),
     /** 起始模式 = pi 的工具选择（见 types.ts#sessionToolModeSchema 的说明） */
-    toolMode: sessionToolModeSchema.optional()
+    toolMode: sessionToolModeSchema.optional(),
+    /** 会话身份 agent（`--agent`）：值必须来自 `agents:list` 的扫描结果 */
+    agent: z.string().min(1).max(128).optional()
   })
+  .strict()
+
+/** A18：列 agent 目录时可以带工作目录（用于扫描项目级 `.pi/agents`） */
+export const agentsListInputSchema = z
+  .object({ cwd: z.string().min(1).max(2048).optional() })
   .strict()
 
 export const sessionResumeInputSchema = z
@@ -274,6 +281,7 @@ export const invokeInputSchemas = {
   [IPC_INVOKE_CHANNELS.modelsRemoveProvider]: removeProviderInputSchema,
   [IPC_INVOKE_CHANNELS.modelsUpsertModel]: upsertModelInputSchema,
   [IPC_INVOKE_CHANNELS.modelsRemoveModel]: removeModelInputSchema,
+  [IPC_INVOKE_CHANNELS.agentsList]: agentsListInputSchema,
   [IPC_INVOKE_CHANNELS.configUpdate]: configUpdateInputSchema,
   [IPC_INVOKE_CHANNELS.permissionStatus]: emptyInputSchema,
   [IPC_INVOKE_CHANNELS.extuiRespond]: extuiRespondInputSchema,

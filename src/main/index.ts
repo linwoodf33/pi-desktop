@@ -7,13 +7,14 @@ import type { StatusEvent } from '../shared/contracts/types'
 import { IpcFailure } from '../shared/contracts/result'
 
 import { createRouter } from './ipc/handlers'
+import { createAgentCatalog } from './services/agent-catalog'
 import { createModelConfigStore } from './services/model-config-store'
 import { createArtifactsService } from './services/artifacts'
 import { createAuditLog } from './services/audit-log'
 import { createConfigStore } from './services/config-store'
 import { createFsBridge } from './services/fs-bridge'
 import { buildPermissionPolicyEnv } from './services/permission-extension'
-import { createPiLocator } from './services/pi-locator'
+import { createPiLocator, defaultRunCapture } from './services/pi-locator'
 import { createSessionHistory } from './services/session-history'
 import { createSessionIndex } from './services/session-index'
 import { createSessionService, type SessionService } from './services/session-service'
@@ -132,10 +133,18 @@ function bootstrappedWindow(): void {
   // 模型管理：默认指向 `<agent-dir>/models.json`（`PI_CODING_AGENT_DIR` 可覆盖）
   const modelConfigStore = createModelConfigStore()
 
+  // A18：agent 目录。`--agent` 是否可用由 `pi --help` 探测（60s 缓存），
+  // 未定位到 pi 时退回「不支持」，UI 就不显示 agent 选择器。
+  const agentCatalog = createAgentCatalog({
+    launch: () => piLocator.launch(),
+    runCapture: defaultRunCapture
+  })
+
   const router = createRouter(
     {
       configStore,
       modelConfigStore,
+      agentCatalog,
       sessionIndex,
       piLocator,
       sessionService,

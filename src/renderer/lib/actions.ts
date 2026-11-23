@@ -135,6 +135,8 @@ export interface CreateTaskInput {
    * 取值见 `SESSION_TOOL_MODE_META`：full / readonly / no-tools。
    */
   toolMode?: SessionToolMode
+  /** 会话身份 agent（`--agent`）：名字必须来自 `agents:list` 的扫描结果 */
+  agent?: string
 }
 
 /**
@@ -154,6 +156,7 @@ export async function createTask(
     cwd: input.cwd,
     ...(input.model === undefined ? {} : { model: input.model }),
     ...(input.toolMode === undefined ? {} : { toolMode: input.toolMode }),
+    ...(input.agent === undefined || input.agent.length === 0 ? {} : { agent: input.agent }),
     ...(input.name === undefined || input.name.trim().length === 0
       ? {}
       : { name: input.name.trim() })

@@ -1,4 +1,5 @@
 import type { EventChannel } from '../ipc-channels'
+import type { AgentCatalogView } from './agents'
 import type {
   ModelEntryInput,
   ModelConfigView,
@@ -72,6 +73,8 @@ export interface PiInvokeApi {
       name?: string
       /** 起始模式 = pi 的工具选择（full / readonly / no-tools） */
       toolMode?: SessionToolMode
+      /** 会话身份 agent（`--agent`）：必须先由 `agents:list` 校验过 */
+      agent?: string
     }): Promise<Result<{ sessionKey: string; sessionId: string }>>
     resume(input: { sessionFile: string }): Promise<Result<{ sessionKey: string }>>
     /**
@@ -108,6 +111,13 @@ export interface PiInvokeApi {
    * 与上面的 `model`（会话切换当前模型）不同：这里改的是**磁盘上的配置**，
    * 影响之后启动的会话，不影响已经在跑的会话。
    */
+  agents: {
+    /**
+     * 可用 agent 目录（只读）。`supportsAgentFlag=false` 表示 pi 没注册 `--agent`
+     * （通常是没装 pi-open-agents 扩展），此时 UI 不应显示选择器。
+     */
+    list(input?: { cwd?: string }): Promise<Result<AgentCatalogView>>
+  }
   models: {
     /** apiKey 只返回 `hasApiKey` / `apiKeyHint`，明文不出主进程 */
     read(): Promise<Result<ModelConfigView>>

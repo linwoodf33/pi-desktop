@@ -68,6 +68,9 @@ export function buildPiArgs(opts: TransportStartOptions): string[] {
   if (opts.thinkingLevel !== undefined && opts.thinkingLevel.length > 0) {
     args.push('--thinking', opts.thinkingLevel)
   }
+  // 会话身份 agent：`--agent` 由 pi-open-agents 扩展注册；未安装时 pi 会直接报 Unknown option，
+  // 所以「能不能传」由 main 侧能力探测（agents:list）决定，这里只负责拼装。
+  if (opts.agent !== undefined && opts.agent.length > 0) args.push('--agent', opts.agent)
   if (opts.sessionFile !== undefined && opts.sessionFile.length > 0) {
     args.push('--session', opts.sessionFile)
   }
@@ -766,6 +769,7 @@ export class LocalConnection implements PiConnection {
         ...(opts.model === undefined ? {} : { model: opts.model }),
         ...(opts.thinkingLevel === undefined ? {} : { thinkingLevel: opts.thinkingLevel }),
         ...(opts.toolMode === undefined ? {} : { toolMode: opts.toolMode }),
+        ...(opts.agent === undefined ? {} : { agent: opts.agent }),
         ...(opts.sessionFile === undefined ? {} : { sessionFile: opts.sessionFile }),
         ...(opts.sessionDir === undefined ? {} : { sessionDir: opts.sessionDir }),
         ...(opts.sessionName === undefined ? {} : { sessionName: opts.sessionName }),
