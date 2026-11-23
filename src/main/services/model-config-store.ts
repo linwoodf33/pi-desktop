@@ -100,15 +100,22 @@ const KNOWN_MODEL_FIELDS = new Set([
   'baseUrl',
   'contextWindow',
   'maxTokens',
-  'reasoning'
+  'reasoning',
+  'input'
 ])
 
 export function toModelEntryView(entry: unknown): ModelEntryView | undefined {
   if (!isObject(entry)) return undefined
   const id = asString(entry['id'])
   if (id === undefined) return undefined
+  const rawInput = entry['input']
+  const inputModes = Array.isArray(rawInput)
+    ? rawInput.filter((mode): mode is string => typeof mode === 'string')
+    : []
   const view: ModelEntryView = {
     id,
+    // pi 的默认是 ["text"]；只有显式含 image 才算多模态
+    multimodal: inputModes.includes('image'),
     hasExtraFields: Object.keys(entry).some((key) => !KNOWN_MODEL_FIELDS.has(key))
   }
   const name = asString(entry['name'])
@@ -329,6 +336,9 @@ export function createModelConfigStore(options: ModelConfigStoreOptions = {}): M
         if (model.contextWindow !== undefined) merged['contextWindow'] = model.contextWindow
         if (model.maxTokens !== undefined) merged['maxTokens'] = model.maxTokens
         if (model.reasoning !== undefined) merged['reasoning'] = model.reasoning
+        if (model.multimodal !== undefined) {
+          merged['input'] = model.multimodal ? ['text', 'image'] : ['text']
+        }
         byId.set(model.id, merged)
       }
       nextProvider['models'] = [...byId.values()]
@@ -389,6 +399,9 @@ export function createModelConfigStore(options: ModelConfigStoreOptions = {}): M
     if (model.contextWindow !== undefined) merged['contextWindow'] = model.contextWindow
     if (model.maxTokens !== undefined) merged['maxTokens'] = model.maxTokens
     if (model.reasoning !== undefined) merged['reasoning'] = model.reasoning
+    if (model.multimodal !== undefined) {
+      merged['input'] = model.multimodal ? ['text', 'image'] : ['text']
+    }
 
     const nextModels = existingModels.filter((entry) => toModelEntryView(entry)?.id !== model.id)
     nextModels.push(merged)

@@ -49,7 +49,18 @@ export const modelBaseUrlSchema = z
     }
   }, '必须是 http(s) URL')
 
-/** 单个模型条目（客户端建模的字段；其余字段写回时保留） */
+/** pi 的输入模态（见 models.json 的 `input`） */
+export const MODEL_INPUT_MODES = ['text', 'image'] as const
+
+export const modelInputSchema = z.array(z.enum(MODEL_INPUT_MODES)).min(1).max(2)
+
+/**
+ * 单个模型条目（客户端建模的字段；其余字段写回时保留）。
+ *
+ * `input` 就是「是否多模态」：pi 的取值是 `["text"]` 或 `["text","image"]`。
+ * 客户端用布尔开关表达（不支持纯图片模型：pi 的对话至少要有文本），
+ * 落盘时再展开成数组。
+ */
 export const modelEntryInputSchema = z
   .object({
     id: modelConfigIdSchema,
@@ -57,6 +68,8 @@ export const modelEntryInputSchema = z
     contextWindow: z.number().int().min(1).max(100_000_000).optional(),
     maxTokens: z.number().int().min(1).max(10_000_000).optional(),
     reasoning: z.boolean().optional(),
+    /** `true` = 支持图片输入（写 `["text","image"]`）；`false` = 仅文本（写 `["text"]`） */
+    multimodal: z.boolean().optional(),
     api: modelApiSchema.optional(),
     baseUrl: modelBaseUrlSchema.optional()
   })
@@ -121,6 +134,8 @@ export const modelEntryViewSchema = z.object({
   contextWindow: z.number().optional(),
   maxTokens: z.number().optional(),
   reasoning: z.boolean().optional(),
+  /** 是否支持图片输入（由 `input` 里是否含 `image` 得出） */
+  multimodal: z.boolean(),
   /** 该条目在 models.json 里还有客户端没建模的字段（提示「编辑不会清掉它们」） */
   hasExtraFields: z.boolean()
 })

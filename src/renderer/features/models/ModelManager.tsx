@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { MODEL_API_VALUES } from '../../../shared/contracts/model-config'
 import type { ModelEntryView, ProviderView } from '../../../shared/contracts/model-config'
@@ -27,6 +27,8 @@ interface ModelDraft {
   contextWindow: string
   maxTokens: string
   reasoning: boolean
+  /** 是否支持图片输入（pi 的 `input: ["text","image"]`） */
+  multimodal: boolean
 }
 
 interface ProviderDraft {
@@ -44,7 +46,8 @@ const EMPTY_MODEL: ModelDraft = {
   name: '',
   contextWindow: '',
   maxTokens: '',
-  reasoning: false
+  reasoning: false,
+  multimodal: false
 }
 
 function emptyDraft(): ProviderDraft {
@@ -75,7 +78,8 @@ function draftFromProvider(provider: ProviderView): ProviderDraft {
             name: model.name ?? '',
             contextWindow: model.contextWindow === undefined ? '' : String(model.contextWindow),
             maxTokens: model.maxTokens === undefined ? '' : String(model.maxTokens),
-            reasoning: model.reasoning === true
+            reasoning: model.reasoning === true,
+            multimodal: model.multimodal
           }))
   }
 }
@@ -93,6 +97,7 @@ function modelSummary(model: ModelEntryView): string {
   if (model.contextWindow !== undefined) bits.push(`ctx ${formatTokens(model.contextWindow)}`)
   if (model.maxTokens !== undefined) bits.push(`max ${formatTokens(model.maxTokens)}`)
   if (model.reasoning === true) bits.push('thinking')
+  if (model.multimodal) bits.push('image')
   return bits.join(' · ')
 }
 
@@ -113,6 +118,13 @@ export function ModelManager({ onClose }: ModelManagerProps): React.JSX.Element 
   const [draft, setDraft] = useState<ProviderDraft | undefined>(undefined)
   const [editingExisting, setEditingExisting] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<string | undefined>(undefined)
+  const formRef = useRef<HTMLDivElement | null>(null)
+
+  // 打开「新增/编辑」后把表单滚进视口：用户点完按钮不该还要自己往下找
+  useEffect(() => {
+    if (draft === undefined) return
+    formRef.current?.scrollIntoView({ block: 'start' })
+  }, [draft])
 
   useEffect(() => {
     void load()
@@ -131,7 +143,8 @@ export function ModelManager({ onClose }: ModelManagerProps): React.JSX.Element 
         ...(optionalNumber(model.maxTokens) === undefined
           ? {}
           : { maxTokens: optionalNumber(model.maxTokens) }),
-        ...(model.reasoning ? { reasoning: true } : {})
+        ...(model.reasoning ? { reasoning: true } : {}),
+        multimodal: model.multimodal
       }))
 
     const ok = await upsertProvider({
@@ -221,125 +234,127 @@ export function ModelManager({ onClose }: ModelManagerProps): React.JSX.Element 
             </div>
           </div>
 
-          <div className="models__section">
-            <h3>
-              Provider（{view?.providers.length ?? 0}）
-              <button
-                type="button"
-                className="btn btn--ghost"
-                data-testid="models-add-provider"
-                onClick={() => {
-                  setDraft(emptyDraft())
-                  setEditingExisting(false)
-                }}
-              >
-                新增
-              </button>
-            </h3>
+          {draft === undefined ? (
+            <div className="models__section">
+              <h3>
+                Provider（{view?.providers.length ?? 0}）
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  data-testid="models-add-provider"
+                  onClick={() => {
+                    setDraft(emptyDraft())
+                    setEditingExisting(false)
+                  }}
+                >
+                  新增
+                </button>
+              </h3>
 
-            {view === undefined || view.providers.length === 0 ? (
-              <p className="settings__note" data-testid="models-empty">
-                还没有自定义 provider。内置 provider 由 pi 自带，这里只列 `models.json` 里的条目。
-              </p>
-            ) : (
-              <ul className="models__list">
-                {view.providers.map((provider) => (
-                  <li
-                    key={provider.id}
-                    className="models__provider"
-                    data-testid="models-provider-row"
-                  >
-                    <div className="models__provider-head">
-                      <strong>{provider.id}</strong>
-                      {provider.name === undefined ? null : (
-                        <span className="models__muted">{provider.name}</span>
-                      )}
-                      {provider.hasApiKey ? (
-                        <span className="badge" title="apiKey 已配置（明文不显示）">
-                          key {provider.apiKeyHint}
-                        </span>
-                      ) : (
-                        <span className="badge badge--warn">无 key</span>
-                      )}
-                      {provider.baseUrl === undefined ? null : (
-                        <span className="models__muted">{provider.baseUrl}</span>
-                      )}
-                      <span className="models__spacer" />
-                      <button
-                        type="button"
-                        className="btn btn--ghost"
-                        data-testid="models-provider-edit"
-                        onClick={() => {
-                          setDraft(draftFromProvider(provider))
-                          setEditingExisting(true)
-                        }}
-                      >
-                        编辑
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn--ghost"
-                        data-testid="models-provider-delete"
-                        onClick={() => {
-                          setPendingDelete(provider.id)
-                        }}
-                      >
-                        删除
-                      </button>
-                    </div>
-                    <ul className="models__models">
-                      {provider.models.map((model) => (
-                        <li key={model.id}>
-                          <code>{model.id}</code>
-                          <span className="models__muted">{modelSummary(model)}</span>
-                          {model.hasExtraFields ? (
-                            <span
-                              className="models__muted"
-                              title="还有客户端未建模的字段，编辑不会清掉"
-                            >
-                              （含额外字段）
-                            </span>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-
-                    {pendingDelete === provider.id ? (
-                      <div className="models__confirm" data-testid="models-provider-confirm">
-                        <span>
-                          删除 provider <code>{provider.id}</code>？会从 models.json
-                          里移除整段配置。
-                        </span>
+              {view === undefined || view.providers.length === 0 ? (
+                <p className="settings__note" data-testid="models-empty">
+                  还没有自定义 provider。内置 provider 由 pi 自带，这里只列 `models.json` 里的条目。
+                </p>
+              ) : (
+                <ul className="models__list">
+                  {view.providers.map((provider) => (
+                    <li
+                      key={provider.id}
+                      className="models__provider"
+                      data-testid="models-provider-row"
+                    >
+                      <div className="models__provider-head">
+                        <strong>{provider.id}</strong>
+                        {provider.name === undefined ? null : (
+                          <span className="models__muted">{provider.name}</span>
+                        )}
+                        {provider.hasApiKey ? (
+                          <span className="badge" title="apiKey 已配置（明文不显示）">
+                            key {provider.apiKeyHint}
+                          </span>
+                        ) : (
+                          <span className="badge badge--warn">无 key</span>
+                        )}
+                        {provider.baseUrl === undefined ? null : (
+                          <span className="models__muted">{provider.baseUrl}</span>
+                        )}
+                        <span className="models__spacer" />
                         <button
                           type="button"
                           className="btn btn--ghost"
+                          data-testid="models-provider-edit"
                           onClick={() => {
-                            setPendingDelete(undefined)
+                            setDraft(draftFromProvider(provider))
+                            setEditingExisting(true)
                           }}
                         >
-                          取消
+                          编辑
                         </button>
                         <button
                           type="button"
-                          className="btn btn--primary"
-                          data-testid="models-provider-confirm-yes"
+                          className="btn btn--ghost"
+                          data-testid="models-provider-delete"
                           onClick={() => {
-                            setPendingDelete(undefined)
-                            void removeProvider(provider.id)
+                            setPendingDelete(provider.id)
                           }}
                         >
                           删除
                         </button>
                       </div>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+                      <ul className="models__models">
+                        {provider.models.map((model) => (
+                          <li key={model.id}>
+                            <code>{model.id}</code>
+                            <span className="models__muted">{modelSummary(model)}</span>
+                            {model.hasExtraFields ? (
+                              <span
+                                className="models__muted"
+                                title="还有客户端未建模的字段，编辑不会清掉"
+                              >
+                                （含额外字段）
+                              </span>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+
+                      {pendingDelete === provider.id ? (
+                        <div className="models__confirm" data-testid="models-provider-confirm">
+                          <span>
+                            删除 provider <code>{provider.id}</code>？会从 models.json
+                            里移除整段配置。
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            onClick={() => {
+                              setPendingDelete(undefined)
+                            }}
+                          >
+                            取消
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--primary"
+                            data-testid="models-provider-confirm-yes"
+                            onClick={() => {
+                              setPendingDelete(undefined)
+                              void removeProvider(provider.id)
+                            }}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : null}
 
           {draft === undefined ? null : (
-            <div className="models__section models__form" data-testid="models-form">
+            <div className="models__section models__form" data-testid="models-form" ref={formRef}>
               <h3>{editingExisting ? `编辑 provider：${draft.id}` : '新增 provider'}</h3>
               <div className="models__grid">
                 <label>
@@ -436,6 +451,7 @@ export function ModelManager({ onClose }: ModelManagerProps): React.JSX.Element 
                     <th>上下文</th>
                     <th>最大输出</th>
                     <th>thinking</th>
+                    <th>多模态</th>
                     <th />
                   </tr>
                 </thead>
@@ -500,6 +516,19 @@ export function ModelManager({ onClose }: ModelManagerProps): React.JSX.Element 
                           onChange={(event) => {
                             const models = [...draft.models]
                             models[index] = { ...model, reasoning: event.target.checked }
+                            setDraft({ ...draft, models })
+                          }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="checkbox"
+                          title="支持图片输入（写入 input: text + image）"
+                          data-testid={`models-form-model-multimodal-${index}`}
+                          checked={model.multimodal}
+                          onChange={(event) => {
+                            const models = [...draft.models]
+                            models[index] = { ...model, multimodal: event.target.checked }
                             setDraft({ ...draft, models })
                           }}
                         />

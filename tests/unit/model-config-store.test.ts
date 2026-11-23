@@ -321,3 +321,67 @@ describe('toModelEntryView', () => {
     expect(toModelEntryView({ noId: true })).toBeUndefined()
   })
 })
+
+describe('多模态（input）', () => {
+  it('multimodal=true 写成 ["text","image"]，false 写成 ["text"]', () => {
+    store().upsertProvider({
+      id: 'acme',
+      baseUrl: 'https://api.acme.test/v1',
+      api: 'openai-completions',
+      models: [
+        { id: 'vision', multimodal: true },
+        { id: 'text-only', multimodal: false }
+      ]
+    })
+
+    const providers = readModels()['providers'] as Record<string, Record<string, unknown>>
+    const models = providers['acme']?.['models'] as Record<string, unknown>[]
+    expect(models.find((model) => model['id'] === 'vision')?.['input']).toEqual(['text', 'image'])
+    expect(models.find((model) => model['id'] === 'text-only')?.['input']).toEqual(['text'])
+  })
+
+  it('视图里 multimodal 由 input 是否含 image 得出（pi 默认 ["text"]）', () => {
+    writeModels({
+      providers: {
+        acme: {
+          baseUrl: 'https://api.acme.test/v1',
+          api: 'openai-completions',
+          models: [
+            { id: 'vision', input: ['text', 'image'] },
+            { id: 'legacy-no-input' },
+            { id: 'text-only', input: ['text'] }
+          ]
+        }
+      }
+    })
+
+    const models = store().read().providers[0]?.models ?? []
+    expect(models.find((model) => model.id === 'vision')?.multimodal).toBe(true)
+    expect(models.find((model) => model.id === 'legacy-no-input')?.multimodal).toBe(false)
+    expect(models.find((model) => model.id === 'text-only')?.multimodal).toBe(false)
+  })
+
+  it('不传 multimodal 时保留原 input（不要把已配好的多模态清掉）', () => {
+    writeModels({
+      providers: {
+        acme: {
+          baseUrl: 'https://api.acme.test/v1',
+          api: 'openai-completions',
+          models: [{ id: 'vision', input: ['text', 'image'] }]
+        }
+      }
+    })
+
+    // 只改名字，不碰 input
+    store().upsertModel('acme', { id: 'vision', name: 'Vision v2' })
+
+    const providers = readModels()['providers'] as Record<string, Record<string, unknown>>
+    const models = providers['acme']?.['models'] as Record<string, unknown>[]
+    expect(models[0]?.['name']).toBe('Vision v2')
+    expect(models[0]?.['input']).toEqual(['text', 'image'])
+  })
+
+  it('input 仍算「客户端已建模字段」（不该被标成额外字段）', () => {
+    expect(toModelEntryView({ id: 'a', input: ['text', 'image'] })?.hasExtraFields).toBe(false)
+  })
+})

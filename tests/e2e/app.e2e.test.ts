@@ -491,3 +491,107 @@ describe('E10 产物 diff 与系统程序打开（M6）', () => {
     expect(await page.locator('.banner--error').count()).toBe(0)
   })
 })
+
+describe('E13 浅色主题下的工具卡片与代码块（v0.3.1 回归）', () => {
+  /**
+   * 真实缺陷：`.tool-card__output pre` 的底色曾写死成近黑色，主题切浅色后
+   * 文字是深色 → 黑底黑字，工具调用输出完全不可读。
+   *
+   * 这里用**浏览器算出来的颜色**复验：浅色主题下代码块 / 工具输出的
+   * 底色必须是浅色，且与文字对比度 ≥ 4.5。
+   */
+  interface SurfaceReading {
+    background: string
+    color: string
+    contrast: number
+    backgroundLuminance: number
+  }
+
+  async function readSurface(selector: string): Promise<SurfaceReading | undefined> {
+    return page.evaluate((target) => {
+      const element = document.querySelector(target)
+      if (element === null) return undefined
+      const parse = (value: string): [number, number, number] => {
+        const match = /rgba?\(([^)]+)\)/.exec(value)
+        const parts = (match?.[1] ?? '0,0,0').split(',').map((item) => Number(item.trim()))
+        return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0]
+      }
+      const luminance = (rgb: [number, number, number]): number => {
+        const [r, g, b] = rgb.map((channel) => {
+          const value = channel / 255
+          return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+        }) as [number, number, number]
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+      }
+      // 背景可能是透明的（继承自父级）→ 向上找到第一个不透明的祖先
+      let node: Element | null = element
+      let background = 'rgba(0, 0, 0, 0)'
+      while (node !== null) {
+        const value = getComputedStyle(node).backgroundColor
+        if (value !== 'rgba(0, 0, 0, 0)' && value !== 'transparent') {
+          background = value
+          break
+        }
+        node = node.parentElement
+      }
+      const color = getComputedStyle(element).color
+      const bgLum = luminance(parse(background))
+      const textLum = luminance(parse(color))
+      const [high, low] = [bgLum, textLum].sort((a, b) => b - a) as [number, number]
+      return {
+        background,
+        color,
+        contrast: (high + 0.05) / (low + 0.05),
+        backgroundLuminance: bgLum
+      }
+    }, selector)
+  }
+
+  async function setTheme(id: string): Promise<void> {
+    const toggle = page.locator('.settings-toggle')
+    const open = await toggle.evaluate((element) => (element as HTMLDetailsElement).open)
+    if (!open) await page.click('.settings-toggle > summary')
+    await page.waitForSelector('[data-testid="settings-theme"]', { timeout: 20_000 })
+    await page.selectOption('[data-testid="settings-theme"]', id)
+    await page.click('[data-testid="settings-save"]')
+    await page.waitForFunction((want) => document.documentElement.dataset['theme'] === want, id, {
+      timeout: 20_000
+    })
+    if (open) await page.click('.settings-toggle > summary')
+  }
+
+  it('切到 pi-light 后工具输出与代码块不出现黑底黑字', async () => {
+    // 确保当前有工具卡片可测：上一轮 mock 会产出一条工具调用
+    await page.fill('.composer__input', '再跑一次工具调用')
+    await page.click('[data-testid="send-button"]')
+    await page.waitForSelector('[data-testid="tool-card__output"], .tool-card__output', {
+      timeout: 60_000
+    })
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="composer-state"]')?.textContent === '空闲',
+      undefined,
+      { timeout: 60_000 }
+    )
+
+    await setTheme('pi-light')
+
+    const output = await readSurface('.tool-card__output pre')
+    expect(output, '未找到工具输出的代码块').toBeDefined()
+    if (output === undefined) return
+    // 浅色主题的代码块底色必须亮（原缺陷是近黑 #0b0e12，亮度 ≈0.006）
+    expect(output.backgroundLuminance).toBeGreaterThan(0.5)
+    expect(
+      output.contrast,
+      `工具输出 contrast=${output.contrast}（${output.background} / ${output.color}）`
+    ).toBeGreaterThanOrEqual(4.5)
+
+    const code = await readSurface('.md pre')
+    if (code !== undefined) {
+      expect(code.backgroundLuminance).toBeGreaterThan(0.5)
+      expect(code.contrast).toBeGreaterThanOrEqual(4.5)
+    }
+
+    // 还原主题，避免影响后续用例
+    await setTheme('pi-dark')
+  })
+})

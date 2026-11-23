@@ -31,6 +31,16 @@
   --code-title: #6fb3f2;
   --code-builtin: #4fd1c5;
   --code-deletion: #e0625e;
+  /* 语义色：代码块底 / 强调底上的字 / 提示与 diff 的文字色。必须走变量，
+     否则浅色主题会出现「黑底黑字」（v0.3.1 修的真实缺陷） */
+  --code-bg: #0b0e12;
+  --on-accent: #ffffff;
+  --accent-hover: #3070b3;
+  --danger-text: #f3c3c1;
+  --warn-text: #f0dcae;
+  --success-text: #9ae6b4;
+  /* 模态遮罩：与主题无关的压暗层 */
+  --scrim: rgb(0 0 0 / 55%);
   /* 原生控件（滚动条/输入框/select）跟随明暗；运行时由 useAppliedTheme 按主题覆盖 */
   color-scheme: dark;
   --mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, 'Courier New', monospace;
@@ -246,17 +256,17 @@ kbd {
 
 .badge--ok {
   color: var(--ok);
-  border-color: rgb(63 178 127 / 40%);
+  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
 }
 
 .badge--error {
   color: var(--error);
-  border-color: rgb(224 98 94 / 40%);
+  border-color: color-mix(in srgb, var(--error) 40%, transparent);
 }
 
 .badge--pending {
   color: var(--warn);
-  border-color: rgb(211 160 58 / 40%);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
 }
 
 .badge--muted {
@@ -267,7 +277,7 @@ kbd {
   padding: 0 6px;
   border-radius: 4px;
   background: var(--accent-dim);
-  color: #e8f1fb;
+  color: var(--on-accent);
   font-size: 10px;
 }
 
@@ -295,11 +305,11 @@ kbd {
 .btn--primary {
   background: var(--accent-dim);
   border-color: var(--accent);
-  color: #f2f7fd;
+  color: var(--on-accent);
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: var(--accent);
+  background: var(--accent-hover);
 }
 
 .btn--ghost {
@@ -366,7 +376,7 @@ kbd {
 }
 
 .onboarding__step--done {
-  border-color: rgb(63 178 127 / 35%);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
 }
 
 /* ---------------------------------------------------------------- 任务列表 */
@@ -625,7 +635,7 @@ kbd {
 }
 
 .md pre {
-  background: #0b0e12;
+  background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
@@ -785,7 +795,7 @@ kbd {
 .tool-card__output pre {
   margin: 6px 0 0;
   padding: 8px;
-  background: #0b0e12;
+  background: var(--code-bg);
   border-radius: 6px;
   font-size: 11.5px;
   line-height: 1.5;
@@ -879,13 +889,13 @@ kbd {
 }
 
 .banner--error {
-  background: rgb(224 98 94 / 12%);
-  color: #f3c3c1;
+  background: color-mix(in srgb, var(--error) 14%, transparent);
+  color: var(--danger-text);
 }
 
 .banner--warn {
-  background: rgb(211 160 58 / 12%);
-  color: #f0dcae;
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn-text);
 }
 
 .banner--info {
@@ -932,7 +942,7 @@ kbd {
   padding: 6px 12px;
   font-size: 11px;
   color: var(--warn);
-  background: rgb(211 160 58 / 10%);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
   border-bottom: 1px solid var(--border);
 }
 
@@ -942,7 +952,7 @@ kbd {
   margin: 48px auto;
   max-width: 640px;
   padding: 24px;
-  border: 1px solid rgb(224 98 94 / 40%);
+  border: 1px solid color-mix(in srgb, var(--error) 40%, transparent);
   border-radius: 12px;
   background: var(--bg-panel);
 }
@@ -1103,7 +1113,7 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(0 0 0 / 55%);
+  background: var(--scrim);
 }
 
 .modal {
@@ -1265,7 +1275,7 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--scrim);
   padding: 24px;
 }
 
@@ -1273,8 +1283,8 @@ kbd {
   width: min(640px, 100%);
   max-height: 80vh;
   overflow: auto;
-  background: var(--panel, #1b1b1f);
-  border: 1px solid var(--border, #333);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 16px 18px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
@@ -1306,11 +1316,11 @@ kbd {
 }
 
 .approval__risk--critical {
-  color: var(--error, #f87171);
+  color: var(--error);
 }
 
 .approval__risk--high {
-  color: #fbbf24;
+  color: var(--warn-text);
 }
 
 .approval__risk--medium {
@@ -1376,8 +1386,8 @@ kbd {
 }
 
 .btn--danger {
-  border-color: var(--error, #f87171);
-  color: var(--error, #f87171);
+  border-color: var(--error);
+  color: var(--error);
 }
 
 .perm-status {
@@ -1466,21 +1476,21 @@ kbd {
   border-radius: 4px;
   font-size: 10px;
   background: var(--accent-dim);
-  color: #e8f1fb;
+  color: var(--on-accent);
 }
 
 .artifact-item__pill--added {
-  background: rgb(63 178 127 / 25%);
-  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 22%, transparent);
+  color: var(--success-text);
 }
 
 .artifact-item__pill--deleted {
-  background: rgb(224 98 94 / 25%);
+  background: color-mix(in srgb, var(--error) 22%, transparent);
   color: var(--error);
 }
 
 .artifact-item__pill--renamed {
-  background: rgb(211 160 58 / 25%);
+  background: color-mix(in srgb, var(--warn) 22%, transparent);
   color: var(--warn);
 }
 
@@ -1514,7 +1524,7 @@ kbd {
 .artifact-confirm {
   padding: 8px;
   border-bottom: 1px solid var(--border);
-  background: rgb(211 160 58 / 10%);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
   font-size: 12px;
 }
 
@@ -1625,13 +1635,13 @@ kbd {
 }
 
 .diff__line--add {
-  background: rgb(63 178 127 / 14%);
-  color: #9ae6b4;
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+  color: var(--success-text);
 }
 
 .diff__line--del {
-  background: rgb(224 98 94 / 14%);
-  color: #f9a8a5;
+  background: color-mix(in srgb, var(--error) 16%, transparent);
+  color: var(--danger-text);
 }
 
 .diff__line--hunk {

@@ -124,7 +124,10 @@ describe('模型管理', () => {
     await page.fill('[data-testid="models-form-model-ctx-0"]', '64000')
     await page.fill('[data-testid="models-form-model-max-0"]', '4096')
     await page.check('[data-testid="models-form-model-reasoning-0"]')
+    await page.check('[data-testid="models-form-model-multimodal-0"]')
     await page.fill('[data-testid="models-form-apikey"]', 'sk-e2e-new-key-123456')
+    // 表单态截图：用于人工复核「编辑框就地在顶部、不用下拉」
+    await page.screenshot({ path: join(SHOT_DIR, 'models-manager-form.png'), fullPage: false })
     await page.click('[data-testid="models-form-save"]')
 
     await expect
@@ -147,7 +150,9 @@ describe('模型管理', () => {
       id: 'e2e-model',
       contextWindow: 64000,
       maxTokens: 4096,
-      reasoning: true
+      reasoning: true,
+      // 多模态开关 → pi 的 input 数组
+      input: ['text', 'image']
     })
     // 预置 provider 的额外字段仍在
     expect(providers['preset']?.['compat']).toEqual({ supportsStore: false })

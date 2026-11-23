@@ -67,7 +67,13 @@ describe('主题注册表', () => {
       'codeNumber',
       'codeTitle',
       'codeBuiltin',
-      'codeDeletion'
+      'codeDeletion',
+      'codeBg',
+      'onAccent',
+      'accentHover',
+      'dangerText',
+      'warnText',
+      'successText'
     ]
     for (const theme of THEMES) {
       expect(Object.keys(theme.palette).sort()).toEqual([...expectedKeys].sort())
@@ -99,15 +105,8 @@ describe('主题注册表', () => {
 
   it('代码 token 色对代码块底色 ≥ 3（否则高亮等于没高亮）', () => {
     for (const theme of THEMES) {
-      const {
-        bgElevated,
-        codeComment,
-        codeKeyword,
-        codeString,
-        codeNumber,
-        codeTitle,
-        codeBuiltin
-      } = theme.palette
+      const { codeBg, codeComment, codeKeyword, codeString, codeNumber, codeTitle, codeBuiltin } =
+        theme.palette
       for (const [name, color] of Object.entries({
         codeComment,
         codeKeyword,
@@ -116,8 +115,39 @@ describe('主题注册表', () => {
         codeTitle,
         codeBuiltin
       })) {
-        expect(contrast(color, bgElevated), `${theme.id} ${name}`).toBeGreaterThanOrEqual(3)
+        expect(contrast(color, codeBg), `${theme.id} ${name}`).toBeGreaterThanOrEqual(3)
       }
+    }
+  })
+
+  it('正文落在代码块底上仍 ≥ 4.5（v0.3.1 的真实缺陷：浅色主题黑底黑字）', () => {
+    for (const theme of THEMES) {
+      const { text, codeBg } = theme.palette
+      expect(contrast(text, codeBg), `${theme.id} text/codeBg`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('强调色实底上的文字 ≥ 4.5（主按钮 / 药丸）', () => {
+    for (const theme of THEMES) {
+      const { onAccent, accentDim, accentHover } = theme.palette
+      expect(
+        contrast(onAccent, accentDim),
+        `${theme.id} onAccent/accentDim`
+      ).toBeGreaterThanOrEqual(4.5)
+      // hover 态换底色，也必须撑得住（原实现 hover 到更亮的 accent，白字只有 2.8:1）
+      expect(
+        contrast(onAccent, accentHover),
+        `${theme.id} onAccent/accentHover`
+      ).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('提示条与 diff 行的语义文字色 ≥ 4.5（底色是 14–22% 染色，按背景近似）', () => {
+    for (const theme of THEMES) {
+      const { bg, dangerText, warnText, successText } = theme.palette
+      expect(contrast(dangerText, bg), `${theme.id} dangerText`).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(warnText, bg), `${theme.id} warnText`).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(successText, bg), `${theme.id} successText`).toBeGreaterThanOrEqual(4.5)
     }
   })
 
