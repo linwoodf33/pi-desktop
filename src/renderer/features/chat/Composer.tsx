@@ -4,7 +4,9 @@ import { phaseLabel } from '../../lib/format'
 import {
   MAX_IMAGES_PER_MESSAGE,
   formatBytes,
+  hasImagePayload,
   readClipboardImages,
+  readDroppedImages,
   type ImageAttachment
 } from '../../lib/images'
 import type { RunPhase } from '../../lib/reducer'
@@ -31,6 +33,8 @@ export function Composer({ phase, aborting, aborted, disabled, onSend, onAbort }
   /** 已粘贴、待发送的图片（A19） */
   const [images, setImages] = useState<ImageAttachment[]>([])
   const [pasteError, setPasteError] = useState<string | undefined>(undefined)
+  /** 拖拽悬停中（用于高亮投放区）；只在真的含图片时亮起 */
+  const [dragging, setDragging] = useState(false)
   // 只有图片、没有文字也应允许发送（截图直接问「这是什么」）
   const canSend = !disabled && !aborting && (input.trim().length > 0 || images.length > 0)
   const canAbort = !disabled && !aborting && phase !== 'idle'
@@ -46,6 +50,14 @@ export function Composer({ phase, aborting, aborted, disabled, onSend, onAbort }
     onSend(text, payload)
   }
 
+  const appendImages = (result: { attachments: ImageAttachment[]; errors: string[] }): void => {
+    if (result.attachments.length > 0) {
+      setImages((current) => [...current, ...result.attachments])
+      setPasteError(undefined)
+    }
+    if (result.errors.length > 0) setPasteError(result.errors.join('；'))
+  }
+
   /** Ctrl+V：从剪贴板取图片（截图工具通常给 `image/png`）；纯文本粘贴走默认行为 */
   const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>): void => {
     if (disabled) return
@@ -55,23 +67,44 @@ export function Composer({ phase, aborting, aborted, disabled, onSend, onAbort }
     if (!hasImage) return
     // 有图片时阻止默认：否则某些平台会把图片当文件名插进 textarea
     event.preventDefault()
-    void readClipboardImages(event.nativeEvent, images.length).then((result) => {
-      if (result.attachments.length > 0) {
-        setImages((current) => [...current, ...result.attachments])
-        setPasteError(undefined)
-      }
-      if (result.errors.length > 0) setPasteError(result.errors.join('；'))
-    })
+    void readClipboardImages(event.nativeEvent, images.length).then(appendImages)
+  }
+
+  /** 拖拽：只在含图片文件时接受（拖文本/链接仍交给浏览器默认行为） */
+  const handleDragOver = (event: React.DragEvent<HTMLElement>): void => {
+    if (disabled || !hasImagePayload(event.dataTransfer)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    if (!dragging) setDragging(true)
+  }
+
+  const handleDrop = (event: React.DragEvent<HTMLElement>): void => {
+    if (disabled) return
+    if (!hasImagePayload(event.dataTransfer)) return
+    // Electron 里不拦默认行为会把窗口导航到该文件
+    event.preventDefault()
+    setDragging(false)
+    void readDroppedImages(event.dataTransfer, images.length).then(appendImages)
   }
 
   return (
-    <footer className="composer">
+    <footer
+      className={dragging ? 'composer composer--dragover' : 'composer'}
+      onDragOver={handleDragOver}
+      onDragLeave={(event) => {
+        // 只有离开整个 composer 才取消高亮（子元素间移动会连发 leave）
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+        setDragging(false)
+      }}
+      onDrop={handleDrop}
+      data-testid="composer"
+    >
       <textarea
         className="composer__input"
         placeholder={
           disabled
             ? '先新建任务（选择工作目录）才能发送消息'
-            : `输入消息，Enter 发送，Shift+Enter 换行；可直接粘贴截图（Ctrl+V，最多 ${MAX_IMAGES_PER_MESSAGE} 张）`
+            : `输入消息，Enter 发送，Shift+Enter 换行；可直接粘贴或拖入截图（最多 ${MAX_IMAGES_PER_MESSAGE} 张）`
         }
         rows={3}
         value={input}
@@ -97,8 +130,15 @@ export function Composer({ phase, aborting, aborted, disabled, onSend, onAbort }
               data-testid="composer-attachment"
             >
               <img src={image.dataUrl} alt={image.name} />
-              <figcaption>
+              <figcaption
+                title={
+                  image.original === undefined
+                    ? image.name
+                    : `原图 ${image.original.width}×${image.original.height} · ${formatBytes(image.original.bytes)}`
+                }
+              >
                 {image.mimeType.replace('image/', '').toUpperCase()} · {formatBytes(image.bytes)}
+                {image.original === undefined ? '' : ' · 已压缩'}
               </figcaption>
               <button
                 type="button"

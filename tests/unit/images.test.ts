@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  COMPRESS_THRESHOLD_BYTES,
+  MAX_EDGE,
   MAX_IMAGE_BYTES,
   MAX_IMAGES_PER_MESSAGE,
   dataUrlBytes,
   dataUrlMimeType,
   isSupportedImageMime,
-  planAttachments
+  needsCompression,
+  planAttachments,
+  planScale
 } from '../../src/renderer/lib/images'
 
 /**
@@ -96,5 +100,45 @@ describe('dataUrlMimeType', () => {
 
   it('不是 data URL 时返回空串', () => {
     expect(dataUrlMimeType('https://example.test/a.png')).toBe('')
+  })
+})
+
+describe('planScale（等比缩放到长边 ≤ MAX_EDGE）', () => {
+  it('已经够小则原样返回（不放大）', () => {
+    expect(planScale(800, 600)).toEqual({ width: 800, height: 600, scaled: false })
+    expect(planScale(MAX_EDGE, 100)).toEqual({ width: MAX_EDGE, height: 100, scaled: false })
+  })
+
+  it('超长边按比例缩到 MAX_EDGE，另一维等比', () => {
+    expect(planScale(4000, 2000)).toEqual({ width: MAX_EDGE, height: 1000, scaled: true })
+    // 竖图同理
+    expect(planScale(1000, 4000)).toEqual({ width: 500, height: MAX_EDGE, scaled: true })
+  })
+
+  it('极端比例不会出现 0 维（最小 1px）', () => {
+    const scaled = planScale(20000, 3)
+    expect(scaled.width).toBe(MAX_EDGE)
+    expect(scaled.height).toBeGreaterThanOrEqual(1)
+  })
+
+  it('非法尺寸（0/负数）原样返回，避免除零', () => {
+    expect(planScale(0, 0)).toEqual({ width: 0, height: 0, scaled: false })
+    expect(planScale(-5, 10)).toEqual({ width: -5, height: 10, scaled: false })
+  })
+})
+
+describe('needsCompression', () => {
+  it('超过 2MB 才压缩（低于此值原样发送，保住画质）', () => {
+    expect(needsCompression(COMPRESS_THRESHOLD_BYTES)).toBe(false)
+    expect(needsCompression(COMPRESS_THRESHOLD_BYTES + 1)).toBe(true)
+    expect(needsCompression(1024)).toBe(false)
+  })
+
+  it('8MB 的硬上限与压缩阈值是两件事：超 8MB 仍然拒绝', () => {
+    const plan = planAttachments(0, [
+      { mimeType: 'image/png', bytes: MAX_IMAGE_BYTES + 1, name: 'huge.png' }
+    ])
+    expect(plan.accepted).toEqual([])
+    expect(needsCompression(MAX_IMAGE_BYTES - 1)).toBe(true)
   })
 })

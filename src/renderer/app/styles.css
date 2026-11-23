@@ -835,6 +835,13 @@ kbd {
   background: var(--bg-panel);
 }
 
+/* 拖拽悬停：整块输入区高亮，明确「松手就加进来」 */
+.composer--dragover {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel));
+}
+
 /* 粘贴的图片缩略图（A19）：底色/描边走主题变量，浅色主题下也要能看清 */
 .composer__attachments {
   display: flex;

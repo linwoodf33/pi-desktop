@@ -139,3 +139,71 @@ describe('粘贴截图进对话框', () => {
       .toBe(0)
   })
 })
+
+/** 构造一个「超长边」的图片并拖入输入框（触发客户端压缩） */
+async function dropLargeImage(): Promise<void> {
+  await page.evaluate(async () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 3000
+    canvas.height = 2000
+    const context = canvas.getContext('2d')
+    if (context === null) throw new Error('无法创建 canvas')
+    const gradient = context.createLinearGradient(0, 0, 3000, 2000)
+    gradient.addColorStop(0, '#112233')
+    gradient.addColorStop(1, '#aabbcc')
+    context.fillStyle = gradient
+    context.fillRect(0, 0, 3000, 2000)
+    context.fillStyle = '#ffffff'
+    context.font = '120px sans-serif'
+    context.fillText('screenshot', 200, 400)
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/png')
+    })
+    if (blob === null) throw new Error('toBlob 失败')
+    const file = new File([blob], 'big-screenshot.png', { type: 'image/png' })
+    const data = new DataTransfer()
+    data.items.add(file)
+
+    const target = document.querySelector('[data-testid="composer"]')
+    if (!(target instanceof HTMLElement)) throw new Error('找不到 composer')
+    target.dispatchEvent(
+      new DragEvent('dragover', { dataTransfer: data, bubbles: true, cancelable: true })
+    )
+    target.dispatchEvent(
+      new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true })
+    )
+  })
+}
+
+describe('拖拽图片（A20）', () => {
+  it('拖入超长边图片：出现缩略图、标注已压缩、实际尺寸被缩到长边上限', async () => {
+    await page.waitForSelector('[data-testid="composer"]', { timeout: 20_000 })
+    await dropLargeImage()
+
+    const attachment = page.locator('[data-testid="composer-attachment"]').first()
+    await attachment.waitFor({ timeout: 30_000 })
+
+    const caption = (await attachment.locator('figcaption').textContent()) ?? ''
+    expect(caption).toContain('已压缩')
+
+    // 原图 3000×2000 → 长边压到 2000（等比 2000×1333）
+    const natural = await attachment.locator('img').evaluate((node) => {
+      const img = node as HTMLImageElement
+      return { width: img.naturalWidth, height: img.naturalHeight }
+    })
+    expect(natural.width).toBe(2000)
+    expect(natural.height).toBe(1333)
+
+    // 悬停在缩略图上应能查到原图尺寸
+    const title = (await attachment.locator('figcaption').getAttribute('title')) ?? ''
+    expect(title).toContain('3000×2000')
+
+    await page.click('[data-testid="composer-attachment-remove"]')
+    await expect
+      .poll(async () => page.locator('[data-testid="composer-attachment"]').count(), {
+        timeout: 10_000
+      })
+      .toBe(0)
+  })
+})

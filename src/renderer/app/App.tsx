@@ -47,6 +47,28 @@ export function App() {
   // 主题在 config 到达后立即生效（首帧用样式表里的默认暗色兜底）
   useAppliedTheme(config?.theme)
 
+  /**
+   * A20：窗口级拖放兜底。
+   *
+   * Electron（Chromium）默认会在文件被拖到窗口任意位置时**导航到该文件**，
+   * 那是「拖错位置就白屏」的经典事故。输入框自己处理图片拖放（preventDefault），
+   * 这里兜住其余区域：只阻止默认行为，不做任何处理。
+   */
+  useEffect(() => {
+    const prevent = (event: DragEvent): void => {
+      if (event.dataTransfer === null) return
+      const hasFiles = Array.from(event.dataTransfer.types).includes('Files')
+      if (!hasFiles) return
+      event.preventDefault()
+    }
+    window.addEventListener('dragover', prevent)
+    window.addEventListener('drop', prevent)
+    return () => {
+      window.removeEventListener('dragover', prevent)
+      window.removeEventListener('drop', prevent)
+    }
+  }, [])
+
   const tasks = useSessionStore((state) => state.tasks)
   const loaded = useSessionStore((state) => state.loaded)
   const selectedId = useSessionStore((state) => state.selectedId)

@@ -14,7 +14,7 @@
 | v0.3 | 2026-11-20 | **SSH 否决**；**MVP 只做本地模式**；远程降为 Phase 2「常驻网关 + WSS 零配置」；远程优先的过度设计收进附录 A；里程碑重排 M1–M6 / M7–M9；补齐 v0.2 遗留 8 处缺口；待确认项改为 Q1–Q7                                               |
 | v0.4 | 2026-11-23 | **并入实现事实**：新增 §12 主题系统、§13 模型管理、§14 发布工程与诊断；§5.4 补 6 条 `models:*` 通道；§7 补约束 16–18；§9/§10 补 U22–U24、E11、A14–A16。原 `docs/themes.md`、`docs/models.md`、`docs/release.md` 合并进正文后删除 |
 
-**v0.2 → v0.3 的三条决策变更**
+### v0.2 → v0.3 的三条决策变更
 
 1. **SSH 否决**：要求用户配置 sshd、密钥、`known_hosts`、堡垒机，属运维门槛而非产品能力，不作为产品路径；仅在 §3.1 保留一句「高级用户可选，暂不实现」。
 2. **本地优先**：MVP 只支持 pi 与客户端同机。`PiConnection` 抽象保留（为 Phase 2 预留），但 MVP 只实现 `LocalConnection`；`RemoteFs`、`SessionMirror`、`session:reconnect`、断连审批 TTL 等远程专属设计移出 MVP 正文，收进附录 A。
@@ -367,7 +367,7 @@ interface PiTransport {
 | `extui:respond`（实现 + 收窄） | pi `extension_ui_response` | §6.3 审批链路回包；M3 时只占位 `response: unknown` | **只认当前通道的未决 requestId**：主进程按 `sessionKey + requestId` 登记（`services/extui-registry.ts`），伪造 / 跨会话 / 通道已换 / 选项不在清单 → `REQUEST_NOT_FOUND` + `evt:diagnostic`（§9.4 S9'） |
 | `permission:status`            | 本地文件探测（无 pi 调用） | 设置页需要如实显示「扩展装没装 / 是否落后于源」    | 只读：不执行任何东西、不返回内容，只回路径 / 版本 / 协议号                                                                                                                                             |
 
-**「起始模式」= pi 的工具选择（A17，v0.4 修订）**
+#### 「起始模式」= pi 的工具选择（A17，v0.4 修订）
 
 客户端新建任务弹层里的「起始模式」**不是** pi 的 `--mode`（那是输出接口：`text` / `json` / `rpc`，客户端固定 `rpc`），也不是 WorkBuddy 的「办公 / 编程 / Plan 模式」——pi 没有会话级操作模式的概念。它在 pi 侧唯一有对应物的机制是**工具选择**（`docs/cli.md`）：
 
@@ -383,7 +383,7 @@ interface PiTransport {
 
 「办公 / 编程」这类预设属于 `AGENTS.md` / skills / extensions 范畴（不是启动参数），**不做假开关**。
 
-**「会话身份 agent」（A18，v0.5）**
+#### 「会话身份 agent」（A18，v0.5）
 
 新建任务可以选一个 agent，让它带着**自己的 system prompt / 模型 / 工具 / 规则**开始会话（`--agent <name>`）。两个必须知道的事实：
 
@@ -396,7 +396,7 @@ interface PiTransport {
 
 **子 agent（subagent）不是这个**：subagent 由 `pi-subagents` 扩展在会话**内部**派生（工具调用），子会话记录写在 `sessions/<cwd-key>/subagents/*.jsonl`（带 `parentSession`）；客户端只回放父会话 JSONL，因此看得到「调用了 subagent 的工具卡片」，看不到子会话的中间过程。
 
-**粘贴图片（A19，v0.6）**
+#### 粘贴图片（A19，v0.6）
 
 对话框支持直接把截图粘进来（截图工具 → `Ctrl+V`）。
 
@@ -404,6 +404,16 @@ interface PiTransport {
 - 规则（`lib/images.ts`，纯函数可单测）：只收 `png/jpeg/webp/gif`；单张 ≤ 8MB；每条消息 ≤ 4 张；超限/类型不符会**显式提示原因**（一次 Ctrl+V 静默失败最难排查）。
 - 传输：`session:prompt` 的 `images` 是 **data URL 数组**（不是裸 base64，主进程 `toImageContent` 按 `data:image/...;base64,` 解析并校验）。`message` 允许为空——**只有图片、没有文字也能发**（`superRefine` 保证两者不能同时为空）。
 - 界面：缩略图条 + 单张移除；发送后清空，不会污染下一条消息。
+
+#### 拖拽图片与客户端压缩（A20，v0.7）
+
+- **拖拽**：把图片文件拖到输入区即可（`dragover` 时整块高亮）。`dataTransfer` 里没有图片文件时不拦截，拖文本/链接仍走浏览器默认行为。
+- **窗口级兜底**：Electron（Chromium）默认会把窗口**导航到掉落的文件**，拖错位置就白屏。因此 `App` 在 `window` 上统一 `preventDefault` 掉含 `Files` 的 `dragover`/`drop`（只阻止，不处理）。
+- **客户端压缩**：pi 自己会把图片重编码到 2000×2000 / 4.5MiB(base64) / JPEG q80，但那发生在图片已经进了会话之后。客户端先压一次的价值是 IPC 更小、会话 JSONL 更小、首 token 更快。规则保守且可解释：
+  - 长边 ≤ 2000 且原始 ≤ 2MB → **原样发送**（不重编码，保住画质与透明通道）；
+  - 否则等比缩放到长边 2000，先试 PNG（保透明），仍超标才退化到 JPEG q0.85 → q0.7；
+  - 缩略图标注「已压缩」，`title` 里给原图尺寸与体积（用户能判断画质是否被牺牲）。
+- 8MB 是**硬上限**（超过直接拒绝并说明原因），2MB 是**压缩阈值**，两者是不同的事。
 
 **M5 审批的三个语义点（已在实现层钉死）**：
 
@@ -707,6 +717,7 @@ Phase 2 的连接级断连/重连见附录 A.5。
 - A13 会话 `agent_settled` 后产物面板显示工作区变更（git：`status`+`diff`；非 git：快照比对并**显式标注**），单文件 diff 超 2MB 截断有提示，越权路径 100% `PATH_DENIED`，「用系统程序打开」需用户确认且经主进程校验后走 `shell.openPath`。
 - A14 模型管理：客户端可列出 / 新增 / 编辑 / 删除 pi `models.json` 里的 provider 与模型，可设默认模型；**apiKey 明文不出主进程**（界面只有掩码）；写回保留客户端未建模字段；写入原子替换 + 备份，坏 JSON 拒绝改动；改动对已在运行的会话不生效且有明示。
 - A15 主题：内置 9 套主题 + 跟随系统，切换立即生效并持久化；每个主题正文对比度 ≥ 4.5、强调/状态/代码 token ≥ 3（单测按 WCAG 断言），浅色主题下代码高亮可读；历史配置值不致主题被重置。
+- A20 拖拽与压缩：可把图片文件拖入输入区（含窗口级导航兜底）；超过 2000px 长边或 2MB 的图片在客户端先等比压缩，缩略图标注「已压缩」并保留原图尺寸信息；8MB 以上直接拒绝并说明原因。
 - A19 粘贴图片：`Ctrl+V` 可把剪贴板截图粘进对话框（png/jpeg/webp/gif，单张 ≤8MB、每条 ≤4 张），发送时以 data URL 交给 pi；只有图无文字也可发送；超限/类型不符显式提示原因。
 - A18 会话身份 agent：新建任务可从扫描到的 agent 定义中选择（`--agent`）；`pi --help` 无该 flag 时不显示选择器，未知名字被客户端拒绝（不依赖 pi 的静默忽略）；子 agent（subagent）的中间过程不在父会话里，UI 不假装能看到。
 - A17 起始模式：新建任务可选「完整工具 / 只读 / 纯对话」，分别翻译成 pi 的默认工具集、`--exclude-tools write,edit,bash,powershell`、`--no-tools`（`tests/unit/local-connection.test.ts` + 集成断言 argv + E2E E14）；不在 UI 里假装能回显 pi 实际生效的工具集。
