@@ -5,6 +5,7 @@ import { createRouter } from '../../src/main/ipc/handlers'
 import { createArtifactsService } from '../../src/main/services/artifacts'
 import { createAuditLog } from '../../src/main/services/audit-log'
 import { createConfigStore } from '../../src/main/services/config-store'
+import { createModelConfigStore } from '../../src/main/services/model-config-store'
 import { createFsBridge } from '../../src/main/services/fs-bridge'
 import { createPiLocator } from '../../src/main/services/pi-locator'
 import { createSessionHistory } from '../../src/main/services/session-history'
@@ -56,6 +57,8 @@ function buildRouter(
         sessionRoot: () => 'C:/nonexistent-pi-sessions'
       }),
       // M6 产物层：无活跃会话（workspaceOf 返回 undefined）→ 任何路径都会被拒
+      // M7：模型管理通道（默认不调用；指向不存在的 agent 目录，避免读写开发者真配置）
+      modelConfigStore: createModelConfigStore({ agentDir: 'C:/nonexistent-pi-agent' }),
       artifacts: createArtifactsService({
         resolver: createWorkspaceResolver({
           liveCwd: (sessionKey) => sessionService.workspaceOf(sessionKey),

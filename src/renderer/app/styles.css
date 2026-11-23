@@ -92,6 +92,13 @@ kbd {
   font-size: 12px;
 }
 
+/* 顶栏动作按钮（模型管理入口）：不抢 brand/状态的视觉权重 */
+.app__bar-action {
+  margin-left: 4px;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
 .app__bar .badge {
   margin-left: auto;
 }
@@ -1638,4 +1645,170 @@ kbd {
 
 .diff__line--ctx {
   color: var(--text-dim);
+}
+
+/* ------------------------------------------------------- 模型管理弹层（M7） */
+
+.modal--wide {
+  width: min(920px, calc(100vw - 48px));
+}
+
+.models__section {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.models__section h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.models__section h4 {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.models__error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--error);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  font-size: 12px;
+}
+
+.models__error span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.models__list,
+.models__models {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.models__provider {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--bg-panel);
+}
+
+.models__provider-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.models__models {
+  margin-top: 6px;
+  padding-left: 2px;
+  display: grid;
+  gap: 4px;
+}
+
+.models__models li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.models__muted {
+  color: var(--text-faint);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.models__spacer {
+  flex: 1 1 auto;
+}
+
+.models__confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-strong);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.models__form {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.models__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 14px;
+}
+
+.models__grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.models__wide {
+  grid-column: 1 / -1;
+}
+
+.models__check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.models__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.models__table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-faint);
+  padding: 2px 6px 4px;
+}
+
+.models__table td {
+  padding: 2px 6px;
+  vertical-align: middle;
+}
+
+.models__table .field__input {
+  width: 100%;
+  min-width: 70px;
+}
+
+.badge--warn {
+  border-color: var(--warn);
+  color: var(--warn);
 }

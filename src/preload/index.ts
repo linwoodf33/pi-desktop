@@ -49,6 +49,14 @@ const api: PiApi = {
     state: (input) => invoke(IPC_INVOKE_CHANNELS.sessionState, input),
     stats: (input) => invoke(IPC_INVOKE_CHANNELS.sessionStats, input)
   },
+  models: {
+    read: () => invoke(IPC_INVOKE_CHANNELS.modelsRead, {}),
+    setDefault: (input) => invoke(IPC_INVOKE_CHANNELS.modelsSetDefault, input),
+    upsertProvider: (input) => invoke(IPC_INVOKE_CHANNELS.modelsUpsertProvider, input),
+    removeProvider: (input) => invoke(IPC_INVOKE_CHANNELS.modelsRemoveProvider, input),
+    upsertModel: (input) => invoke(IPC_INVOKE_CHANNELS.modelsUpsertModel, input),
+    removeModel: (input) => invoke(IPC_INVOKE_CHANNELS.modelsRemoveModel, input)
+  },
   model: {
     list: () => invoke(IPC_INVOKE_CHANNELS.modelList, {}),
     set: (input) => invoke(IPC_INVOKE_CHANNELS.modelSet, input)

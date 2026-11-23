@@ -1,4 +1,10 @@
 import type { EventChannel } from '../ipc-channels'
+import type {
+  ModelEntryInput,
+  ModelConfigView,
+  ModelConfigWriteResult,
+  UpsertProviderInput
+} from './model-config'
 import type { ConfigUpdateInput, ExtUiResponseInputDto } from './schemas'
 import type { Result } from './result'
 import type {
@@ -92,6 +98,28 @@ export interface PiInvokeApi {
     state(input: { sessionKey: string }): Promise<Result<AgentState>>
     /** M4：pi `get_session_stats` 的客户端视图（token/成本，不在客户端估算） */
     stats(input: { sessionKey: string }): Promise<Result<SessionStats>>
+  }
+  /**
+   * 模型管理（M7）：直接管理 pi 的 `models.json` 与 `settings.json#defaultModel`。
+   *
+   * 与上面的 `model`（会话切换当前模型）不同：这里改的是**磁盘上的配置**，
+   * 影响之后启动的会话，不影响已经在跑的会话。
+   */
+  models: {
+    /** apiKey 只返回 `hasApiKey` / `apiKeyHint`，明文不出主进程 */
+    read(): Promise<Result<ModelConfigView>>
+    /** `null` = 清除默认模型，恢复 pi 的自动选择 */
+    setDefault(input: { modelId: string | null }): Promise<Result<ModelConfigWriteResult>>
+    upsertProvider(input: UpsertProviderInput): Promise<Result<ModelConfigWriteResult>>
+    removeProvider(input: { id: string }): Promise<Result<ModelConfigWriteResult>>
+    upsertModel(input: {
+      providerId: string
+      model: ModelEntryInput
+    }): Promise<Result<ModelConfigWriteResult>>
+    removeModel(input: {
+      providerId: string
+      modelId: string
+    }): Promise<Result<ModelConfigWriteResult>>
   }
   model: {
     list(): Promise<Result<ModelInfo[]>>

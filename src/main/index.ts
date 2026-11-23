@@ -7,6 +7,7 @@ import type { StatusEvent } from '../shared/contracts/types'
 import { IpcFailure } from '../shared/contracts/result'
 
 import { createRouter } from './ipc/handlers'
+import { createModelConfigStore } from './services/model-config-store'
 import { createArtifactsService } from './services/artifacts'
 import { createAuditLog } from './services/audit-log'
 import { createConfigStore } from './services/config-store'
@@ -128,9 +129,13 @@ function bootstrappedWindow(): void {
     projectExtensionsDir: join(app.getAppPath(), '.pi', 'extensions')
   }
 
+  // 模型管理：默认指向 `<agent-dir>/models.json`（`PI_CODING_AGENT_DIR` 可覆盖）
+  const modelConfigStore = createModelConfigStore()
+
   const router = createRouter(
     {
       configStore,
+      modelConfigStore,
       sessionIndex,
       piLocator,
       sessionService,

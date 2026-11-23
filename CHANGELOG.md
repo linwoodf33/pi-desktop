@@ -1,5 +1,34 @@
 # 更新日志（Changelog）
 
+## v0.3.0（2026-11-23）
+
+模型管理：在客户端里直接管理 pi 的模型配置，不必手改 JSON。
+
+### 新增
+
+- **模型管理弹层**（顶栏「模型」，见 `docs/models.md`）
+  - 列出 `models.json` 里的 provider 与模型（上下文 / 最大输出 / thinking），
+    apiKey 只显示掩码或「无 key」；
+  - 新增 / 编辑 / 删除 provider 及其模型（id、显示名、Base URL、API 类型、key、模型行）；
+  - 设置默认模型（写入 `settings.json#defaultModel`，选「自动」= 清除）。
+- 6 个新 IPC 通道：`models:read` / `models:setDefault` / `models:upsertProvider` /
+  `models:removeProvider` / `models:upsertModel` / `models:removeModel`，全部 zod 校验。
+
+### 安全与数据约束
+
+- **apiKey 只进不出**：明文不进 IPC / 日志 / 审计；编辑时输入框为空（留空 = 保留原 key），
+  清除需显式勾选。支持字面量、`$ENV_NAME`、`!command` 三种形式（`!` 不会在客户端执行）。
+- **不动用户没建模的字段**：`compat` / `samplingParams` / `cost` / `headers` /
+  `modelOverrides` 等在写回时原样保留，避免「改个名字清空兼容参数」。
+- **写入可回退**：同目录临时文件 + `rename` 原子替换，覆盖前留 `.bak-<时间戳>`（保留最近 3 份）；
+  坏 JSON 直接拒绝改动，不静默覆盖。
+
+### 测试
+
+unit 653 / integration 48（+3 skip）/ e2e 38（新增模型管理 5 条：写盘、掩码、默认模型、删除）。
+
+---
+
 ## v0.2.0（2026-11-23）
 
 主题系统 + 发布工程化。**升级安全**：配置文件与旧版本兼容（`theme` 的旧值 `dark`/`light`

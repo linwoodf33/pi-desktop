@@ -19,7 +19,14 @@ import type {
   sessionPromptInputSchema,
   sessionResumeInputSchema
 } from '../../shared/contracts/schemas'
+import type {
+  ModelConfigView,
+  ModelEntryInput,
+  UpsertProviderInput
+} from '../../shared/contracts/model-config'
 import type { AppConfigView, BootState, PermissionStatus } from '../../shared/contracts/types'
+
+import type { ModelConfigStore } from '../services/model-config-store'
 
 import { IpcRouter, type HandlerMap } from './router'
 import type { ArtifactsService } from '../services/artifacts'
@@ -63,6 +70,8 @@ export interface RouterDeps {
   defaultCwd?: () => string
   /** M5：审批扩展的安装状态检测（`permission:status`） */
   permissionDeps?: PermissionExtensionDeps
+  /** M7：pi 的模型配置读写（`models:*`；apiKey 只进不出） */
+  modelConfigStore: ModelConfigStore
 }
 
 /** 短命令的通道级超时预算（§7 约束 13；比 pi 侧单命令 60s 略宽，pi 侧先超时） */
@@ -81,7 +90,14 @@ const DEFAULT_TIMEOUTS: Partial<Record<InvokeChannel, number>> = {
   [IPC_INVOKE_CHANNELS.fsListArtifacts]: 20_000,
   [IPC_INVOKE_CHANNELS.fsDiff]: 20_000,
   [IPC_INVOKE_CHANNELS.fsReadText]: 10_000,
-  [IPC_INVOKE_CHANNELS.artifactOpen]: 15_000
+  [IPC_INVOKE_CHANNELS.artifactOpen]: 15_000,
+  // 模型管理：只读写本地 JSON（原子替换 + 备份），正常是毫秒级
+  [IPC_INVOKE_CHANNELS.modelsRead]: 10_000,
+  [IPC_INVOKE_CHANNELS.modelsSetDefault]: 10_000,
+  [IPC_INVOKE_CHANNELS.modelsUpsertProvider]: 10_000,
+  [IPC_INVOKE_CHANNELS.modelsRemoveProvider]: 10_000,
+  [IPC_INVOKE_CHANNELS.modelsUpsertModel]: 10_000,
+  [IPC_INVOKE_CHANNELS.modelsRemoveModel]: 10_000
 }
 
 type SessionListInput = z.infer<typeof sessionListInputSchema>
@@ -204,6 +220,40 @@ export function createRouter(
 
     [IPC_INVOKE_CHANNELS.sessionStats]: (raw) =>
       service.stats({ sessionKey: (raw as SessionKeyInput).sessionKey }),
+
+    /**
+     * M7 模型管理：直接读写 pi 的 models.json / settings.json#defaultModel。
+     *
+     * 与 `model:set`（会话内切换）不同，这里改的是磁盘配置，**对已在运行的会话不生效**。
+     * 入参已由 router 的 zod schema 校验过；服务层再做一次（纵深防御）。
+     */
+    [IPC_INVOKE_CHANNELS.modelsRead]: (): Promise<ModelConfigView> =>
+      Promise.resolve(deps.modelConfigStore.read()),
+
+    [IPC_INVOKE_CHANNELS.modelsSetDefault]: (raw) => {
+      const input = raw as { modelId: string | null }
+      return Promise.resolve(deps.modelConfigStore.setDefaultModel(input.modelId))
+    },
+
+    [IPC_INVOKE_CHANNELS.modelsUpsertProvider]: (raw) => {
+      const input = raw as UpsertProviderInput
+      return Promise.resolve(deps.modelConfigStore.upsertProvider(input))
+    },
+
+    [IPC_INVOKE_CHANNELS.modelsRemoveProvider]: (raw) => {
+      const input = raw as { id: string }
+      return Promise.resolve(deps.modelConfigStore.removeProvider(input.id))
+    },
+
+    [IPC_INVOKE_CHANNELS.modelsUpsertModel]: (raw) => {
+      const input = raw as { providerId: string; model: ModelEntryInput }
+      return Promise.resolve(deps.modelConfigStore.upsertModel(input.providerId, input.model))
+    },
+
+    [IPC_INVOKE_CHANNELS.modelsRemoveModel]: (raw) => {
+      const input = raw as { providerId: string; modelId: string }
+      return Promise.resolve(deps.modelConfigStore.removeModel(input.providerId, input.modelId))
+    },
 
     [IPC_INVOKE_CHANNELS.configUpdate]: (raw): Promise<AppConfigView> =>
       deps.configStore.update(raw as ConfigUpdateInput),

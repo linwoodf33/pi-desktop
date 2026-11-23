@@ -4,6 +4,7 @@ import type { ForkPoint } from '../../shared/contracts/types'
 import { Artifacts } from '../features/artifacts/Artifacts'
 import { ApprovalHost } from '../features/chat/ApprovalHost'
 import { Conversation } from '../features/chat/Conversation'
+import { ModelManager } from '../features/models/ModelManager'
 import { SettingsPanel } from '../features/settings/SettingsPanel'
 import { NewTaskDialog } from '../features/tasks/NewTaskDialog'
 import { TaskList } from '../features/tasks/TaskList'
@@ -64,6 +65,8 @@ export function App() {
   const artifactsCollapsed = useArtifactStore((state) => state.collapsed)
 
   const [dialogOpen, setDialogOpen] = useState(false)
+  // M7：模型管理弹层（改 pi 的 models.json / 默认模型）
+  const [modelsOpen, setModelsOpen] = useState(false)
 
   useEffect(() => {
     const api = getApi()
@@ -96,7 +99,17 @@ export function App() {
     <div className="app">
       <header className="app__bar">
         <span className="app__brand">pi-desktop</span>
-        <span className="app__bar-note">本地工作台 · M5</span>
+        <span className="app__bar-note">本地工作台 · M7</span>
+        <button
+          type="button"
+          className="btn btn--ghost app__bar-action"
+          data-testid="open-models-manager"
+          onClick={() => {
+            setModelsOpen(true)
+          }}
+        >
+          模型
+        </button>
         <BridgeIndicator />
       </header>
 
@@ -167,6 +180,14 @@ export function App() {
           </details>
         )}
       </footer>
+
+      {modelsOpen ? (
+        <ModelManager
+          onClose={() => {
+            setModelsOpen(false)
+          }}
+        />
+      ) : null}
 
       {dialogOpen ? (
         <NewTaskDialog

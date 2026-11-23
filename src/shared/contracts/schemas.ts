@@ -2,6 +2,13 @@ import { z } from 'zod'
 
 import { IPC_INVOKE_CHANNELS, type InvokeChannel } from '../ipc-channels'
 import { sessionKeySchema } from './common'
+import {
+  removeModelInputSchema,
+  removeProviderInputSchema,
+  setDefaultModelInputSchema,
+  upsertModelInputSchema,
+  upsertProviderInputSchema
+} from './model-config'
 import { permissionPolicySchema } from './types'
 import { THEME_IDS } from './theme'
 
@@ -259,6 +266,12 @@ export const invokeInputSchemas = {
   [IPC_INVOKE_CHANNELS.sessionForkPoints]: sessionKeyInputSchema,
   [IPC_INVOKE_CHANNELS.modelList]: emptyInputSchema,
   [IPC_INVOKE_CHANNELS.modelSet]: modelSetInputSchema,
+  [IPC_INVOKE_CHANNELS.modelsRead]: emptyInputSchema,
+  [IPC_INVOKE_CHANNELS.modelsSetDefault]: setDefaultModelInputSchema,
+  [IPC_INVOKE_CHANNELS.modelsUpsertProvider]: upsertProviderInputSchema,
+  [IPC_INVOKE_CHANNELS.modelsRemoveProvider]: removeProviderInputSchema,
+  [IPC_INVOKE_CHANNELS.modelsUpsertModel]: upsertModelInputSchema,
+  [IPC_INVOKE_CHANNELS.modelsRemoveModel]: removeModelInputSchema,
   [IPC_INVOKE_CHANNELS.configUpdate]: configUpdateInputSchema,
   [IPC_INVOKE_CHANNELS.permissionStatus]: emptyInputSchema,
   [IPC_INVOKE_CHANNELS.extuiRespond]: extuiRespondInputSchema,

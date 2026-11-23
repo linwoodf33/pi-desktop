@@ -24,6 +24,15 @@ export const IPC_INVOKE_CHANNELS = {
   sessionForkPoints: 'session:forkPoints',
   modelList: 'model:list',
   modelSet: 'model:set',
+  /** 模型管理：读 pi 的 models.json / settings.json（apiKey 已脱敏） */
+  modelsRead: 'models:read',
+  /** 模型管理：设置 / 清除 pi settings.json 的 defaultModel */
+  modelsSetDefault: 'models:setDefault',
+  /** 模型管理：自定义 provider / model 的增删改（写 pi models.json） */
+  modelsUpsertProvider: 'models:upsertProvider',
+  modelsRemoveProvider: 'models:removeProvider',
+  modelsUpsertModel: 'models:upsertModel',
+  modelsRemoveModel: 'models:removeModel',
   /** M4：偏好持久化（并行上限 / 空闲回收 / pi 路径 / 会话目录，§5.4 注） */
   configUpdate: 'config:update',
   /** M5：审批扩展的安装/协议状态（只读，不返回任何内容） */

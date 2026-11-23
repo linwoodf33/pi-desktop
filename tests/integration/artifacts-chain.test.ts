@@ -11,6 +11,7 @@ import { createArtifactsService } from '../../src/main/services/artifacts'
 import { realpathNative } from '../../src/main/services/realpath-native'
 import { createAuditLog, type AuditEntry } from '../../src/main/services/audit-log'
 import { createConfigStore } from '../../src/main/services/config-store'
+import { createModelConfigStore } from '../../src/main/services/model-config-store'
 import { createFsBridge } from '../../src/main/services/fs-bridge'
 import { createPiLocator } from '../../src/main/services/pi-locator'
 import { createSessionHistory } from '../../src/main/services/session-history'
@@ -83,7 +84,9 @@ function buildHarness(workspaceRoot: string): Harness {
     sessionService: sessionService as never,
     fsBridge: createFsBridge({ showOpenDialog: () => Promise.reject(new Error('不应弹目录')) }),
     sessionHistory: createSessionHistory({ sessionRoot: () => join(workspaceRoot, '.sessions') }),
-    artifacts
+    artifacts,
+    // M7：本用例不碰模型管理通道，但 RouterDeps 要求注入（指向临时 agent 目录，绝不写用户真配置）
+    modelConfigStore: createModelConfigStore({ agentDir: join(workspaceRoot, '.agent') })
   })
 
   return { dispatch: (channel, payload) => router.dispatch(channel, payload), audit, opened }
