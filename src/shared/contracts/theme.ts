@@ -380,8 +380,10 @@ export function cssVarName(key: keyof ThemePalette): string {
 /** 调色板 → CSS 变量表（应用主题时一次性写入） */
 export function paletteToCssVars(palette: ThemePalette): Record<string, string> {
   const vars: Record<string, string> = {}
-  for (const [key, value] of Object.entries(palette)) {
-    vars[cssVarName(key as keyof ThemePalette)] = value
+  // 逐键取值而不是 `Object.entries`：后者的类型退化成 `[string, any][]`，
+  // 触发 @typescript-eslint/no-unsafe-assignment（CI 会红，本地 tail 却容易看漏）
+  for (const key of Object.keys(palette) as (keyof ThemePalette)[]) {
+    vars[cssVarName(key)] = palette[key]
   }
   return vars
 }
