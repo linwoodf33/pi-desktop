@@ -1,0 +1,29 @@
+appId: com.pidesktop.app
+productName: pi-desktop
+directories:
+  output: release
+  buildResources: resources
+files:
+  - out/**
+  - package.json
+  # A11 产物合规：不把 sourcemap / TypeScript 声明文件 / 纯类型包打进安装包。
+  # 上游依赖（react-markdown 生态）自带的 *.map 与 *.d.ts 对运行时零作用，
+  # 留在 asar 里既增加体积又让「产物无 *.map」的验收无法自证。
+  - '!**/*.map'
+  - '!**/*.d.ts'
+  - '!**/node_modules/@types/**'
+# A11（干净 Windows 10/11 x64 装完即启动，不要求预装 Node）：
+# 除了 `dir`（解包目录，供 E2E / 无 Node 环境冒烟用），额外产出 NSIS 安装包。
+# 仍然**不签名**：签名/公证排到正式发布（M6 之后），A11 只验证安装即启动。
+win:
+  target:
+    - target: dir
+    - target: nsis
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  # 默认「卸载时保留 userData」：配置/会话索引是用户资产，重装后应继续可用。
+  # 想彻底清理的用户可在卸载后手动删除 %APPDATA%\pi-desktop（报告里写明）。
+  deleteAppDataOnUninstall: false

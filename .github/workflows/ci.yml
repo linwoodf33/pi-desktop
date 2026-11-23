@@ -1,0 +1,180 @@
+# A10：Windows CI（架构文档 §10 A10「typecheck / lint / test:unit / test:e2e 全绿，CI 在 Windows 通过」）
+#
+# 设计原则
+# - **不降低断言强度**：每个 job 跑的就是本地同名 npm script，不跳过、不改阈值。
+# - **job 拆分**：静态检查 / 单测 / 集成 / 构建 / E2E / 真实 pi 各自独立，
+#   失败点一眼可见；构建产物通过 artifact 传给 E2E，避免重复构建。
+# - **真实 pi（real-pi）不是可选装饰**：本地门控命令
+#     PI_DESKTOP_REAL_PI=1 npx vitest run --project integration
+#   在 CI 里用 `npm i -g @earendil-works/pi-coding-agent@1.5.2` 准备 pi 后开启。
+#   若某次 runner 上 pi 不可用，应该修环境或明确降级为手动门控，**不要删掉这个 job**。
+# - **供应链加固**：所有 `uses:` 锁定到完整 commit SHA（行尾 `# vX.Y.Z` 注释便于维护/升级）；
+#   所有 `actions/checkout` 设 `persist-credentials: false`（避免 GITHUB_TOKEN 落进 `.git/config`
+#   后被 artifact 带出）；上传的 artifact 只有构建产物 `out/`，不含 `.git` / `node_modules` / 密钥。
+#   校验：`zizmor --format plain .github/workflows/ci.yml`（期望 0 error / 0 warning）。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # 统一锁定 Node 大版本（package.json engines 要求 >=22.19.0）
+  NODE_VERSION: '22'
+  # 让 npm 输出更可读、避免交互式提示
+  CI: 'true'
+  npm_config_fund: 'false'
+  npm_config_audit: 'false'
+
+jobs:
+  static:
+    name: 静态检查（typecheck + lint）
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+
+  unit:
+    name: 单元测试
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run test:unit
+
+  integration:
+    name: 集成测试（mock pi 链路）
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      # 默认（无 PI_DESKTOP_REAL_PI）跳过需要真实 pi 的用例，其余链路全跑
+      - run: npm run test:integration
+
+  build:
+    name: 生产构建
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: out
+          path: out
+          # 构建产物缺失时显式失败，避免下游 job 拿到空 artifact 后「假绿」
+          if-no-files-found: error
+          retention-days: 3
+
+  e2e:
+    name: E2E（真实打包产物 + Playwright）
+    runs-on: windows-latest
+    timeout-minutes: 40
+    needs: build
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: out
+          path: out
+      # E2E 启动的是 `out/main/index.js`（Electron 37）。windows-latest runner 有交互桌面会话，
+      # Electron 可直接启动；若某天 runner 镜像退化为无图形会话，用例会在启动阶段失败——
+      # 那时应显式记录原因并降级为手动门控（本地等价命令：npm run test:e2e），不要静默 skip。
+      - run: npx vitest run --project e2e
+
+  security:
+    name: 安全审计（A9：npm audit + S1–S6 产物核查）
+    runs-on: windows-latest
+    timeout-minutes: 20
+    needs: build
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: out
+          path: out
+      # A9 门禁（§10）：生产依赖高危即失败；S1–S6 静态核查 + 既有安全单测。
+      # 离线 / registry 不可达时 A9-dep 降级为 warning 并显式提示（不把网络问题当安全失败）。
+      - run: npm run audit:security -- --with-tests
+
+  real-pi:
+    name: 真实 pi 回归（PI_DESKTOP_REAL_PI=1）
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      # 与开发机一致的 pi 版本（扩展协议 v1 的事实来源）：固定 1.5.2，避免上游漂移导致假红/假绿。
+      # npm 全局 bin 目录（%APPDATA%\npm）已在 runner 的 PATH 上，pi-locator 能直接命中。
+      - name: 安装 pi（固定版本）
+        run: npm install --global @earendil-works/pi-coding-agent@1.5.2
+      - name: 确认 pi 可用
+        shell: pwsh
+        run: |
+          $pi = (Get-Command pi.cmd -ErrorAction SilentlyContinue) ?? (Get-Command pi -ErrorAction SilentlyContinue)
+          if ($null -eq $pi) { throw "pi 未安装成功：PATH 上找不到 pi.cmd/pi" }
+          Write-Host "pi = $($pi.Source)"
+          "PI_DESKTOP_REAL_PI_COMMAND=$($pi.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: 真实 pi 链路 + 审批扩展 + 分叉回归
+        env:
+          PI_DESKTOP_REAL_PI: '1'
+        run: npx vitest run --project integration

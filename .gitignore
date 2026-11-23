@@ -1,0 +1,21 @@
+node_modules/
+dist/
+out/
+coverage/
+release/
+node_modules/.tmp/
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.env
+.env.*
+!.env.example
+
+# 本地调试/工具缓存（不进仓库）
+.vitest/
+.ruff_cache/
+.pkglog
+.a12-probe.mjs
+*.tmp
+*.log.*

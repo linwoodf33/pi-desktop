@@ -1,0 +1,70 @@
+// pi-desktop IPC 通道白名单（架构文档 §5.4）
+//
+// 这里是 main / preload / renderer 共享的唯一通道来源：
+//   - main  侧按 INVOKE_CHANNELS 逐个 ipcMain.handle（未列出的通道不会被注册）
+//   - preload 侧只暴露与这些通道一一对应的方法，不存在任意 channel 透传
+//   - renderer 侧通过 window.pi 的强类型方法调用
+
+export const IPC_INVOKE_CHANNELS = {
+  appGetBoot: 'app:getBoot',
+  piLocate: 'pi:locate',
+  sessionList: 'session:list',
+  /** M3 补充：只读回放会话 JSONL（§5.4 注；不启动子进程，§6.1 第 4 步） */
+  sessionHistory: 'session:history',
+  sessionCreate: 'session:create',
+  sessionResume: 'session:resume',
+  sessionFork: 'session:fork',
+  sessionPrompt: 'session:prompt',
+  sessionAbort: 'session:abort',
+  sessionDispose: 'session:dispose',
+  sessionState: 'session:state',
+  /** M4：会话 token/成本统计（pi `get_session_stats`，§5.4 注） */
+  sessionStats: 'session:stats',
+  /** M4：可分叉点列表（pi `get_fork_messages`，§5.4 注） */
+  sessionForkPoints: 'session:forkPoints',
+  modelList: 'model:list',
+  modelSet: 'model:set',
+  /** M4：偏好持久化（并行上限 / 空闲回收 / pi 路径 / 会话目录，§5.4 注） */
+  configUpdate: 'config:update',
+  /** M5：审批扩展的安装/协议状态（只读，不返回任何内容） */
+  permissionStatus: 'permission:status',
+  /** M5：回 `extension_ui_response`（只接受当前通道、未决的 requestId） */
+  extuiRespond: 'extui:respond',
+  fsPickDirectory: 'fs:pickDirectory',
+  fsListArtifacts: 'fs:listArtifacts',
+  fsReadText: 'fs:readText',
+  fsDiff: 'fs:diff',
+  artifactOpen: 'artifact:open'
+} as const
+
+export type InvokeChannel = (typeof IPC_INVOKE_CHANNELS)[keyof typeof IPC_INVOKE_CHANNELS]
+
+/** 全部 invoke 通道，顺序稳定，便于注册与断言。 */
+export const INVOKE_CHANNELS: readonly InvokeChannel[] = Object.freeze(
+  Object.values(IPC_INVOKE_CHANNELS) as InvokeChannel[]
+)
+
+/** main → renderer 事件通道（§5.4 事件表）。 */
+export const IPC_EVENT_CHANNELS = {
+  record: 'evt:record',
+  extui: 'evt:extui',
+  status: 'evt:status',
+  diagnostic: 'evt:diagnostic'
+} as const
+
+export type EventChannel = (typeof IPC_EVENT_CHANNELS)[keyof typeof IPC_EVENT_CHANNELS]
+
+export const EVENT_CHANNELS: readonly EventChannel[] = Object.freeze(
+  Object.values(IPC_EVENT_CHANNELS) as EventChannel[]
+)
+
+const invokeChannelSet: ReadonlySet<string> = new Set(INVOKE_CHANNELS)
+const eventChannelSet: ReadonlySet<string> = new Set(EVENT_CHANNELS)
+
+export function isInvokeChannel(value: string): value is InvokeChannel {
+  return invokeChannelSet.has(value)
+}
+
+export function isEventChannel(value: string): value is EventChannel {
+  return eventChannelSet.has(value)
+}

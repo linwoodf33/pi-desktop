@@ -1,0 +1,51 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "sourceMap": false,
+    "types": ["node"],
+    "outDir": "./node_modules/.tmp/tsc-node"
+  },
+  "include": [
+    "electron.vite.config.ts",
+    "vitest.config.mts",
+    "src/main/**/*.ts",
+    "src/preload/**/*.ts",
+    "src/shared/**/*.ts",
+    // pi 扩展（M5 审批扩展）：由 pi 通过 jiti 加载，按 Node 环境做类型检查与单测
+    "src/extensions/**/*.ts",
+    // 纯函数型 renderer 代码（reducer / timeline / markdown 净化 / stores / actions）
+    // 被 tests/unit 直接引用，需一并纳入本工程。
+    // `lib` 里额外放开 DOM 类型仅因为 markdown.ts 依赖 DOM（dompurify）；
+    // main/preload 代码依然不得使用 DOM（运行时无 window）。
+    "src/renderer/lib/**/*.ts",
+    "src/renderer/stores/**/*.ts",
+    // markdown 净化单测直接渲染真实组件（react-dom/server，不需要 DOM/jsdom）
+    "src/renderer/features/**/*.tsx",
+    "src/renderer/features/**/*.ts",
+    // 统一测试目录约定：单元测试一律平铺在 tests/unit/ 下，由本（node）工程做类型检查
+    "tests/unit/**/*.ts",
+    "tests/integration/**/*.ts",
+    // Electron E2E（Playwright）同样是 Node 环境
+    "tests/e2e/**/*.ts",
+    // 性能压测（A7）：Playwright + Electron，Node 环境
+    "tests/perf/**/*.ts"
+  ]
+}

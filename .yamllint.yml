@@ -1,0 +1,7 @@
+# yaml-lint 配置（仅约束仓库内 YAML 的排版，不涉及任何运行时断言）。
+#
+# 为什么放宽 line-length：`.github/workflows/ci.yml` 的设计说明是中文注释，
+# 80 列会把一句话反复折断、降低可读性；130 列足以覆盖现有内容且仍能阻止超长行。
+rules:
+  line-length:
+    max: 130
