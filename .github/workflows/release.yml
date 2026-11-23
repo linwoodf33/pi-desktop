@@ -132,40 +132,50 @@ jobs:
           # 同上：tag 名只经 env 进入 shell
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          $notes = @"
-          Windows x64 安装包（NSIS，per-user，无需管理员权限）。
+          # 这一段刻意不用 here-string / 反引号 / -f / Out-File：
+          # - 双引号字符串里反引号是转义符（会把 `$env:X` 变成字面量，v0.2.0 首次发布踩过）；
+          # - 单引号 here-string 的 '@ 必须顶格，顶格又会截断 YAML 块标量；
+          # - Out-File / Get-Content 的默认编码在 Windows PowerShell 5.1 与 pwsh 7 不同，
+          #   中文会变乱码。改为显式 UTF-8（无 BOM）读写。
+          $utf8 = New-Object System.Text.UTF8Encoding($false)
+          $notesPath = Join-Path $PWD 'release-notes.md'
 
-          - 版本：`v$env:PKG_VERSION`
-          - 文件：`$env:INSTALLER_NAME`
-          - SHA-256：`$env:INSTALLER_SHA256`
+          $lines = @(
+            'Windows x64 安装包（NSIS，per-user，无需管理员权限）。'
+            ''
+            ('- 版本：v' + $env:PKG_VERSION)
+            ('- 文件：' + $env:INSTALLER_NAME)
+            ('- SHA-256：' + $env:INSTALLER_SHA256)
+            ''
+            '**本产物未做代码签名**（仓库未配置签名证书），首次运行 Windows SmartScreen 可能提示'
+            '“已保护你的电脑”，需点「更多信息 → 仍要运行」。校验方式（下载到任意目录后执行，结果应与上面一致）：'
+            ('    Get-FileHash ' + $env:INSTALLER_NAME + ' -Algorithm SHA256')
+            ''
+            '安装包内置 Electron 运行时，**不要求目标机预装 Node 或 pi**；pi 需另行安装，'
+            '客户端会在设置里定位 pi 可执行文件（也可手动指定路径）。'
+          )
+          $notes = $lines -join [Environment]::NewLine
 
-          **本产物未做代码签名**（仓库未配置签名证书），首次运行 Windows SmartScreen 可能提示
-          “已保护你的电脑”，需点「更多信息 → 仍要运行」。校验方式：
-          `Get-FileHash .\$env:INSTALLER_NAME -Algorithm SHA256` 应与上面一致。
-
-          安装包内置 Electron 运行时，**不要求目标机预装 Node 或 pi**；pi 需另行安装，
-          客户端会在设置里定位 pi 可执行文件（也可手动指定路径）。
-          "@
-          $notes | Out-File -FilePath release-notes.md -Encoding utf8
-
-          # 把 CHANGELOG.md 里对应版本的段落并进 notes（有就并，没有就只发上面的模板）
-          if (Test-Path 'CHANGELOG.md') {
-            $lines = Get-Content 'CHANGELOG.md' -Encoding utf8
-            # 用负向前瞻卡边界：标题是 `## v0.2.0（日期）`，后面是全角括号而不是空格，
-            # 所以不能要求 `\s`；也不能裸匹配（v0.2.0 会命中 v0.2.01）
+          # 把 CHANGELOG 里对应版本的段落并进 notes（有就并，没有就只发上面的模板）
+          $changelogPath = Join-Path $PWD 'CHANGELOG.md'
+          if (Test-Path $changelogPath) {
+            $all = [regex]::Split([IO.File]::ReadAllText($changelogPath, $utf8), "\r?\n")
+            # 负向前瞻卡边界：标题形如 `## v0.2.0（日期）`，且不能命中 v0.2.01
             $pattern = '^## v' + [regex]::Escape($env:PKG_VERSION) + '(?![0-9.])'
-            $start = ($lines | Select-String -Pattern $pattern | Select-Object -First 1).LineNumber
+            $start = ($all | Select-String -Pattern $pattern | Select-Object -First 1).LineNumber
             if ($null -ne $start) {
-              $rest = $lines[$start..($lines.Count - 1)]
-              $end = ($rest | Select-String -Pattern '^## v' | Select-Object -First 1).LineNumber
-              $section = if ($null -ne $end) { ($rest[0..($end - 2)] -join "`n") } else { ($rest -join "`n") }
-              Add-Content -Path release-notes.md -Value "`n---`n" -Encoding utf8
-              Add-Content -Path release-notes.md -Value $section -Encoding utf8
-              Write-Host "已并入 CHANGELOG 的 v$env:PKG_VERSION 段落"
+              $rest = $all[($start - 1)..($all.Count - 1)]
+              $next = ($rest | Select-Object -Skip 1 | Select-String -Pattern '^## v' | Select-Object -First 1).LineNumber
+              $sep = [Environment]::NewLine
+              $section = if ($null -ne $next) { $rest[0..($next - 2)] -join $sep } else { $rest -join $sep }
+              $notes = $notes + [Environment]::NewLine + '---' + [Environment]::NewLine + $section
+              Write-Host ("已并入 CHANGELOG 的 v{0} 段落" -f $env:PKG_VERSION)
             } else {
-              Write-Host "CHANGELOG 中没有 v$env:PKG_VERSION 段落，仅使用模板 notes"
+              Write-Host ("CHANGELOG 中没有 v{0} 段落，仅使用模板 notes" -f $env:PKG_VERSION)
             }
           }
+
+          [IO.File]::WriteAllText($notesPath, $notes, $utf8)
           gh release create $env:TAG_NAME `
             "release/$env:INSTALLER_NAME" `
             "release/$env:INSTALLER_NAME.blockmap" `
