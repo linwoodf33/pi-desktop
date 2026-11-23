@@ -12,7 +12,10 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { detectPermissionExtension, buildPermissionPolicyEnv } from '../../src/main/services/permission-extension'
+import {
+  detectPermissionExtension,
+  buildPermissionPolicyEnv
+} from '../../src/main/services/permission-extension'
 import { resolveTargetDir } from '../../scripts/install-permission-extension.mjs'
 
 /**
@@ -122,7 +125,8 @@ describe('安装脚本：冲突与路径校验（不得破坏用户扩展）', (
   })
 
   it('目标路径逃出主目录/cwd → 退出码 4', () => {
-    const outside = process.platform === 'win32' ? 'C:\\Windows\\Temp\\pi-perm' : '/tmp/../../../etc'
+    const outside =
+      process.platform === 'win32' ? 'C:\\Windows\\Temp\\pi-perm' : '/tmp/../../../etc'
     const result = run(['--target', outside])
     expect(result.code).toBe(4)
     expect(result.stderr).toContain('路径校验失败')

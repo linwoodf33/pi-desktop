@@ -59,7 +59,8 @@ beforeAll(async () => {
       PI_CODING_AGENT_SESSION_DIR: sessionDir,
       MOCK_PI_DELAY_MS: '60',
       // 让一轮持续 ~2s，E4 才有稳定的「运行中」窗口可以点停止
-      MOCK_PI_REPLY: '已经 列出 当前 目录 内容 如下 请 查看 附件 列表 一共 两个 文件 都 很 正常 没有 异常 继续 保持 已 完成 收尾 结束',
+      MOCK_PI_REPLY:
+        '已经 列出 当前 目录 内容 如下 请 查看 附件 列表 一共 两个 文件 都 很 正常 没有 异常 继续 保持 已 完成 收尾 结束',
       MOCK_PI_TOOL: '1',
       // mock 的会话文件放在**会话根内**（session:history 的路径校验要求）：
       // B1 的 fork 用例需要它，且文件由 mock 惰性落盘（mock 不写盘）。
@@ -330,7 +331,8 @@ describe('E3 工具审批（允许 / 拒绝）', () => {
 
   afterAll(async () => {
     await app2?.close().catch(() => {})
-    if (tempRoot2 !== undefined) await rm(tempRoot2, { recursive: true, force: true }).catch(() => {})
+    if (tempRoot2 !== undefined)
+      await rm(tempRoot2, { recursive: true, force: true }).catch(() => {})
   })
 
   /** 新建任务并等到输入区可用 */
@@ -444,7 +446,9 @@ describe('E10 产物 diff 与系统程序打开（M6）', () => {
       .toBe('空闲')
 
     // 列表出现该文件，并标注「非 git 工作区，快照比对」
-    const item = page.locator('[data-testid="artifact-item"]').filter({ hasText: 'artifact-e10.txt' })
+    const item = page
+      .locator('[data-testid="artifact-item"]')
+      .filter({ hasText: 'artifact-e10.txt' })
     await expect.poll(async () => item.count(), { timeout: 30_000 }).toBeGreaterThan(0)
     await expect
       .poll(async () => page.textContent('[data-testid="artifacts-mode"]'), { timeout: 20_000 })

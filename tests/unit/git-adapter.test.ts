@@ -223,7 +223,6 @@ describe.skipIf(!(await gitAvailable()))('真实 git 仓库夹具', () => {
   })
 })
 
-
 /**
  * 回归（CI 首跑暴露）：`mkdtemp` 在 Windows runner 上返回 **8.3 短路径**
  * （`…\RUNNER~1\AppData\Local\Temp\...`），而 `git rev-parse --show-toplevel`
