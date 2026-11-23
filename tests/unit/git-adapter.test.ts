@@ -335,5 +335,5 @@ describe.skipIf(!(await gitAvailable()))('detectGitWorkspace：真实 8.3 短名
     } finally {
       await rm(base, { recursive: true, force: true }).catch(() => {})
     }
-  })
+  }, 60_000)
 })

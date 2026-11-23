@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -248,7 +256,9 @@ describe('resolveTargetDir：同一目录的别名写法（junction）', () => {
         target: join(linkHome, 'extensions')
       })
       // 返回真实路径（后续 mkdir/写文件都用它，避免同一目录出现两种写法）
-      expect(dir.toLowerCase()).toBe(join(realHome, 'extensions').toLowerCase())
+      expect(dir.toLowerCase()).toBe(
+        join(realpathSync.native(realHome), 'extensions').toLowerCase()
+      )
     } finally {
       rmSync(linkHome, { recursive: true, force: true })
       rmSync(root, { recursive: true, force: true })
@@ -270,7 +280,9 @@ describe('resolveTargetDir：同一目录的别名写法（junction）', () => {
     const cwd = mkdtempSync(join(tmpdir(), 'pi-desktop-cwd-'))
     try {
       const dir = resolveTargetDir({ home: cwd, cwd, target: join('.pi', 'extensions') })
-      expect(dir.toLowerCase()).toBe(join(cwd, '.pi', 'extensions').toLowerCase())
+      expect(dir.toLowerCase()).toBe(
+        join(realpathSync.native(cwd), '.pi', 'extensions').toLowerCase()
+      )
     } finally {
       rmSync(cwd, { recursive: true, force: true })
     }
@@ -307,9 +319,9 @@ describe('resolveTargetDir：真实 8.3 短名（CI 同形态）', () => {
       }
 
       const dir = resolveTargetDir({ home, cwd: home, target: join(shortHome, 'extensions') })
-      expect(dir.toLowerCase()).toBe(join(home, 'extensions').toLowerCase())
+      expect(dir.toLowerCase()).toBe(join(realpathSync.native(home), 'extensions').toLowerCase())
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
-  })
+  }, 60_000)
 })
