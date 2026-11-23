@@ -174,7 +174,36 @@ jobs:
           if ($null -eq $pi) { throw "pi 未安装成功：PATH 上找不到 pi.cmd/pi" }
           Write-Host "pi = $($pi.Source)"
           "PI_DESKTOP_REAL_PI_COMMAND=$($pi.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      # 真实 pi 跑一轮对话需要上游 provider 凭据（pi 側报错 `No API key found for the selected model`）。
+      # 仓库里**不**存任何密钥：未配置 secret 时显式跳过并打 warning，不把「缺凭据」伪装成测试失败。
+      - name: 检查 provider 凭据
+        id: creds
+        shell: pwsh
+        env:
+          SECRET_OPENAI: ${{ secrets.OPENAI_API_KEY }}
+          SECRET_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY }}
+          SECRET_PI: ${{ secrets.PI_API_KEY }}
+        run: |
+          $has = $false
+          foreach ($v in @($env:SECRET_OPENAI, $env:SECRET_ANTHROPIC, $env:SECRET_PI)) {
+            if (-not [string]::IsNullOrWhiteSpace($v)) { $has = $true }
+          }
+          if (-not $has) {
+            Write-Host "未配置 OPENAI_API_KEY / ANTHROPIC_API_KEY / PI_API_KEY secret，真实 pi 回归将跳过"
+          }
+          "HAS_PROVIDER_CREDS=$($has.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: 真实 pi 链路 + 审批扩展 + 分叉回归
+        if: env.HAS_PROVIDER_CREDS == 'true'
         env:
           PI_DESKTOP_REAL_PI: '1'
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PI_API_KEY: ${{ secrets.PI_API_KEY }}
         run: npx vitest run --project integration
+      # 未配凭据时显式记录：job 保持绿色（不假红），但 warning 可见，避免误以为「真实 pi 已验证」
+      - name: 未配置凭据 → 显式跳过
+        if: env.HAS_PROVIDER_CREDS != 'true'
+        run: |
+          $msg = '未配置 provider 凭据 secret（OPENAI_API_KEY / ANTHROPIC_API_KEY / PI_API_KEY）。'
+          $msg += '本地用 PI_DESKTOP_REAL_PI=1 npm run test:integration 跑真实链路。'
+          echo "::warning title=真实 pi 回归已跳过::$msg"

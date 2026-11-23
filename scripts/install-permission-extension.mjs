@@ -28,9 +28,17 @@
  */
 
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import process, { stdout, stderr } from 'node:process'
 import { fileURLToPath } from 'node:url'
 
@@ -73,24 +81,49 @@ export class ConflictError extends Error {
 }
 
 /**
- * 目标路径校验：绝对化 → 必须在主目录或 cwd 之内 → 不能是已存在的普通文件。
+ * 真实路径归一：从最深的**已存在**祖先开始 realpath，再把不存在的那几段拼回去。
+ *
+ * 为什么需要：同一目录可能有两种写法（Windows 8.3 短路径 `RUNNER~1` vs 长路径
+ * `runneradmin`、`subst` 映射盘）。`path.relative` 是纯词法运算，前缀不同就判「不在根内」，
+ * 于是 CI 的临时目录（短路径）会被当成越权而被拒绝（退出码 4）。
+ */
+function canonicalPathSync(value, realPath = realpathSync) {
+  let current = value
+  const tail = []
+  while (!existsSync(current)) {
+    const parent = dirname(current)
+    if (parent === current) return value
+    tail.unshift(basename(current))
+    current = parent
+  }
+  try {
+    return join(realPath(current), ...tail)
+  } catch {
+    return value
+  }
+}
+
+/**
+ * 目标路径校验：绝对化 → 归一真实路径 → 必须在主目录或 cwd 之内 → 不能是已存在的普通文件。
  * `..` 逃逸在 resolve 之后由「是否落在允许根内」统一拦掉。
  */
 export function resolveTargetDir(options = {}) {
   const home = options.home ?? homedir()
   const cwd = options.cwd ?? process.cwd()
+  const realPath = options.realPath ?? realpathSync
+  const canonical = (value) => canonicalPathSync(value, realPath)
   const raw = options.target ?? join(home, '.pi', 'agent', 'extensions')
-  const resolved = resolve(cwd, raw)
+  const resolved = canonical(resolve(cwd, raw))
   if (!isAbsolute(resolved)) throw new PathError(`目标路径必须是绝对路径：${raw}`)
 
-  const roots = [resolve(home), resolve(cwd)]
+  const roots = [canonical(resolve(home)), canonical(resolve(cwd))]
   const inside = roots.some((root) => {
     const rel = relative(root, resolved)
     return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel) && !rel.startsWith(`..${sep}`))
   })
   if (!inside) {
     throw new PathError(
-      `目标路径必须位于用户主目录（${resolve(home)}）或当前工作目录（${resolve(cwd)}）之内，收到：${resolved}`
+      `目标路径必须位于用户主目录（${roots[0]}）或当前工作目录（${roots[1]}）之内，收到：${resolved}`
     )
   }
   if (existsSync(resolved) && !statSync(resolved).isDirectory()) {

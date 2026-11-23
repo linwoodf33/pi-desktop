@@ -219,3 +219,79 @@ describe.skipIf(!(await gitAvailable()))('真实 git 仓库夹具', () => {
     await rm(restored, { force: true }).catch(() => {})
   })
 })
+
+
+/**
+ * 回归（CI 首跑暴露）：`mkdtemp` 在 Windows runner 上返回 **8.3 短路径**
+ * （`C:\Users\RUNNER~1\AppData\Local\Temp\...`），而 `git rev-parse --show-toplevel`
+ * 返回**长路径**（`C:/Users/runneradmin/...`）。两者不共享前缀 → 词法比较判「不在仓库内」
+ * → 工作区被静默降级成快照比对（CI 上就表现为 git 用例全红）。
+ *
+ * 这里用注入的 `realPath` 确定性地模拟「同一目录的两种写法」，不依赖 runner 是否开启 8.3。
+ */
+describe('detectGitWorkspace：短路径/长路径别名（同目录两种写法）', () => {
+  const SHORT_ROOT = 'C:\\Users\\RUNNER~1'
+  const LONG_ROOT = 'C:\\Users\\runneradmin'
+
+  /** 模拟 `fs.realpath`：把短路径前缀换成真实长路径前缀 */
+  const fakeRealPath = (value: string): Promise<string> => {
+    const normalized = value.replace(/\//g, '\\')
+    if (normalized.toLowerCase().startsWith(SHORT_ROOT.toLowerCase())) {
+      return Promise.resolve(LONG_ROOT + normalized.slice(SHORT_ROOT.length))
+    }
+    return Promise.resolve(normalized)
+  }
+
+  it('工作区用短路径、git 返回长路径 → 仍识别为同一仓库且 prefix 正确', async () => {
+    const detected = await detectGitWorkspace({
+      // 短形态的「仓库根\sub」
+      workspaceRoot: `${SHORT_ROOT}\\repo\\sub`,
+      realPath: fakeRealPath,
+      run: (args) => {
+        // 这次探测只会调用 rev-parse --show-toplevel
+        expect(args).toEqual(['rev-parse', '--show-toplevel'])
+        // git 用正斜杠输出长路径
+        return Promise.resolve({
+          code: 0,
+          stdout: Buffer.from('C:/Users/runneradmin/repo\n', 'utf8'),
+          stderr: ''
+        })
+      }
+    })
+
+    expect(detected.workspace).toBeDefined()
+    expect(detected.workspace?.repoRoot).toBe(join(LONG_ROOT, 'repo'))
+    // 工作区根同样归一成长路径，prefix 才可能算对
+    expect(detected.workspace?.workspaceRoot).toBe(join(LONG_ROOT, 'repo', 'sub'))
+    expect(detected.workspace?.prefix).toBe('sub')
+  })
+
+  it('归一只改形态不改边界：确实不在仓库内时仍然拒绝', async () => {
+    const detected = await detectGitWorkspace({
+      workspaceRoot: join(LONG_ROOT, 'repo', 'sub'),
+      realPath: fakeRealPath,
+      run: () =>
+        Promise.resolve({
+          code: 0,
+          stdout: Buffer.from('C:/Users/runneradmin/other\n', 'utf8'),
+          stderr: ''
+        })
+    })
+    expect(detected.workspace).toBeUndefined()
+    expect(detected.reason).toContain('不在 git 仓库根内')
+  })
+
+  it('realpath 抛错（路径不存在）时退回词法路径，不抛异常', async () => {
+    const detected = await detectGitWorkspace({
+      workspaceRoot: '/does/not/exist/repo/sub',
+      realPath: () => Promise.reject(new Error('ENOENT')),
+      run: () =>
+        Promise.resolve({
+          code: 0,
+          stdout: Buffer.from('/does/not/exist/repo\n', 'utf8'),
+          stderr: ''
+        })
+    })
+    expect(detected.workspace?.prefix).toBe('sub')
+  })
+})

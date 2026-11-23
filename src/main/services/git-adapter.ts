@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { lstat } from 'node:fs/promises'
+import { lstat, realpath } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 import type { ArtifactChange, ArtifactEntry } from '../../shared/contracts/types'
@@ -77,6 +77,28 @@ export interface DetectGitOptions {
   workspaceRoot: string
   run?: GitRunner
   timeoutMs?: number
+  /** 测试注入：真实路径归一（默认 `fs.realpath`） */
+  realPath?: (value: string) => Promise<string>
+}
+
+/**
+ * 真实路径归一（不存在时退回词法路径）。
+ *
+ * 为什么必须做：「词法上同属一个目录」的两串路径可能**不共享前缀**。
+ * 典型场景：Windows 8.3 短路径（`C:\Users\RUNNER~1\...`）vs `git rev-parse --show-toplevel`
+ * 返回的长路径（`C:/Users/runneradmin/...`），以及 `subst` 映射盘符。
+ * 不做归一 → `isInsideRoot(long, short)` 为 false → 明明在仓库里的工作区被判成「非 git」，
+ * 静默降级成快照比对（CI 上就是这样暴露的）。
+ */
+async function canonicalPath(
+  value: string,
+  realPath: (value: string) => Promise<string> = realpath
+): Promise<string> {
+  try {
+    return await realPath(value)
+  } catch {
+    return value
+  }
 }
 
 /**
@@ -90,7 +112,9 @@ export async function detectGitWorkspace(
 ): Promise<{ workspace?: GitWorkspace; reason?: string }> {
   const run = options.run ?? defaultGitRunner
   const timeoutMs = options.timeoutMs ?? 5_000
-  const workspaceRoot = resolve(options.workspaceRoot)
+  const realPath = options.realPath ?? ((value: string) => realpath(value))
+  // 两侧都归一成真实路径后再比较：git 输出长路径，调用方可能拿到短路径/映射盘（见 canonicalPath）
+  const workspaceRoot = await canonicalPath(resolve(options.workspaceRoot), realPath)
 
   const toplevel = await run(['rev-parse', '--show-toplevel'], { cwd: workspaceRoot, timeoutMs })
   if (toplevel.code !== 0) {
@@ -102,7 +126,7 @@ export async function detectGitWorkspace(
           : `git 不可用（${firstLine(stderr)}），回退到快照比对`
     }
   }
-  const repoRoot = resolve(toplevel.stdout.toString('utf8').trim())
+  const repoRoot = await canonicalPath(resolve(toplevel.stdout.toString('utf8').trim()), realPath)
   if (!isInsideRoot(repoRoot, workspaceRoot)) {
     return { reason: '工作区不在 git 仓库根内，回退到快照比对' }
   }

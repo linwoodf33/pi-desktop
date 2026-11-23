@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { detectPermissionExtension, buildPermissionPolicyEnv } from '../../src/main/services/permission-extension'
+import { resolveTargetDir } from '../../scripts/install-permission-extension.mjs'
 
 /**
  * 扩展安装脚本的黑盒测试（M5 第 2 项）。
@@ -202,5 +203,76 @@ describe('策略下发（环境变量）', () => {
       timeoutMs: 60_000,
       protocolVersion: 1
     })
+  })
+})
+
+/**
+ * 回归（CI 首跑暴露）：临时目录来自 `mkdtemp`，在 Windows runner 上是 **8.3 短路径**
+ * （`C:\Users\RUNNER~1\AppData\Local\Temp\...`），而 `homedir()` 是长路径
+ * （`C:\Users\runneradmin`）。纯词法 `path.relative` 判前缀不同 → 被当成越权，退出码 4，
+ * 连带后续「装好之后 detectPermissionExtension 报告 installed」用例全红。
+ *
+ * 用注入的 `realPath` 确定性复现，不依赖 runner 是否开启 8.3。
+ */
+describe('resolveTargetDir：同一目录的别名写法（junction）', () => {
+  /**
+   * 用 junction 造两个“词法不同、实际同一个目录”的绝对路径。
+   *
+   * CI 上的真实触发形式是 Windows 8.3 短路径（`RUNNER~1` vs `runneradmin`），
+   * 但那取决于卷上是否开启 8.3，不能当测试前提；junction 同样制造“不共享词法前缀”的别名，
+   * 且不需要提权（`mklink /J` 普通用户即可），也覆盖了 subst/映射盘的同类场景。
+   */
+  function makeJunction(link: string, target: string): boolean {
+    if (process.platform !== 'win32') return false
+    const result = spawnSync('cmd', ['/c', 'mklink', '/J', link, target], { encoding: 'utf8' })
+    return result.status === 0 && existsSync(link)
+  }
+
+  it('主目录是真实路径、target 走别名路径 → 不报路径校验失败且返回归一后的真实路径', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pi-desktop-alias-'))
+    const realHome = join(root, 'real-home')
+    const linkHome = join(root, 'link-home')
+    mkdirSync(realHome, { recursive: true })
+    const linked = makeJunction(linkHome, realHome)
+
+    try {
+      if (!linked) {
+        // 不假装通过：拿不到 junction 就显式跳过（与既有 symlink 用例同一口径）
+        console.warn('[skip] 当前环境无法创建 junction，跳过别名路径用例')
+        return
+      }
+
+      const dir = resolveTargetDir({
+        home: realHome,
+        cwd: root,
+        target: join(linkHome, 'extensions')
+      })
+      // 返回真实路径（后续 mkdir/写文件都用它，避免同一目录出现两种写法）
+      expect(dir.toLowerCase()).toBe(join(realHome, 'extensions').toLowerCase())
+    } finally {
+      rmSync(linkHome, { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('归一只改形态不改边界：真正越权的 target 仍然报错', () => {
+    const home = mkdtempSync(join(tmpdir(), 'pi-desktop-home-'))
+    try {
+      expect(() =>
+        resolveTargetDir({ home, cwd: home, target: 'C:\\Windows\\Temp\\pi-perm' })
+      ).toThrow(/必须位于用户主目录/)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('相对路径按 cwd 解析后仍受根约束', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'pi-desktop-cwd-'))
+    try {
+      const dir = resolveTargetDir({ home: cwd, cwd, target: join('.pi', 'extensions') })
+      expect(dir.toLowerCase()).toBe(join(cwd, '.pi', 'extensions').toLowerCase())
+    } finally {
+      rmSync(cwd, { recursive: true, force: true })
+    }
   })
 })
