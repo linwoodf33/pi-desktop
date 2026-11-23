@@ -147,6 +147,25 @@ jobs:
           客户端会在设置里定位 pi 可执行文件（也可手动指定路径）。
           "@
           $notes | Out-File -FilePath release-notes.md -Encoding utf8
+
+          # 把 CHANGELOG.md 里对应版本的段落并进 notes（有就并，没有就只发上面的模板）
+          if (Test-Path 'CHANGELOG.md') {
+            $lines = Get-Content 'CHANGELOG.md' -Encoding utf8
+            # 用负向前瞻卡边界：标题是 `## v0.2.0（日期）`，后面是全角括号而不是空格，
+            # 所以不能要求 `\s`；也不能裸匹配（v0.2.0 会命中 v0.2.01）
+            $pattern = '^## v' + [regex]::Escape($env:PKG_VERSION) + '(?![0-9.])'
+            $start = ($lines | Select-String -Pattern $pattern | Select-Object -First 1).LineNumber
+            if ($null -ne $start) {
+              $rest = $lines[$start..($lines.Count - 1)]
+              $end = ($rest | Select-String -Pattern '^## v' | Select-Object -First 1).LineNumber
+              $section = if ($null -ne $end) { ($rest[0..($end - 2)] -join "`n") } else { ($rest -join "`n") }
+              Add-Content -Path release-notes.md -Value "`n---`n" -Encoding utf8
+              Add-Content -Path release-notes.md -Value $section -Encoding utf8
+              Write-Host "已并入 CHANGELOG 的 v$env:PKG_VERSION 段落"
+            } else {
+              Write-Host "CHANGELOG 中没有 v$env:PKG_VERSION 段落，仅使用模板 notes"
+            }
+          }
           gh release create $env:TAG_NAME `
             "release/$env:INSTALLER_NAME" `
             "release/$env:INSTALLER_NAME.blockmap" `

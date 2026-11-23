@@ -68,11 +68,11 @@ Release notes 里写明这一点，并给出校验命令。要签名时给 job �
 ## 3. 校验下载到的安装包
 
 ```powershell
-Get-FileHash .\pi-desktop-0.1.0-x64.exe -Algorithm SHA256   # 与 SHA256SUMS.txt / Release 页面一致
+Get-FileHash .\pi-desktop-<版本>-x64.exe -Algorithm SHA256   # 与 SHA256SUMS.txt / Release 页面一致
 ```
 
 GitHub 的 Release 资产 API 也会给出每个资产的 `digest`（`sha256:…`），
-用 `gh api repos/<owner>/<repo>/releases/tags/v0.1.0` 可以核对，不必下载 `SHA256SUMS.txt`。
+用 `gh api repos/<owner>/<repo>/releases/tags/v<版本>` 可以核对，不必下载 `SHA256SUMS.txt`。
 
 > 不同机器构建的产物 SHA 不同（NSIS 打包含时间戳，不可复现）；以 **CI 发布的那份** 为准。
 
@@ -104,8 +104,8 @@ gh ann <jobId>        # = gh api repos/linwoodf33/pi-desktop/check-runs/<jobId>/
 
 ```bash
 npm run icon          # 若改了 svg
-npm run package:dist  # → release/pi-desktop-0.1.0-x64.exe
+npm run package:dist  # → release/pi-desktop-<版本>-x64.exe
 node scripts/verify-a11-startup.mjs   # 在近乎干净的环境变量下启动 win-unpacked 冒烟
 ```
 
-安装包元数据（实测）：`ProductName=pi-desktop`、`FileVersion=0.1.0`、图标为 π。
+安装包元数据（实测 v0.1.0）：`ProductName=pi-desktop`、`FileVersion=<版本>`、图标为 π。

@@ -4,7 +4,8 @@ pi（`@earendil-works/pi-coding-agent`）的桌面客户端，Electron + React +
 架构与里程碑见 [`docs/architecture.md`](docs/architecture.md)。
 
 当前状态：**Phase 1 MVP 完成**（M1–M6 全部落地，另有 A7 长会话内存、A9 安全审计、A11 打包），
-已发布 [v0.1.0](https://github.com/linwoodf33/pi-desktop/releases/tag/v0.1.0)（Windows x64，未签名）。
+已发布 [最新版本](https://github.com/linwoodf33/pi-desktop/releases/latest)（Windows x64，未签名；更新记录见
+[`CHANGELOG.md`](CHANGELOG.md)）。
 下面是 M3 界面层的实现摘要：
 
 - **布局**：左「任务列表」/ 中「对话」/ 右「产物」（可折叠，M6 才填内容）；暗色、等宽字体显示代码与工具输出，1280×800 与 1920×1080 均不破版
