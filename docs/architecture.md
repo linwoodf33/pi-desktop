@@ -367,6 +367,22 @@ interface PiTransport {
 | `extui:respond`（实现 + 收窄） | pi `extension_ui_response` | §6.3 审批链路回包；M3 时只占位 `response: unknown` | **只认当前通道的未决 requestId**：主进程按 `sessionKey + requestId` 登记（`services/extui-registry.ts`），伪造 / 跨会话 / 通道已换 / 选项不在清单 → `REQUEST_NOT_FOUND` + `evt:diagnostic`（§9.4 S9'） |
 | `permission:status`            | 本地文件探测（无 pi 调用） | 设置页需要如实显示「扩展装没装 / 是否落后于源」    | 只读：不执行任何东西、不返回内容，只回路径 / 版本 / 协议号                                                                                                                                             |
 
+**「起始模式」= pi 的工具选择（A17，v0.4 修订）**
+
+客户端新建任务弹层里的「起始模式」**不是** pi 的 `--mode`（那是输出接口：`text` / `json` / `rpc`，客户端固定 `rpc`），也不是 WorkBuddy 的「办公 / 编程 / Plan 模式」——pi 没有会话级操作模式的概念。它在 pi 侧唯一有对应物的机制是**工具选择**（`docs/cli.md`）：
+
+| 模式           | 客户端下发                                   | 效果                                                           |
+| -------------- | -------------------------------------------- | -------------------------------------------------------------- |
+| `full`（默认） | 不加参数                                     | pi 默认工具集（`read` / `bash` / `edit` / `write` + 扩展工具） |
+| `readonly`     | `--exclude-tools write,edit,bash,powershell` | 只能读 / 搜索 / 列目录；保留扩展工具                           |
+| `no-tools`     | `--no-tools`                                 | 全部内置与扩展工具关闭，纯问答                                 |
+
+用 **denylist** 而不是 allowlist：`--tools read,grep,find,ls` 会把用户安装的扩展工具一并关掉，而「只读」的意图只是「不写文件、不执行命令」。
+
+两条如实记录的局限：① pi 的 `get_state` 不返回已启用工具列表，客户端**无法**在 UI 回显「实际生效的工具集」，只能保证启动参数正确；② `--tools` / `--exclude-tools` 只在 **spawn 时**生效，会话内无法改（RPC 没有 set_tools），所以这项只能放在「新建任务」而不是运行中的工具栏。
+
+「办公 / 编程」这类预设属于 `AGENTS.md` / skills / extensions 范畴（不是启动参数），**不做假开关**。
+
 **M5 审批的三个语义点（已在实现层钉死）**：
 
 1. **执行前同步询问**：pi 的 `tool_call` 事件在工具执行**之前**触发，返回 `{block:true, reason}` 即阻止执行（`docs/extensions.md#tool_call`）。这不是事后审计。
@@ -669,6 +685,7 @@ Phase 2 的连接级断连/重连见附录 A.5。
 - A13 会话 `agent_settled` 后产物面板显示工作区变更（git：`status`+`diff`；非 git：快照比对并**显式标注**），单文件 diff 超 2MB 截断有提示，越权路径 100% `PATH_DENIED`，「用系统程序打开」需用户确认且经主进程校验后走 `shell.openPath`。
 - A14 模型管理：客户端可列出 / 新增 / 编辑 / 删除 pi `models.json` 里的 provider 与模型，可设默认模型；**apiKey 明文不出主进程**（界面只有掩码）；写回保留客户端未建模字段；写入原子替换 + 备份，坏 JSON 拒绝改动；改动对已在运行的会话不生效且有明示。
 - A15 主题：内置 9 套主题 + 跟随系统，切换立即生效并持久化；每个主题正文对比度 ≥ 4.5、强调/状态/代码 token ≥ 3（单测按 WCAG 断言），浅色主题下代码高亮可读；历史配置值不致主题被重置。
+- A17 起始模式：新建任务可选「完整工具 / 只读 / 纯对话」，分别翻译成 pi 的默认工具集、`--exclude-tools write,edit,bash,powershell`、`--no-tools`（`tests/unit/local-connection.test.ts` + 集成断言 argv + E2E E14）；不在 UI 里假装能回显 pi 实际生效的工具集。
 - A16 发布工程：`v*` tag 一键构建 NSIS 安装包并创建 Release（含 SHA-256 校验和与 CHANGELOG 段落）；产物带应用图标与正确版本资源；CI 失败可用 `junit-*`/`build-log` artifact 诊断（本机网络不可达 Actions 日志主机时仍然可查）。
 
 **Phase 2 [P2]**

@@ -5,7 +5,8 @@ import type {
   AppConfigView,
   ForkPoint,
   ModelInfo,
-  PiSelfCheckStatus
+  PiSelfCheckStatus,
+  SessionToolMode
 } from '../../shared/contracts/types'
 
 import { getApi } from './client'
@@ -130,10 +131,10 @@ export interface CreateTaskInput {
   /** 会话名（对应 pi `--name`），可空 */
   name?: string
   /**
-   * 起始模式。M4 只支持对话模式；办公/Plan 模式按 Q5「MVP 不做，M4 之后评估」，
-   * 因此这里不收其他值（不编造 pi 不支持的启动参数）。
+   * 起始模式 = pi 的**工具选择**（不是 pi 的输出 `--mode`）。
+   * 取值见 `SESSION_TOOL_MODE_META`：full / readonly / no-tools。
    */
-  mode?: 'chat'
+  toolMode?: SessionToolMode
 }
 
 /**
@@ -152,6 +153,7 @@ export async function createTask(
   const created = await api.session.create({
     cwd: input.cwd,
     ...(input.model === undefined ? {} : { model: input.model }),
+    ...(input.toolMode === undefined ? {} : { toolMode: input.toolMode }),
     ...(input.name === undefined || input.name.trim().length === 0
       ? {}
       : { name: input.name.trim() })

@@ -325,6 +325,47 @@ export const modelInfoSchema = z.object({
 })
 export type ModelInfo = z.infer<typeof modelInfoSchema>
 
+/**
+ * 新建会话的「起始模式」= **pi 的工具选择**（docs/cli.md 的 `--tools` / `--exclude-tools` / `--no-tools`）。
+ *
+ * 澄清（避免与 WorkBuddy 的「办公/编程/Plan 模式」混淆）：pi 没有会话级的操作模式，
+ * `--mode` 只是**输出接口**（text/json/rpc，客户端固定 rpc）。真正能表达「能做什么」的是
+ * 工具白名单，因此这里的三个取值都落到工具选择上：
+ *
+ * - `full`（默认）：不加参数，用 pi 的默认工具集（read/bash/edit/write + 扩展工具）；
+ * - `readonly`：`--exclude-tools write,edit,bash,powershell` —— 只读，保留 read/grep/find/ls
+ *   与扩展工具（用 denylist 而不是 allowlist，避免把用户装的扩展工具一并关掉）；
+ * - `no-tools`：`--no-tools` —— 纯对话，禁用全部内置与扩展工具。
+ *
+ * 局限（如实记录）：pi 的 `get_state` 不返回已启用工具列表，客户端**无法**在 UI 里回显
+ * 「实际生效的工具集」，只能保证启动参数正确。
+ */
+export const sessionToolModeSchema = z.enum(['full', 'readonly', 'no-tools'])
+export type SessionToolMode = z.infer<typeof sessionToolModeSchema>
+
+export const SESSION_TOOL_MODES: readonly SessionToolMode[] = ['full', 'readonly', 'no-tools']
+
+export const SESSION_TOOL_MODE_META: Record<
+  SessionToolMode,
+  { label: string; hint: string; disabledTools: readonly string[] }
+> = {
+  full: {
+    label: '完整工具（默认）',
+    hint: 'pi 的默认工具集：read / bash / edit / write 以及扩展工具',
+    disabledTools: []
+  },
+  readonly: {
+    label: '只读（不写文件、不执行命令）',
+    hint: '禁用 write / edit / bash / powershell；只能读、搜索、列目录',
+    disabledTools: ['write', 'edit', 'bash', 'powershell']
+  },
+  'no-tools': {
+    label: '纯对话（禁用全部工具）',
+    hint: '所有内置与扩展工具都关闭，只做问答',
+    disabledTools: ['*']
+  }
+}
+
 /** `session:state` 出参（§5.4 AgentState）：pi `get_state` 的客户端视图 */
 export const agentStateSchema = z.object({
   /** 客户端会话状态机位置（与 evt:status 同源） */

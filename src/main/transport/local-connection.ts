@@ -56,7 +56,11 @@ export type SpawnFn = (
  * - `--session <path|id>`：按文件路径恢复既有会话
  * - `--session-dir <dir>`：覆盖会话目录
  * - `--name <name>`：会话显示名
+ * - `--exclude-tools <list>` / `--no-tools`：起始模式（工具白名单，见 `SESSION_TOOL_MODE_META`）
  */
+/** 只读模式禁用的工具（写文件与执行命令） */
+export const READONLY_EXCLUDED_TOOLS = 'write,edit,bash,powershell'
+
 export function buildPiArgs(opts: TransportStartOptions): string[] {
   const args: string[] = ['--mode', 'rpc']
 
@@ -73,6 +77,11 @@ export function buildPiArgs(opts: TransportStartOptions): string[] {
   if (opts.sessionName !== undefined && opts.sessionName.length > 0) {
     args.push('--name', opts.sessionName)
   }
+  // 起始模式：用 denylist 关掉「会改文件 / 会执行命令」的工具，
+  // 而不是 allowlist —— allowlist 会把用户装的扩展工具一并关掉。
+  if (opts.toolMode === 'readonly') args.push('--exclude-tools', READONLY_EXCLUDED_TOOLS)
+  else if (opts.toolMode === 'no-tools') args.push('--no-tools')
+
   if (opts.extraArgs !== undefined) args.push(...opts.extraArgs)
 
   return args
@@ -756,6 +765,7 @@ export class LocalConnection implements PiConnection {
         cwd: opts.cwd,
         ...(opts.model === undefined ? {} : { model: opts.model }),
         ...(opts.thinkingLevel === undefined ? {} : { thinkingLevel: opts.thinkingLevel }),
+        ...(opts.toolMode === undefined ? {} : { toolMode: opts.toolMode }),
         ...(opts.sessionFile === undefined ? {} : { sessionFile: opts.sessionFile }),
         ...(opts.sessionDir === undefined ? {} : { sessionDir: opts.sessionDir }),
         ...(opts.sessionName === undefined ? {} : { sessionName: opts.sessionName }),

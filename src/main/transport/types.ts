@@ -24,6 +24,8 @@ export interface OpenChannelOptions {
   cwd: string
   model?: string
   thinkingLevel?: string
+  /** 起始模式 → pi 的工具选择参数（`full` 不加参数） */
+  toolMode?: 'full' | 'readonly' | 'no-tools'
   sessionFile?: string
   /** 覆盖 pi 会话目录（`--session-dir`，docs/cli.md） */
   sessionDir?: string
@@ -38,6 +40,8 @@ export interface TransportStartOptions {
   cwd: string
   model?: string
   thinkingLevel?: string
+  /** 起始模式 → pi 的工具选择参数（`full` 不加参数） */
+  toolMode?: 'full' | 'readonly' | 'no-tools'
   sessionFile?: string
   sessionDir?: string
   sessionName?: string

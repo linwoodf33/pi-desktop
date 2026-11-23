@@ -58,6 +58,19 @@ const APPROVAL_CHOICES = ['allow_once', 'allow_session', 'deny']
 const argv = process.argv.slice(2)
 
 /**
+ * 把收到的启动参数落盘（`MOCK_PI_ARGV_FILE`）。
+ * 用途：断言客户端真的把「起始模式」翻译成了 pi 的工具选择参数
+ * （`--exclude-tools write,edit,bash,powershell` / `--no-tools`）。
+ */
+if (process.env['MOCK_PI_ARGV_FILE'] !== undefined) {
+  try {
+    writeFileSync(process.env['MOCK_PI_ARGV_FILE'], JSON.stringify(argv), 'utf8')
+  } catch {
+    /* 夹具落盘失败不影响协议行为 */
+  }
+}
+
+/**
  * A6（强杀子进程）测试夹具：把自身 pid 落盘，测试据此 `process.kill(pid,'SIGKILL')`。
  * 为什么不用「按命令行匹配 pid」：测试进程/排查工具自身的命令行也会命中标记，容易误杀。
  * 只在 `--mode rpc` 的**长驻**进程里写：`pi --version` 自检的短命进程不能覆盖它。

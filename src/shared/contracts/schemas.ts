@@ -9,7 +9,7 @@ import {
   upsertModelInputSchema,
   upsertProviderInputSchema
 } from './model-config'
-import { permissionPolicySchema } from './types'
+import { permissionPolicySchema, sessionToolModeSchema } from './types'
 import { THEME_IDS } from './theme'
 
 /**
@@ -39,7 +39,9 @@ export const sessionCreateInputSchema = z
   .object({
     cwd: z.string().min(1),
     model: z.string().min(1).optional(),
-    name: z.string().min(1).optional()
+    name: z.string().min(1).optional(),
+    /** 起始模式 = pi 的工具选择（见 types.ts#sessionToolModeSchema 的说明） */
+    toolMode: sessionToolModeSchema.optional()
   })
   .strict()
 

@@ -19,6 +19,7 @@ import type {
   PiSelfCheckStatus,
   PromptDisposition,
   ReadTextResult,
+  SessionToolMode,
   RecordEvent,
   SessionListOutput,
   SessionForkPointsOutput,
@@ -69,6 +70,8 @@ export interface PiInvokeApi {
       cwd: string
       model?: string
       name?: string
+      /** 起始模式 = pi 的工具选择（full / readonly / no-tools） */
+      toolMode?: SessionToolMode
     }): Promise<Result<{ sessionKey: string; sessionId: string }>>
     resume(input: { sessionFile: string }): Promise<Result<{ sessionKey: string }>>
     /**

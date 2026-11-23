@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -64,7 +64,9 @@ beforeAll(async () => {
       MOCK_PI_TOOL: '1',
       // mock 的会话文件放在**会话根内**（session:history 的路径校验要求）：
       // B1 的 fork 用例需要它，且文件由 mock 惰性落盘（mock 不写盘）。
-      MOCK_PI_SESSION_FILE: join(sessionDir, '--work--', 'mock-session.jsonl')
+      MOCK_PI_SESSION_FILE: join(sessionDir, '--work--', 'mock-session.jsonl'),
+      // 每次 spawn 覆盖：用来断言「起始模式」真的翻译成了 pi 的工具参数
+      MOCK_PI_ARGV_FILE: join(tempRoot, 'mock-argv.json')
     }
   })
   page = await app.firstWindow()
@@ -593,5 +595,39 @@ describe('E13 浅色主题下的工具卡片与代码块（v0.3.1 回归）', ()
 
     // 还原主题，避免影响后续用例
     await setTheme('pi-dark')
+  })
+})
+
+describe('E14 新建任务的「起始模式」→ pi 工具参数（A17）', () => {
+  it('选「只读」建会话后，子进程收到 --exclude-tools（而不是只改了 UI）', async () => {
+    await stubDirectoryPicker(workDir)
+    await page.click('[data-testid="new-task-button"]')
+    await page.waitForSelector('[data-testid="new-task-dialog"]', { timeout: 20_000 })
+
+    // 下拉里应该有三档（原来只有一个禁用的「对话模式」）
+    const options = await page
+      .locator('[data-testid="new-task-mode"] option')
+      .evaluateAll((nodes) => nodes.map((node) => (node as HTMLOptionElement).value))
+    expect(options).toEqual(['full', 'readonly', 'no-tools'])
+
+    await page.click('[data-testid="new-task-pick-directory"]')
+    await expect
+      .poll(async () => page.inputValue('[data-testid="new-task-cwd"]'), { timeout: 10_000 })
+      .toBe(workDir)
+    await page.selectOption('[data-testid="new-task-mode"]', 'readonly')
+    await page.click('[data-testid="new-task-submit"]')
+    await page.waitForSelector('[data-testid="task-item"]', { timeout: 30_000 })
+
+    const argvFile = join(tempRoot, 'mock-argv.json')
+    await expect
+      .poll(
+        async () => {
+          const raw = await readFile(argvFile, 'utf8').catch(() => '[]')
+          const argv = JSON.parse(raw) as string[]
+          return argv.join(' ')
+        },
+        { timeout: 30_000 }
+      )
+      .toContain('--exclude-tools write,edit,bash,powershell')
   })
 })

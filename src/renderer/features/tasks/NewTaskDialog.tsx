@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
 
-import { THINKING_LEVELS } from '../../../shared/contracts/types'
+import {
+  SESSION_TOOL_MODES,
+  SESSION_TOOL_MODE_META,
+  THINKING_LEVELS,
+  type SessionToolMode
+} from '../../../shared/contracts/types'
 import { createTask, loadModels } from '../../lib/actions'
 import { shortenPath } from '../../lib/format'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -12,7 +17,9 @@ import { useSessionStore } from '../../stores/sessionStore'
  * - 模型：pi 的默认模型（列表来自 `model:list`，选不到时提示会用 pi 默认）；
  * - 推理档位：默认「off」，与 pi 的 `defaultThinkingLevel` 语义一致（不主动改）；
  * - 会话名：可空（空则由 pi 按首条消息命名，与只读索引的标题推导一致）；
- * - 起始模式：M4 只有对话模式（办公/Plan 模式按 Q5 在 M4 之后评估，不编造启动参数）。
+ * - 起始模式：**pi 的工具选择**（不是 pi 的输出 `--mode`）。三档见 `SESSION_TOOL_MODE_META`：
+ *   完整工具（默认）/ 只读（禁用 write·edit·bash·powershell）/ 纯对话（`--no-tools`）。
+ *   「办公 / 编程」这类预设 pi 没有对应启动参数（属于 AGENTS.md / skills 范畴），不做假开关。
  *
  * 组件只管表单与交互，IPC 编排在 `lib/actions.ts`（createTask / loadModels）。
  */
@@ -36,6 +43,7 @@ export function NewTaskDialog({
   const [model, setModel] = useState('')
   const [thinkingLevel, setThinkingLevel] = useState('off')
   const [name, setName] = useState('')
+  const [toolMode, setToolMode] = useState<SessionToolMode>('full')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | undefined>()
 
@@ -57,7 +65,8 @@ export function NewTaskDialog({
         cwd: cwd.trim(),
         ...(model.length === 0 ? {} : { model }),
         ...(model.length === 0 ? {} : { thinkingLevel }),
-        ...(name.trim().length === 0 ? {} : { name: name.trim() })
+        ...(name.trim().length === 0 ? {} : { name: name.trim() }),
+        toolMode
       })
       if (taskId === undefined) {
         // 具体错误已由 actions 推进错误条；这里给出就近提示
@@ -179,10 +188,21 @@ export function NewTaskDialog({
 
           <label className="field">
             <span className="field__label">起始模式</span>
-            <select className="field__input" data-testid="new-task-mode" value="chat" disabled>
-              <option value="chat">对话模式</option>
+            <select
+              className="field__input"
+              data-testid="new-task-mode"
+              value={toolMode}
+              onChange={(event) => {
+                setToolMode(event.target.value as SessionToolMode)
+              }}
+            >
+              {SESSION_TOOL_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {SESSION_TOOL_MODE_META[mode].label}
+                </option>
+              ))}
             </select>
-            <span className="field__hint">办公 / Plan 模式按 Q5 在 M4 之后评估</span>
+            <span className="field__hint">{SESSION_TOOL_MODE_META[toolMode].hint}</span>
           </label>
 
           {error === undefined ? null : (

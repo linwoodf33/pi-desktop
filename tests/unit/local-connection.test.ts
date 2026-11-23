@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   buildChildEnv,
   buildPiArgs,
+  READONLY_EXCLUDED_TOOLS,
   ConnectionStateMachine,
   LocalConnection,
   LocalTransport,
@@ -124,6 +125,35 @@ describe('buildPiArgs（真实 CLI 参数，docs/cli.md）', () => {
 
   it('空字符串参数被忽略（避免传一个空 cwd/name）', () => {
     expect(buildPiArgs({ cwd: '/work', model: '', sessionName: '' })).toEqual(['--mode', 'rpc'])
+  })
+
+  /**
+   * 起始模式 = pi 的工具选择（**不是** `--mode`，那是输出接口）。
+   * 只读用 denylist 而不是 allowlist：allowlist 会把用户装的扩展工具一并关掉。
+   */
+  it('toolMode=readonly → --exclude-tools（写文件与执行命令）', () => {
+    const args = buildPiArgs({ cwd: '/work', toolMode: 'readonly' })
+    expect(args).toEqual(['--mode', 'rpc', '--exclude-tools', READONLY_EXCLUDED_TOOLS])
+    // 关键工具必须在名单里；read/grep/find/ls 不能出现（它们要保留）
+    for (const name of ['write', 'edit', 'bash', 'powershell']) {
+      expect(READONLY_EXCLUDED_TOOLS.split(',')).toContain(name)
+    }
+    for (const name of ['read', 'grep', 'find', 'ls']) {
+      expect(READONLY_EXCLUDED_TOOLS.split(',')).not.toContain(name)
+    }
+  })
+
+  it('toolMode=no-tools → --no-tools', () => {
+    expect(buildPiArgs({ cwd: '/work', toolMode: 'no-tools' })).toEqual([
+      '--mode',
+      'rpc',
+      '--no-tools'
+    ])
+  })
+
+  it('toolMode=full（默认）不追加任何工具参数', () => {
+    expect(buildPiArgs({ cwd: '/work', toolMode: 'full' })).toEqual(['--mode', 'rpc'])
+    expect(buildPiArgs({ cwd: '/work' })).toEqual(['--mode', 'rpc'])
   })
 })
 

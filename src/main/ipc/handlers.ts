@@ -199,6 +199,8 @@ export function createRouter(
       return service.create({
         cwd: input.cwd,
         ...(input.model === undefined ? {} : { model: input.model }),
+        // 起始模式（工具白名单）必须透传：handler 逐字段重建对象时最容易漏新字段
+        ...(input.toolMode === undefined ? {} : { toolMode: input.toolMode }),
         ...(input.name === undefined ? {} : { name: input.name })
       })
     },

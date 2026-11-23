@@ -7,6 +7,7 @@ import type {
   ForkPoint,
   ModelInfo,
   PromptDisposition,
+  SessionToolMode,
   RecordEvent,
   RunStatus,
   SessionForkPointsOutput,
@@ -98,7 +99,13 @@ interface SessionRecord {
 }
 
 export interface SessionService {
-  create(input: { cwd: string; model?: string; name?: string }): Promise<{
+  create(input: {
+    cwd: string
+    model?: string
+    name?: string
+    /** 起始模式 = pi 的工具选择（full / readonly / no-tools） */
+    toolMode?: SessionToolMode
+  }): Promise<{
     sessionKey: string
     sessionId: string
   }>
@@ -718,6 +725,7 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
           options.connection.openChannel({
             cwd: input.cwd,
             ...(input.model === undefined ? {} : { model: input.model }),
+            ...(input.toolMode === undefined ? {} : { toolMode: input.toolMode }),
             ...(input.name === undefined ? {} : { sessionName: input.name }),
             ...(sessionDir === undefined ? {} : { sessionDir })
           }),

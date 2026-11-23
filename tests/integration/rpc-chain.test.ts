@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -713,4 +713,48 @@ describe('M4 集成链路（B1）：从首条用户消息分叉 = 空会话、�
       await rm(sessionRoot, { recursive: true, force: true })
     }
   }, 120_000)
+})
+
+/**
+ * 「起始模式」落成 pi 的真实工具参数（A17）。
+ *
+ * 客户端里那个下拉不是摆设，也不是 pi 的 `--mode`（那是输出接口 text/json/rpc）；
+ * 它映射到 pi 的工具选择：`--exclude-tools` / `--no-tools`。
+ * 这里用 mock 把收到的 argv 落盘，断言**子进程真的带了参数**，而不是只改了 UI。
+ */
+describe('起始模式 → pi 工具参数', () => {
+  async function argvFor(toolMode: 'readonly' | 'no-tools'): Promise<string[]> {
+    const dir = await mkdtemp(join(tmpdir(), 'pi-desktop-toolmode-'))
+    const argvFile = join(dir, 'argv.json')
+    try {
+      const harness = createHarness({ MOCK_PI_ARGV_FILE: argvFile })
+      const created = await harness.service.create({ cwd: dir, toolMode })
+      await harness.service.dispose({ sessionKey: created.sessionKey })
+      await harness.waitFor(() => harness.statuses.includes('settled'), 10_000)
+      const raw: unknown = await readFile(argvFile, 'utf8')
+        .then((text) => JSON.parse(text) as unknown)
+        .catch(() => [])
+      expect(Array.isArray(raw)).toBe(true)
+      return raw as string[]
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  }
+
+  it('readonly：子进程收到 --exclude-tools write,edit,bash,powershell', async () => {
+    const argv = await argvFor('readonly')
+    expect(argv).toContain('--mode')
+    expect(argv).toContain('rpc')
+    const at = argv.indexOf('--exclude-tools')
+    expect(at).toBeGreaterThanOrEqual(0)
+    expect(argv[at + 1]).toBe('write,edit,bash,powershell')
+    // 只读不该关掉读类工具
+    expect(argv[at + 1]).not.toContain('read,')
+  })
+
+  it('no-tools：子进程收到 --no-tools', async () => {
+    const argv = await argvFor('no-tools')
+    expect(argv).toContain('--no-tools')
+    expect(argv).not.toContain('--exclude-tools')
+  })
 })
