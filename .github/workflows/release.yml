@@ -61,10 +61,21 @@ jobs:
           }
           Write-Host "版本一致：$tag"
 
-      # 图标是构建产物（由 resources/icon.svg 渲出），打包前必须先生成，
-      # 否则 electron-builder 会退回 Electron 默认图标。
-      - name: 生成应用图标
-        run: npm run icon
+      # 图标 PNG 是**随仓库提交**的产物（`resources/icon.svg` 是真源，本地用 `npm run icon` 重生成）。
+      # 这里只校验存在性、不在 CI 里跑 Electron 渲染：渲染要起一个 GUI 进程，
+      # 在 runner 上曾整步失败（观测不到 stdout 时很难定位），而图标本身是确定性的、无需每次重建。
+      - name: 确认图标存在
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'resources/icon.png')) {
+            throw 'resources/icon.png 缺失：请在本地跑 `npm run icon` 并提交产物'
+          }
+          $img = [System.Drawing.Image]::FromFile((Resolve-Path 'resources/icon.png'))
+          if ($img.Width -lt 256 -or $img.Height -lt 256) {
+            throw "resources/icon.png 尺寸不足（$($img.Width)x$($img.Height)），electron-builder 要求 >=256"
+          }
+          Write-Host "icon OK: $($img.Width)x$($img.Height)"
+          $img.Dispose()
 
       # 发布前的最小门禁：类型 + 格式 + 单测。完整 E2E/集成在 CI 工作流里跑，
       # 这里不重复（发布 job 的目标是「产物可装可启动」，不是再跑一遍全量回归）。
