@@ -37,7 +37,7 @@ env:
 
 jobs:
   static:
-    name: 静态检查（typecheck + lint）
+    name: 静态检查（typecheck + lint + format）
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
