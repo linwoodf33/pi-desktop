@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawnSync } from 'node:child_process'
 import { mkdir, mkdtemp, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,6 +12,7 @@ import {
   gitListChanges,
   parsePorcelainZ
 } from '../../src/main/services/git-adapter'
+import { realpathNative } from '../../src/main/services/realpath-native'
 
 const run = promisify(execFile)
 
@@ -61,7 +62,9 @@ describe.skipIf(!(await gitAvailable()))('真实 git 仓库夹具', () => {
   let nested: string
 
   beforeAll(async () => {
-    base = await mkdtemp(join(tmpdir(), 'pi-desktop-git-'))
+    // 归一到真实长路径（Windows runner 的 TMP 是 8.3 短名 `RUNNER~1`，
+    // 而适配层返回 `realpathNative` 归一后的长路径，不归一会假红）
+    base = await realpathNative(await mkdtemp(join(tmpdir(), 'pi-desktop-git-')))
     repoRoot = base
     await run('git', ['init', '-q', '.'], { cwd: repoRoot })
     await run('git', ['config', 'user.email', 'test@example.com'], { cwd: repoRoot })
@@ -223,7 +226,7 @@ describe.skipIf(!(await gitAvailable()))('真实 git 仓库夹具', () => {
 
 /**
  * 回归（CI 首跑暴露）：`mkdtemp` 在 Windows runner 上返回 **8.3 短路径**
- * （`C:\Users\RUNNER~1\AppData\Local\Temp\...`），而 `git rev-parse --show-toplevel`
+ * （`…\RUNNER~1\AppData\Local\Temp\...`），而 `git rev-parse --show-toplevel`
  * 返回**长路径**（`C:/Users/runneradmin/...`）。两者不共享前缀 → 词法比较判「不在仓库内」
  * → 工作区被静默降级成快照比对（CI 上就表现为 git 用例全红）。
  *
@@ -293,5 +296,44 @@ describe('detectGitWorkspace：短路径/长路径别名（同目录两种写法
         })
     })
     expect(detected.workspace?.prefix).toBe('sub')
+  })
+})
+
+/**
+ * 真实 8.3 短名回归（CI 同形态）：工作区用短名、`git rev-parse` 返回长名，
+ * 归一后应识别为同一仓库（此前会被判「不在 git 仓库根内」而静默降级成快照比对）。
+ * 短名是否生成取决于卷策略，拿不到就显式跳过。
+ */
+describe.skipIf(!(await gitAvailable()))('detectGitWorkspace：真实 8.3 短名（CI 同形态）', () => {
+  function shortPathOf(dir: string): string | undefined {
+    if (process.platform !== 'win32') return undefined
+    const quoted = dir.replace(/'/g, "''")
+    const script = `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${quoted}').ShortPath`
+    const result = spawnSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8' })
+    const short = (result.stdout ?? '').trim()
+    if (short.length === 0) return undefined
+    return short.toLowerCase() === dir.toLowerCase() ? undefined : short
+  }
+
+  it('工作区用短名 → 仍识别为仓库内工作区且 prefix 正确', async () => {
+    const base = await realpathNative(
+      await mkdtemp(join(tmpdir(), 'pi-desktop-83-long-repo-name-'))
+    )
+    try {
+      await run('git', ['init', '-q', '.'], { cwd: base })
+      await mkdir(join(base, 'sub'), { recursive: true })
+      const shortBase = shortPathOf(base)
+      if (shortBase === undefined) {
+        console.warn('[skip] 当前卷未生成 8.3 短名，跳过该用例')
+        return
+      }
+
+      const detected = await detectGitWorkspace({ workspaceRoot: join(shortBase, 'sub') })
+      expect(detected.workspace).toBeDefined()
+      expect(detected.workspace?.workspaceRoot.toLowerCase()).toBe(join(base, 'sub').toLowerCase())
+      expect(detected.workspace?.prefix).toBe('sub')
+    } finally {
+      await rm(base, { recursive: true, force: true }).catch(() => {})
+    }
   })
 })

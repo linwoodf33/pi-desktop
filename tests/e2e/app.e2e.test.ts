@@ -1,9 +1,11 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright-core'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+
+import { realpathNative } from '../../src/main/services/realpath-native'
 
 /**
  * Electron E2E（§9.3 E1/E2/E4）——Playwright + 真实打包产物（`out/`）。
@@ -37,8 +39,9 @@ beforeAll(async () => {
   await mkdir(workDir, { recursive: true })
   await mkdir(sessionDir, { recursive: true })
   // 真实路径归一：Windows 临时目录可能以 8.3 短路径（`RUNNER~1`）返回，而主进程的路径守卫
-  // 用 `fs.realpath` 归一成长路径（`runneradmin`）。两侧不同形态时，比较产物绝对路径会假红。
-  workDir = await realpath(workDir)
+  // 用 `realpathNative` 归一成长路径（`runneradmin`）：JS 版 `fs.realpath` 不展开 8.3 短名，
+  // 两侧形态不同时，比较产物绝对路径会假红。
+  workDir = await realpathNative(workDir)
 
   // E5 用的历史会话（docs/session-format.md v3）：在 E5 用例里才写入，
   // 否则 E1「首启无历史会话」的前提就不成立。

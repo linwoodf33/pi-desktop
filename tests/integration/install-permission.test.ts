@@ -208,8 +208,8 @@ describe('策略下发（环境变量）', () => {
 
 /**
  * 回归（CI 首跑暴露）：临时目录来自 `mkdtemp`，在 Windows runner 上是 **8.3 短路径**
- * （`C:\Users\RUNNER~1\AppData\Local\Temp\...`），而 `homedir()` 是长路径
- * （`C:\Users\runneradmin`）。纯词法 `path.relative` 判前缀不同 → 被当成越权，退出码 4，
+ * （`…\RUNNER~1\AppData\Local\Temp\...`），而 `homedir()` 是长路径
+ * （`…\runneradmin`）。纯词法 `path.relative` 判前缀不同 → 被当成越权，退出码 4，
  * 连带后续「装好之后 detectPermissionExtension 报告 installed」用例全红。
  *
  * 用注入的 `realPath` 确定性复现，不依赖 runner 是否开启 8.3。
@@ -273,6 +273,43 @@ describe('resolveTargetDir：同一目录的别名写法（junction）', () => {
       expect(dir.toLowerCase()).toBe(join(cwd, '.pi', 'extensions').toLowerCase())
     } finally {
       rmSync(cwd, { recursive: true, force: true })
+    }
+  })
+})
+
+/**
+ * 真实 8.3 短名回归（CI 上的实际形态）：
+ * `%TEMP%` 以 `…\RUNNER~1\...` 短名返回，而 `os.homedir()` 是长名
+ * （`…\runneradmin`）。此前纯词法比较判越权 → 退出码 4，安装链路全红。
+ *
+ * 短名是否生成取决于卷策略（8.3 可被关闭），拿不到就显式跳过，不假装通过。
+ */
+describe('resolveTargetDir：真实 8.3 短名（CI 同形态）', () => {
+  /** 用 FileSystemObject 取短名（cmd 的 %~sI 在 spawnSync 参数里引号会被吃） */
+  function shortPathOf(dir: string): string | undefined {
+    if (process.platform !== 'win32') return undefined
+    const quoted = dir.replace(/'/g, "''")
+    const script = `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${quoted}').ShortPath`
+    const result = spawnSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8' })
+    const short = (result.stdout ?? '').trim()
+    if (short.length === 0) return undefined
+    // 卷上未生成短名时 ShortPath 就等于原路径
+    return short.toLowerCase() === dir.toLowerCase() ? undefined : short
+  }
+
+  it('home 是长名、target 用短名 → 不报越权，且返回长名（可直接用于写盘）', () => {
+    const home = mkdtempSync(join(tmpdir(), 'pi-desktop-83-long-home-name-'))
+    try {
+      const shortHome = shortPathOf(home)
+      if (shortHome === undefined) {
+        console.warn('[skip] 当前卷未生成 8.3 短名，跳过该用例')
+        return
+      }
+
+      const dir = resolveTargetDir({ home, cwd: home, target: join(shortHome, 'extensions') })
+      expect(dir.toLowerCase()).toBe(join(home, 'extensions').toLowerCase())
+    } finally {
+      rmSync(home, { recursive: true, force: true })
     }
   })
 })

@@ -1,7 +1,8 @@
-import { realpath } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative as pathRelative, resolve } from 'node:path'
 
 import { IpcFailure } from '../../shared/contracts/result'
+
+import { realpathNative } from './realpath-native'
 
 /**
  * 唯一的工作区路径校验器（M6，架构文档 §7 约束 8 / §9.1 U9 / §9.4 S6）。
@@ -14,7 +15,8 @@ import { IpcFailure } from '../../shared/contracts/result'
  *    NTFS 备用数据流（ADS）/ `..` 段 / 以点或空格结尾的段（Windows 会静默剥离）/
  *    Windows 保留设备名。这些在 `path.resolve` 之前判，避免归一化把攻击面藏起来；
  * 2. **词法根判定**：`resolve(root, raw)` 后必须落在根内（含 Windows 大小写与分隔符归一）；
- * 3. **真实路径闸**：`fs.realpath` 归一后再判一次前缀。
+ * 3. **真实路径闸**：`realpath` 归一后再判一次前缀（用 native 版，短名会展开成长路径，
+ *    见 `realpath-native.ts`；JS 版不展开 8.3 短名会造成「同一目录两种写法互判越权」）。
  *    工作区内**指向工作区内的符号链接放行**（realpath 仍在根内），指向根外的一律拒绝
  *    （否则 junction/符号链接可绕过第 2 闸）。
  *
@@ -150,7 +152,7 @@ export async function resolveWorkspaceTarget(
   options: ResolveTargetOptions
 ): Promise<ResolvedTarget> {
   const platform = options.platform ?? process.platform
-  const realPath = options.realPath ?? ((value: string) => realpath(value))
+  const realPath = options.realPath ?? realpathNative
   const allowMissing = options.allowMissing === true
 
   assertSafeRawPath(options.raw, platform)

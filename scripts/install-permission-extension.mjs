@@ -86,8 +86,11 @@ export class ConflictError extends Error {
  * 为什么需要：同一目录可能有两种写法（Windows 8.3 短路径 `RUNNER~1` vs 长路径
  * `runneradmin`、`subst` 映射盘）。`path.relative` 是纯词法运算，前缀不同就判「不在根内」，
  * 于是 CI 的临时目录（短路径）会被当成越权而被拒绝（退出码 4）。
+ *
+ * **必须用 `realpathSync.native`**：Node 的 JS 版 `realpathSync` 不展开 8.3 短名
+ * （实测原样返回 `PICDE6~1`），native 版才返回长路径。用错版本 = 修了等于没修。
  */
-function canonicalPathSync(value, realPath = realpathSync) {
+function canonicalPathSync(value, realPath = realpathSync.native) {
   let current = value
   const tail = []
   while (!existsSync(current)) {
@@ -110,7 +113,7 @@ function canonicalPathSync(value, realPath = realpathSync) {
 export function resolveTargetDir(options = {}) {
   const home = options.home ?? homedir()
   const cwd = options.cwd ?? process.cwd()
-  const realPath = options.realPath ?? realpathSync
+  const realPath = options.realPath ?? realpathSync.native
   const canonical = (value) => canonicalPathSync(value, realPath)
   const raw = options.target ?? join(home, '.pi', 'agent', 'extensions')
   const resolved = canonical(resolve(cwd, raw))

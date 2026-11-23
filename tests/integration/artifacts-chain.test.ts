@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { createRouter } from '../../src/main/ipc/handlers'
 import { createArtifactsService } from '../../src/main/services/artifacts'
+import { realpathNative } from '../../src/main/services/realpath-native'
 import { createAuditLog, type AuditEntry } from '../../src/main/services/audit-log'
 import { createConfigStore } from '../../src/main/services/config-store'
 import { createFsBridge } from '../../src/main/services/fs-bridge'
@@ -93,7 +94,9 @@ describe.skipIf(!(await gitAvailable()))('git 工作区：真实 git status / gi
   let harness: Harness
 
   beforeAll(async () => {
-    root = await mkdtemp(join(tmpdir(), 'pi-desktop-m6-git-'))
+    // 归一到真实长路径：Windows runner 的 TMP 是 8.3 短名（`RUNNER~1`），
+    // 而产物服务用 `realpathNative` 归一后返回长路径，不归一会假红。
+    root = await realpathNative(await mkdtemp(join(tmpdir(), 'pi-desktop-m6-git-')))
     await exec('git', ['init', '-q', '.'], { cwd: root })
     await exec('git', ['config', 'user.email', 'test@example.com'], { cwd: root })
     await exec('git', ['config', 'user.name', 'test'], { cwd: root })
@@ -244,7 +247,7 @@ describe('非 git 工作区：快照比对链路', () => {
   let harness: Harness
 
   beforeAll(async () => {
-    root = await mkdtemp(join(tmpdir(), 'pi-desktop-m6-snapshot-'))
+    root = await realpathNative(await mkdtemp(join(tmpdir(), 'pi-desktop-m6-snapshot-')))
     await writeFile(join(root, 'keep.txt'), 'keep\n', 'utf8')
     await writeFile(join(root, 'mod.txt'), 'a\nb\n', 'utf8')
     await writeFile(join(root, 'gone.txt'), 'bye\n', 'utf8')
@@ -317,7 +320,7 @@ describe('历史任务：sessionFile 引用推导工作区', () => {
   let sessionFile: string
 
   beforeAll(async () => {
-    root = await mkdtemp(join(tmpdir(), 'pi-desktop-m6-history-'))
+    root = await realpathNative(await mkdtemp(join(tmpdir(), 'pi-desktop-m6-history-')))
     sessionRoot = join(root, '.sessions')
     await mkdir(join(sessionRoot, '--work--'), { recursive: true })
     await writeFile(join(root, 'changed.txt'), 'v1\n', 'utf8')

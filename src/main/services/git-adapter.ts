@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process'
-import { lstat, realpath } from 'node:fs/promises'
+import { lstat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 import type { ArtifactChange, ArtifactEntry } from '../../shared/contracts/types'
 
 import { isInsideRoot, toPosixRelative } from './path-guard'
+import { realpathNative } from './realpath-native'
 
 /**
  * 只读 git 适配层（M6，架构文档 §6.1 产物流第 2 步）。
@@ -85,14 +86,16 @@ export interface DetectGitOptions {
  * 真实路径归一（不存在时退回词法路径）。
  *
  * 为什么必须做：「词法上同属一个目录」的两串路径可能**不共享前缀**。
- * 典型场景：Windows 8.3 短路径（`C:\Users\RUNNER~1\...`）vs `git rev-parse --show-toplevel`
- * 返回的长路径（`C:/Users/runneradmin/...`），以及 `subst` 映射盘符。
+ * 典型场景：Windows 8.3 短路径（`…\RUNNER~1\...`）vs `git rev-parse --show-toplevel`
+ * 返回的长路径（`…/runneradmin/...`），以及 `subst` 映射盘符。
  * 不做归一 → `isInsideRoot(long, short)` 为 false → 明明在仓库里的工作区被判成「非 git」，
  * 静默降级成快照比对（CI 上就是这样暴露的）。
+ *
+ * 归一必须用 `realpathNative`（见 `realpath-native.ts`）：JS 版 `realpath` 不展开 8.3 短名。
  */
 async function canonicalPath(
   value: string,
-  realPath: (value: string) => Promise<string> = realpath
+  realPath: (value: string) => Promise<string> = realpathNative
 ): Promise<string> {
   try {
     return await realPath(value)
@@ -112,7 +115,7 @@ export async function detectGitWorkspace(
 ): Promise<{ workspace?: GitWorkspace; reason?: string }> {
   const run = options.run ?? defaultGitRunner
   const timeoutMs = options.timeoutMs ?? 5_000
-  const realPath = options.realPath ?? ((value: string) => realpath(value))
+  const realPath = options.realPath ?? realpathNative
   // 两侧都归一成真实路径后再比较：git 输出长路径，调用方可能拿到短路径/映射盘（见 canonicalPath）
   const workspaceRoot = await canonicalPath(resolve(options.workspaceRoot), realPath)
 
