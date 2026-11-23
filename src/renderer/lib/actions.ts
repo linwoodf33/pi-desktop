@@ -438,10 +438,20 @@ export async function saveSettings(
  * - busy 时带 `streamingBehavior: 'followUp'`（§7 约束 5），由 UI 语义决定；
  * - `prompt` 成功只代表「已接受」，完成只认 `agent_settled`（phase 由事件归约驱动）。
  */
-export async function sendMessage(text: string, deps: ActionDeps = {}): Promise<void> {
-  const api = resolveApi(deps)
+/**
+ * 发送消息的可选参数。继承 `ActionDeps`（`api`）是为了**向后兼容**：
+ * 既有单测与调用点用 `sendMessage(text, { api })` 注入实现。
+ */
+export interface SendMessageOptions extends ActionDeps {
+  /** A19：粘贴的图片（data URL）。允许「只有图、没有文字」。 */
+  images?: string[]
+}
+
+export async function sendMessage(text: string, options: SendMessageOptions = {}): Promise<void> {
+  const api = resolveApi(options)
   const message = text.trim()
-  if (api === undefined || message.length === 0) return
+  const images = (options.images ?? []).filter((item) => item.length > 0)
+  if (api === undefined || (message.length === 0 && images.length === 0)) return
 
   const store = useSessionStore.getState()
   const task = selectedTask()
@@ -473,6 +483,7 @@ export async function sendMessage(text: string, deps: ActionDeps = {}): Promise<
   const result = await api.session.prompt({
     sessionKey,
     message,
+    ...(images.length === 0 ? {} : { images }),
     ...(busy ? { streamingBehavior: 'followUp' as const } : {})
   })
   if (!result.ok) {

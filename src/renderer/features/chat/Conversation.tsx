@@ -42,7 +42,8 @@ export interface ConversationProps {
   switching: boolean
   /** 分叉在途 */
   forking: boolean
-  onSend: (text: string) => void
+  /** `images` 是 data URL 数组（A19：粘贴截图） */
+  onSend: (text: string, images: string[]) => void
   onAbort: () => void
   onNewTask: () => void
   onLocate: () => void

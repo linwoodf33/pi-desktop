@@ -92,12 +92,24 @@ export const sessionForkInputSchema = z
 export const sessionPromptInputSchema = z
   .object({
     sessionKey: sessionKeySchema,
-    message: z.string().min(1),
-    images: z.array(z.string().min(1)).optional(),
+    /** A19：允许只有图片、没有文字（截图直接问「这是什么」），但两者不能都空 */
+    message: z.string(),
+    images: z.array(z.string().min(1)).max(4).optional(),
     /** busy 时必带（§7 约束 5）：steer = 打断当前步，followUp = 排队 */
     streamingBehavior: z.enum(['steer', 'followUp']).optional()
   })
   .strict()
+  .superRefine((value, context) => {
+    const hasText = value.message.trim().length > 0
+    const hasImages = (value.images?.length ?? 0) > 0
+    if (!hasText && !hasImages) {
+      context.addIssue({
+        code: 'custom',
+        path: ['message'],
+        message: '消息与图片不能同时为空'
+      })
+    }
+  })
 
 export const sessionKeyInputSchema = z
   .object({

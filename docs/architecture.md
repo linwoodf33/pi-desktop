@@ -396,6 +396,15 @@ interface PiTransport {
 
 **子 agent（subagent）不是这个**：subagent 由 `pi-subagents` 扩展在会话**内部**派生（工具调用），子会话记录写在 `sessions/<cwd-key>/subagents/*.jsonl`（带 `parentSession`）；客户端只回放父会话 JSONL，因此看得到「调用了 subagent 的工具卡片」，看不到子会话的中间过程。
 
+**粘贴图片（A19，v0.6）**
+
+对话框支持直接把截图粘进来（截图工具 → `Ctrl+V`）。
+
+- 渲染层：`onPaste` 检查 `clipboardData.items` 里有没有 `image/*`；有就 `preventDefault` 并读成 **data URL**（纯文本粘贴仍走 textarea 默认行为，不会被拦）。
+- 规则（`lib/images.ts`，纯函数可单测）：只收 `png/jpeg/webp/gif`；单张 ≤ 8MB；每条消息 ≤ 4 张；超限/类型不符会**显式提示原因**（一次 Ctrl+V 静默失败最难排查）。
+- 传输：`session:prompt` 的 `images` 是 **data URL 数组**（不是裸 base64，主进程 `toImageContent` 按 `data:image/...;base64,` 解析并校验）。`message` 允许为空——**只有图片、没有文字也能发**（`superRefine` 保证两者不能同时为空）。
+- 界面：缩略图条 + 单张移除；发送后清空，不会污染下一条消息。
+
 **M5 审批的三个语义点（已在实现层钉死）**：
 
 1. **执行前同步询问**：pi 的 `tool_call` 事件在工具执行**之前**触发，返回 `{block:true, reason}` 即阻止执行（`docs/extensions.md#tool_call`）。这不是事后审计。
@@ -698,6 +707,7 @@ Phase 2 的连接级断连/重连见附录 A.5。
 - A13 会话 `agent_settled` 后产物面板显示工作区变更（git：`status`+`diff`；非 git：快照比对并**显式标注**），单文件 diff 超 2MB 截断有提示，越权路径 100% `PATH_DENIED`，「用系统程序打开」需用户确认且经主进程校验后走 `shell.openPath`。
 - A14 模型管理：客户端可列出 / 新增 / 编辑 / 删除 pi `models.json` 里的 provider 与模型，可设默认模型；**apiKey 明文不出主进程**（界面只有掩码）；写回保留客户端未建模字段；写入原子替换 + 备份，坏 JSON 拒绝改动；改动对已在运行的会话不生效且有明示。
 - A15 主题：内置 9 套主题 + 跟随系统，切换立即生效并持久化；每个主题正文对比度 ≥ 4.5、强调/状态/代码 token ≥ 3（单测按 WCAG 断言），浅色主题下代码高亮可读；历史配置值不致主题被重置。
+- A19 粘贴图片：`Ctrl+V` 可把剪贴板截图粘进对话框（png/jpeg/webp/gif，单张 ≤8MB、每条 ≤4 张），发送时以 data URL 交给 pi；只有图无文字也可发送；超限/类型不符显式提示原因。
 - A18 会话身份 agent：新建任务可从扫描到的 agent 定义中选择（`--agent`）；`pi --help` 无该 flag 时不显示选择器，未知名字被客户端拒绝（不依赖 pi 的静默忽略）；子 agent（subagent）的中间过程不在父会话里，UI 不假装能看到。
 - A17 起始模式：新建任务可选「完整工具 / 只读 / 纯对话」，分别翻译成 pi 的默认工具集、`--exclude-tools write,edit,bash,powershell`、`--no-tools`（`tests/unit/local-connection.test.ts` + 集成断言 argv + E2E E14）；不在 UI 里假装能回显 pi 实际生效的工具集。
 - A16 发布工程：`v*` tag 一键构建 NSIS 安装包并创建 Release（含 SHA-256 校验和与 CHANGELOG 段落）；产物带应用图标与正确版本资源；CI 失败可用 `junit-*`/`build-log` artifact 诊断（本机网络不可达 Actions 日志主机时仍然可查）。

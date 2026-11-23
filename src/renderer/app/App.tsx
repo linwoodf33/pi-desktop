@@ -142,8 +142,8 @@ export function App() {
           stats={selectedId === undefined ? undefined : stats[selectedId]}
           switching={selectedId !== undefined && switching[selectedId] === true}
           forking={selectedId !== undefined && forking[selectedId] === true}
-          onSend={(text) => {
-            void sendMessage(text)
+          onSend={(text, images) => {
+            void sendMessage(text, { images })
           }}
           onAbort={() => {
             void abortRun()

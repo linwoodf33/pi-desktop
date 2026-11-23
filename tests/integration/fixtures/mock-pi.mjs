@@ -29,7 +29,7 @@
  * 事件先于 response 发出（真实 pi 的 abort 会等会话 idle 后才响应）。空闲时 abort 只回 response。
  */
 
-import { writeFileSync } from 'node:fs'
+import { appendFileSync, writeFileSync } from 'node:fs'
 
 const SESSION_ID = 'mock-session-0001'
 const SESSION_FILE =
@@ -432,6 +432,27 @@ function handleCommand(command) {
       return
     case 'prompt': {
       const text = String(command.message ?? '')
+      /**
+       * A19：记录收到的 prompt 载荷（含图片），供 E2E 断言「粘贴的截图真的发出去了」。
+       * 只记数量与 MIME，不落图片内容（夹具不处理真实像素）。
+       */
+      if (process.env['MOCK_PI_PROMPT_FILE'] !== undefined) {
+        try {
+          const images = Array.isArray(command.images) ? command.images : []
+          appendFileSync(
+            process.env['MOCK_PI_PROMPT_FILE'],
+            JSON.stringify({
+              text,
+              imageCount: images.length,
+              mimeTypes: images.map((image) => String(image?.mimeType ?? '')),
+              dataPrefixes: images.map((image) => String(image?.data ?? '').slice(0, 8))
+            }) + String.fromCharCode(10),
+            'utf8'
+          )
+        } catch {
+          /* 夹具落盘失败不影响协议行为 */
+        }
+      }
       if (streaming && command.streamingBehavior === undefined) {
         writeRecord({
           type: 'response',
