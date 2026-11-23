@@ -34,7 +34,8 @@
 - `app.asar.unpacked/` **不存在**（无原生模块，无需外置）。
 - 安装包元数据：ProductName=`pi-desktop`、FileVersion=`0.1.0`、CompanyName=`pi-desktop`。
 - 签名状态：**NotSigned**（按 `electron-builder.yml` 的既定取舍，签名/公证排在正式发布）。
-- 图标：**未设置** —— 构建日志 `default Electron icon is used  reason=application icon is not set`（`directories.buildResources: resources` 指向的 `resources/` 目录不存在）。属发布前需补的资产（见 §5）。
+- 图标：**已设置** —— `resources/icon.svg` → `npm run icon` → `resources/icon.png`（1024×1024，随仓库提交）；`electron-builder.yml` 的 `win.icon` 指向它。构建日志不再出现 `default Electron icon is used`。
+- 产物命名：`artifactName: ${productName}-${version}-${arch}.${ext}` → `pi-desktop-0.1.0-x64.exe`（旧名带空格，Release 上会被转成点，与 SHA256SUMS 对不上）。
 - 产物与源码一致性：当前产物**包含 A6 渲染层修正**——`npx asar extract` 后 `out/renderer/assets/index-CkLLhITG.js` 内 `detachSession` 命中 **4** 次（整包二进制计数 8：含主进程侧引用），主进程 `lstat` 命中 15；即 asar 内代码就是当前 `src/` 编译结果（对应 `client.ts` 的 `exited/recycled → detachSession`）。
 
 ## 3. 验证项 / 方法 / 结果 / 证据
@@ -219,8 +220,8 @@ tests/unit/approval-defaults.test.ts      import 两份并逐项比对          
 1. **不是真正的干净机器**：本机装有 Node v26.13.0 / npm / pi（`C:\Users\FUlw\.pi\agent\bin\pi`、`%APPDATA%\npm\pi.cmd`、`C:\Program Files\nodejs\node.exe`）。验证靠「隔离 PATH + 空 HOME/USERPROFILE/APPDATA/LOCALAPPDATA + 全新 userData」近似。**未验证**：从未装过 Node 的 Win10/11 上安装（例如 `VC++ 运行库`、SmartScreen 首次运行拦截、企业策略）。
 2. **locator 的「常见目录直探」无法被环境隔离完全屏蔽**：`resolveNodeExecutable()` 会直接探测 `%ProgramFiles%\nodejs\node.exe`（不看 PATH）。本次 `pi missing` 证明「无 pi 时应用照常启动」；但「真无 Node 时 locator 的探测耗时/日志」**未验证**（不影响启动，只影响未来定位 pi 的提示）。
 3. **无代码签名**：安装包 `NotSigned` → 真实用户会看到 SmartScreen 警告，安装需要点「更多信息 → 仍要运行」。属既定取舍（签名排到正式发布），但**未做**签名后行为验证。
-4. **应用图标未设置**：构建日志 `default Electron icon is used  reason=application icon is not set`（`electron-builder.yml` 的 `directories.buildResources: resources` 指向的 `resources/` 目录不存在）。影响：exe/安装包/快捷方式/任务栏均为默认 Electron 图标。属发布前需补的资产（不阻塞启动验收）。
-5. **`win-unpacked/pi-desktop.exe` 的版本资源是 Electron 默认值**（ProductName=`Electron`、FileVersion=`37.10.3`），因为 `win.signAndEditExecutable: false`；安装包本身的元数据正确（`pi-desktop` / `0.1.0` / `pi-desktop`）。用户可见影响：任务管理器/文件属性里显示 Electron 而非 pi-desktop。**建议**：改为 `signExecutable: false`（electron-builder 明确推荐：只跳签名、保留图标与元数据），或正式发布时随签名一起打开 `signAndEditExecutable`。
+4. ~~应用图标未设置~~ **已修复**：图标由 `resources/icon.svg` 生成（`npm run icon`），`win.icon` 指向 `resources/icon.png`，exe/安装包/快捷方式均为 π 图标。
+5. ~~`win-unpacked/pi-desktop.exe` 版本资源是 Electron 默认值~~ **已修复**：`win.signAndEditExecutable: false` 改为 `win.signExecutable: false`（只跳签名，保留图标与版本资源）。实测 exe：ProductName=`pi-desktop`、FileDescription=`pi-desktop`、FileVersion=`0.1.0`、CompanyName=`pi-desktop`。
 6. **`app.asar` 内有 103 个生产依赖包**（含 `zod/src/*.ts`、`style-to-object/src/*.ts` 等上游原始 TS 源码与 `*.d.mts`）。不放宽任何验收（无 `*.map`、无自家源码），但 asar 内有第三方 source 属于上游分发习惯，**未做**体积优化（可用 `files` 白名单进一步裁剪）。
 7. **TOCTOU 残留窗口**：`lstat` 与 `open` 之间若文件被换成链接，仍会读到目标前 ≤1MB。上限由 `HASH_LIMIT_BYTES` 兜住（不会整读），**未验证**极端竞态下的行为。
 8. **未做真实 30 分钟 wall-clock / 真实 provider**：A11 只覆盖启动与安装；A7 的 RSS 结论来自 240 轮压测（见 `docs/perf/a7-memory.md`），不含真实 provider 回复长度分布。
@@ -261,7 +262,7 @@ tests/unit/approval-defaults.test.ts      import 两份并逐项比对          
 
 - 真机干净安装（A11 完整口径，含 SmartScreen/运行库）；
 - CI 在 GitHub 实跑一次（配置已通过 actionlint + schema 校验）；
-- 应用图标 + exe 版本资源（`signExecutable: false`）；
+- ~~应用图标 + exe 版本资源~~ → 已完成：图标见 `resources/icon.svg`，`signExecutable: false` 已生效（见 `docs/release.md`）。
 - `release/` 产物早于本次 A6 渲染层改动（`src/renderer/lib/client.ts`）—— 已收口（2026-11-23 10:54 重新打包并复验，见 §10）。
 
 ## 8. 复现命令

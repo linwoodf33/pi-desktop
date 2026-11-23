@@ -38,7 +38,9 @@ npm run test:e2e   # Electron E2E（Playwright，先 build；E1/E2/E4，用 mock
 # 真实 pi 链路（会消耗一次模型调用）：
 # PI_DESKTOP_REAL_PI=1 npm run test:integration
 npm run package    # 构建后 electron-builder --dir，产出 release/win-unpacked
-npm run package:dist # 构建后打完整安装包（NSIS）
+npm run package:dist # 构建后打完整安装包（NSIS）；产物名 pi-desktop-<版本>-<架构>.exe
+npm run icon       # 由 resources/icon.svg 重新生成 resources/icon.png（打包用的图标）
+npm run icon:preview # 额外派生 16/24/32/48/64/128/256 预览图到 docs/screenshots/
 ```
 
 ## 目录结构
