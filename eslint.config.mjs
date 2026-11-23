@@ -42,7 +42,7 @@ export default tseslint.config(
 
   {
     // 配置文件不参与 tsconfig 项目，关闭类型感知规则，避免 projectService 解析报错
-    files: ['**/*.mjs', '**/*.js', '**/*.mts', '*.config.ts'],
+    files: ['**/*.mjs', '**/*.js', '**/*.cjs', '**/*.mts', '*.config.ts'],
     extends: [tseslint.configs.disableTypeChecked]
   },
 
@@ -54,6 +54,8 @@ export default tseslint.config(
       'tests/**/*.ts',
       'tests/**/*.mjs',
       'scripts/**/*.mjs',
+      // Electron 侧一次性脚本（图标渲染）：`.cjs` 不进 tsconfig，属 Node 环境
+      'scripts/**/*.cjs',
       'src/extensions/**/*.ts',
       '*.config.ts'
     ],
@@ -82,6 +84,14 @@ export default tseslint.config(
         { name: 'process', message: '渲染进程禁止使用 Node 能力（§9.4 S1）' },
         { name: '__dirname', message: '渲染进程禁止使用 Node 能力（§9.4 S1）' }
       ]
+    }
+  },
+
+  {
+    // CommonJS 脚本（Electron 主进程侧一次性工具）：`require` 是本文件的正确写法
+    files: ['scripts/**/*.cjs'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off'
     }
   },
 

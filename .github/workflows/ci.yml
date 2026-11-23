@@ -68,7 +68,20 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
-      - run: npm run test:unit
+      # JUnit 报告：失败时随 artifact 上传（本机网络到不了 Actions 日志主机时，
+      # 这是唯一能拿到完整断言堆栈的通道；`gh run download <run> -n junit-*`）。
+      - name: 跑 unit（JUnit 报告）
+        run: >
+          npx vitest run --project unit
+          --reporter=default --reporter=junit
+          --outputFile.junit=reports/junit-unit.xml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: junit-unit
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 14
 
   integration:
     name: 集成测试（mock pi 链路）
@@ -84,7 +97,20 @@ jobs:
           cache: npm
       - run: npm ci
       # 默认（无 PI_DESKTOP_REAL_PI）跳过需要真实 pi 的用例，其余链路全跑
-      - run: npm run test:integration
+      # JUnit 报告：失败时随 artifact 上传（本机网络到不了 Actions 日志主机时，
+      # 这是唯一能拿到完整断言堆栈的通道；`gh run download <run> -n junit-*`）。
+      - name: 跑 integration（JUnit 报告）
+        run: >
+          npx vitest run --project integration
+          --reporter=default --reporter=junit
+          --outputFile.junit=reports/junit-integration.xml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: junit-integration
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 14
 
   build:
     name: 生产构建
@@ -129,7 +155,20 @@ jobs:
       # E2E 启动的是 `out/main/index.js`（Electron 37）。windows-latest runner 有交互桌面会话，
       # Electron 可直接启动；若某天 runner 镜像退化为无图形会话，用例会在启动阶段失败——
       # 那时应显式记录原因并降级为手动门控（本地等价命令：npm run test:e2e），不要静默 skip。
-      - run: npx vitest run --project e2e
+      # JUnit 报告：失败时随 artifact 上传（本机网络到不了 Actions 日志主机时，
+      # 这是唯一能拿到完整断言堆栈的通道；`gh run download <run> -n junit-*`）。
+      - name: 跑 e2e（JUnit 报告）
+        run: >
+          npx vitest run --project e2e
+          --reporter=default --reporter=junit
+          --outputFile.junit=reports/junit-e2e.xml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: junit-e2e
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 14
 
   security:
     name: 安全审计（A9：npm audit + S1–S6 产物核查）

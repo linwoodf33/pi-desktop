@@ -19,6 +19,8 @@
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "icon": "node scripts/build-icon.mjs",
+    "icon:preview": "node scripts/build-icon.mjs --preview",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:watch": "vitest --project unit",

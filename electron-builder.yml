@@ -19,7 +19,13 @@ win:
   target:
     - target: dir
     - target: nsis
-  signAndEditExecutable: false
+  # 应用图标：源文件 `resources/icon.svg`，由 `npm run icon` 渲成 `resources/icon.png`（1024×1024）。
+  # electron-builder 会据此生成多档 `.ico` 写进 exe 与安装包。
+  icon: icon.png
+  # `signExecutable: false`（**不是** signAndEditExecutable）：只跳过代码签名，
+  # 仍应用图标与版本资源。之前用 signAndEditExecutable: false 会把图标/元数据一起跳过，
+  # 导致 exe 在任务管理器里显示 "Electron"、图标是 Electron 默认的。
+  signExecutable: false
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

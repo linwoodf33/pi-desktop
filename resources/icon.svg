@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    pi-desktop 应用图标。
+
+    概念：π 坐在一条「桌面线」上 — π 是 pi 的符号，「桌面线」把 π 托住，
+    一眼是「把 pi 放到桌面上」（desktop client），而不是又一个通用终端图标。
+    造型全部用等宽笔画的几何体（横杠 + 两条腿 + 托盘线），
+    缩到 16px 仍能辨认出 π + 底座的剪影。
+
+    配色取自应用自身主题（src/renderer/app/styles.css 的 CSS 变量），
+    保证图标与界面同源：bg-panel #14181d、accent #4c9ef0、text-dim #8b95a3。
+  -->
+  <defs>
+    <!-- 深色底：中心略亮，避免纯色平板感 -->
+    <radialGradient id="tile" cx="50%" cy="34%" r="78%">
+      <stop offset="0%" stop-color="#1b232c" />
+      <stop offset="58%" stop-color="#14181d" />
+      <stop offset="100%" stop-color="#0d1116" />
+    </radialGradient>
+    <!-- π 的笔画：上亮下暗，模拟一点来自上方的光。
+         直线（零高度包围盒）用 objectBoundingBox 渐变会退化 → 必须 userSpaceOnUse -->
+    <linearGradient id="pi" gradientUnits="userSpaceOnUse" x1="0" y1="336" x2="0" y2="652">
+      <stop offset="0%" stop-color="#7fbcf7" />
+      <stop offset="52%" stop-color="#4c9ef0" />
+      <stop offset="100%" stop-color="#2b6ba8" />
+    </linearGradient>
+  </defs>
+
+  <!-- 圆角底板（Windows 图标会自己加阴影，这里只画形状） -->
+  <rect x="24" y="24" width="976" height="976" rx="208" ry="208" fill="url(#tile)" />
+  <!-- 内侧细描边：与界面 border 同色系，缩小时给出边缘定义 -->
+  <rect
+    x="24.5"
+    y="24.5"
+    width="975"
+    height="975"
+    rx="208"
+    ry="208"
+    fill="none"
+    stroke="#39434f"
+    stroke-opacity="0.85"
+    stroke-width="3"
+  />
+
+  <!-- π：横杠 + 两条腿，笔画宽度一致，端点为圆角 -->
+  <g stroke="url(#pi)" stroke-linecap="round" fill="none">
+    <path d="M 268 344 L 756 344" stroke-width="92" />
+    <path d="M 402 344 L 402 646" stroke-width="92" />
+    <path d="M 622 344 L 622 646" stroke-width="92" />
+  </g>
+
+  <!-- 桌面线（托盘）：π 站在上面 -->
+  <path
+    d="M 226 770 L 798 770"
+    stroke="#5c6878"
+    stroke-width="44"
+    stroke-linecap="round"
+    fill="none"
+  />
+</svg>

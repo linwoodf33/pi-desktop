@@ -1,0 +1,132 @@
+name: Release
+
+# 发布工作流（第三件事）。
+#
+# 触发：
+# - push tag `v*`：构建 NSIS 安装包 → 计算 SHA-256 → 创建 GitHub Release 并挂上产物。
+# - workflow_dispatch：只构建 + 上传 Actions artifact（**不**创建 Release），
+#   用于在打 tag 前验证流水线本身（避免「先污染 release 列表再发现问题」）。
+#
+# 为什么不用 `softprops/action-gh-release` 之类第三方 action：
+# 本仓库既有策略是「所有 action 固定到 commit SHA」（见 ci.yml 的 zizmor 约束），
+# 而 `gh` CLI 在 windows runner 上自带，`gh release create` 一行就能完成同样的工作，
+# 少一个需要长期跟踪 SHA 的依赖。
+#
+# 签名：仓库没有代码签名证书，产物是**未签名**的。release notes 里会写明，
+# 不假装成已签名发布；要签名时给此 job 加 secrets（证书 + 口令）再打开签名步骤。
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '22'
+  CI: 'true'
+  npm_config_fund: 'false'
+  npm_config_audit: 'false'
+
+jobs:
+  package:
+    name: 构建安装包（Windows x64）
+    runs-on: windows-latest
+    timeout-minutes: 40
+    # 创建 Release 需要写权限；`persist-credentials: false` 下用 GITHUB_TOKEN 显式授权
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          # 刻意不用 actions 缓存：本 job 有 contents:write，共享缓存是可被投毒的信任边界
+      - run: npm ci
+
+      # 打 tag 发布时，tag 必须与 package.json 的版本一致：否则产物文件名（0.1.0）
+      # 与 Release 标题（v0.2.0）会对不上，属于只能靠人工兜底的错误，直接 fail 更快。
+      - name: 校验 tag 与 package.json 版本一致
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          # 经 env 传递而不是内联 `${{ }}`：tag 名是外部输入，内联进 shell 就是注入面
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          $pkgVersion = node -p "require('./package.json').version"
+          $tag = $env:TAG_NAME
+          if ($tag -ne "v$pkgVersion") {
+            throw "tag($tag) 与 package.json 版本(v$pkgVersion) 不一致：请先改版本再打 tag"
+          }
+          Write-Host "版本一致：$tag"
+
+      # 图标是构建产物（由 resources/icon.svg 渲出），打包前必须先生成，
+      # 否则 electron-builder 会退回 Electron 默认图标。
+      - name: 生成应用图标
+        run: npm run icon
+
+      # 发布前的最小门禁：类型 + 格式 + 单测。完整 E2E/集成在 CI 工作流里跑，
+      # 这里不重复（发布 job 的目标是「产物可装可启动」，不是再跑一遍全量回归）。
+      - run: npm run typecheck
+      - run: npm run format:check
+      - run: npm run test:unit
+
+      - name: 构建 NSIS 安装包
+        run: npm run package:dist
+
+      - name: 计算校验和
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem 'release/*.exe' | Where-Object { $_.Name -notlike '*uninstaller*' } | Select-Object -First 1
+          if ($null -eq $exe) { throw '未找到安装包产物' }
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          $line = "$hash  $($exe.Name)"
+          $line | Out-File -FilePath 'release/SHA256SUMS.txt' -Encoding utf8
+          Write-Host $line
+          "INSTALLER_NAME=$($exe.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "INSTALLER_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "PKG_VERSION=$(node -p "require('./package.json').version")" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      # 无论是否打 tag 都上传 Actions artifact：dispatch 验证时靠它拿产物，
+      # 打 tag 时它是 Release 之外的备份（Release 万一要重建，不必重新构建）。
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.4.0
+        with:
+          name: pi-desktop-${{ env.PKG_VERSION }}-win-x64
+          path: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 创建 GitHub Release（仅 tag 触发）
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 同上：tag 名只经 env 进入 shell
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          $notes = @"
+          Windows x64 安装包（NSIS，per-user，无需管理员权限）。
+
+          - 版本：`v$env:PKG_VERSION`
+          - 文件：`$env:INSTALLER_NAME`
+          - SHA-256：`$env:INSTALLER_SHA256`
+
+          **本产物未做代码签名**（仓库未配置签名证书），首次运行 Windows SmartScreen 可能提示
+          “已保护你的电脑”，需点「更多信息 → 仍要运行」。校验方式：
+          `Get-FileHash .\$env:INSTALLER_NAME -Algorithm SHA256` 应与上面一致。
+
+          安装包内置 Electron 运行时，**不要求目标机预装 Node 或 pi**；pi 需另行安装，
+          客户端会在设置里定位 pi 可执行文件（也可手动指定路径）。
+          "@
+          $notes | Out-File -FilePath release-notes.md -Encoding utf8
+          gh release create $env:TAG_NAME `
+            "release/$env:INSTALLER_NAME" `
+            "release/$env:INSTALLER_NAME.blockmap" `
+            "release/SHA256SUMS.txt" `
+            --title "pi-desktop $env:PKG_VERSION" `
+            --notes-file release-notes.md `
+            --verify-tag
