@@ -57,7 +57,7 @@ function buildRouter(
         sessionRoot: () => 'C:/nonexistent-pi-sessions'
       }),
       // M6 产物层：无活跃会话（workspaceOf 返回 undefined）→ 任何路径都会被拒
-      // M7：模型管理通道（默认不调用；指向不存在的 agent 目录，避免读写开发者真配置）
+      // A14：模型管理通道（默认不调用；指向不存在的 agent 目录，避免读写开发者真配置）
       modelConfigStore: createModelConfigStore({ agentDir: 'C:/nonexistent-pi-agent' }),
       artifacts: createArtifactsService({
         resolver: createWorkspaceResolver({

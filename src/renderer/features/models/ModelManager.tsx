@@ -7,7 +7,7 @@ import { useModelAdminStore } from '../../stores/modelAdminStore'
 import { useSessionStore } from '../../stores/sessionStore'
 
 /**
- * 模型管理弹层（M7）。
+ * 模型管理弹层（A14）。
  *
  * 管的是**磁盘上的 pi 配置**（`<agent-dir>/models.json` + `settings.json#defaultModel`），
  * 与「会话内切换模型」是两件事：这里改完，**已在跑的会话不变**，要新开会话才生效。

@@ -262,7 +262,7 @@ tests/unit/approval-defaults.test.ts      import 两份并逐项比对          
 
 - 真机干净安装（A11 完整口径，含 SmartScreen/运行库）；
 - CI 在 GitHub 实跑一次（配置已通过 actionlint + schema 校验）；
-- ~~应用图标 + exe 版本资源~~ → 已完成：图标见 `resources/icon.svg`，`signExecutable: false` 已生效（见 `docs/release.md`）。
+- ~~应用图标 + exe 版本资源~~ → 已完成：图标见 `resources/icon.svg`，`signExecutable: false` 已生效（见架构文档 §14）。
 - `release/` 产物早于本次 A6 渲染层改动（`src/renderer/lib/client.ts`）—— 已收口（2026-11-23 10:54 重新打包并复验，见 §10）。
 
 ## 8. 复现命令

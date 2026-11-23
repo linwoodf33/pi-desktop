@@ -9,7 +9,7 @@ import type {
 import { getApi } from '../lib/client'
 
 /**
- * 模型管理 store（M7）。
+ * 模型管理 store（A14）。
  *
  * 只做三件事：拉视图、执行写操作、把错误留在本地（不污染全局 error banner —— 模型管理是
  * 用户主动打开的弹层，错误应显示在弹层里而不是页面顶部）。

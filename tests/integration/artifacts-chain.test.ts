@@ -85,7 +85,7 @@ function buildHarness(workspaceRoot: string): Harness {
     fsBridge: createFsBridge({ showOpenDialog: () => Promise.reject(new Error('不应弹目录')) }),
     sessionHistory: createSessionHistory({ sessionRoot: () => join(workspaceRoot, '.sessions') }),
     artifacts,
-    // M7：本用例不碰模型管理通道，但 RouterDeps 要求注入（指向临时 agent 目录，绝不写用户真配置）
+    // A14：本用例不碰模型管理通道，但 RouterDeps 要求注入（指向临时 agent 目录，绝不写用户真配置）
     modelConfigStore: createModelConfigStore({ agentDir: join(workspaceRoot, '.agent') })
   })
 

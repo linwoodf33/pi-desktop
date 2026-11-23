@@ -6,7 +6,7 @@
 
 ### 新增
 
-- **模型管理弹层**（顶栏「模型」，见 `docs/models.md`）
+- **模型管理弹层**（顶栏「模型」，见架构文档 §13）
   - 列出 `models.json` 里的 provider 与模型（上下文 / 最大输出 / thinking），
     apiKey 只显示掩码或「无 key」；
   - 新增 / 编辑 / 删除 provider 及其模型（id、显示名、Base URL、API 类型、key、模型行）；
@@ -36,7 +36,7 @@ unit 653 / integration 48（+3 skip）/ e2e 38（新增模型管理 5 条：写�
 
 ### 新增
 
-- **9 个内置主题 + 跟随系统**（`docs/themes.md`）：pi 深色（默认）、pi 浅色、GitHub Light、
+- **9 个内置主题 + 跟随系统**（架构文档 §12）：pi 深色（默认）、pi 浅色、GitHub Light、
   Solarized Light、Nord、Dracula、One Dark、Tokyo Night、Catppuccin Mocha。
   此前 `theme` 只持久化不生效，本次真正应用到 DOM（CSS 变量 + `data-theme` + `color-scheme`），
   「跟随系统」监听 `prefers-color-scheme` 实时切换。

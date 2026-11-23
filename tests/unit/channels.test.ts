@@ -34,7 +34,7 @@ describe('IPC 通道白名单（§5.4）', () => {
         'permission:status',
         'model:list',
         'model:set',
-        // M7 补充：模型管理（pi models.json / settings.json#defaultModel）
+        // A14 补充：模型管理（pi models.json / settings.json#defaultModel）
         'models:read',
         'models:setDefault',
         'models:upsertProvider',

@@ -70,7 +70,7 @@ export interface RouterDeps {
   defaultCwd?: () => string
   /** M5：审批扩展的安装状态检测（`permission:status`） */
   permissionDeps?: PermissionExtensionDeps
-  /** M7：pi 的模型配置读写（`models:*`；apiKey 只进不出） */
+  /** A14：pi 的模型配置读写（`models:*`；apiKey 只进不出） */
   modelConfigStore: ModelConfigStore
 }
 
@@ -222,7 +222,7 @@ export function createRouter(
       service.stats({ sessionKey: (raw as SessionKeyInput).sessionKey }),
 
     /**
-     * M7 模型管理：直接读写 pi 的 models.json / settings.json#defaultModel。
+     * A14 模型管理：直接读写 pi 的 models.json / settings.json#defaultModel。
      *
      * 与 `model:set`（会话内切换）不同，这里改的是磁盘配置，**对已在运行的会话不生效**。
      * 入参已由 router 的 zod schema 校验过；服务层再做一次（纵深防御）。

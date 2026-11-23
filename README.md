@@ -17,8 +17,8 @@ pi（`@earendil-works/pi-coding-agent`）的桌面客户端，Electron + React +
 
 M4–M7 已补：新建任务弹层（模型/推理档位）、恢复与分叉、成本/token 展示、审批扩展（fail-closed）、
 产物面板（git 优先 + 快照兜底、diff、打开文件）、模型管理（顶层「模型」按钮，改 pi 的
-`models.json` 与默认模型）。发布流程见 [`docs/release.md`](docs/release.md)，主题见
-[`docs/themes.md`](docs/themes.md)，模型管理见 [`docs/models.md`](docs/models.md)。
+`models.json` 与默认模型）。主题、模型管理、发布与诊断均已并入
+[`docs/architecture.md`](docs/architecture.md)（§12 / §13 / §14）。
 
 历史版本（M2 通道层）摘要：`JsonlReader`（只在 LF 切分）、`LocalConnection`/`LocalTransport`（一会话一子进程、关停阶梯）、`PiLocator` 三步自检、`SessionService`（串行化 + 按 id 关联 + 并行上限/空闲回收）、`SessionIndex`。
 

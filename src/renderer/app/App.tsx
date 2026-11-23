@@ -65,7 +65,7 @@ export function App() {
   const artifactsCollapsed = useArtifactStore((state) => state.collapsed)
 
   const [dialogOpen, setDialogOpen] = useState(false)
-  // M7：模型管理弹层（改 pi 的 models.json / 默认模型）
+  // A14：模型管理弹层（改 pi 的 models.json / 默认模型）
   const [modelsOpen, setModelsOpen] = useState(false)
 
   useEffect(() => {
@@ -99,7 +99,7 @@ export function App() {
     <div className="app">
       <header className="app__bar">
         <span className="app__brand">pi-desktop</span>
-        <span className="app__bar-note">本地工作台 · M7</span>
+        <span className="app__bar-note">本地工作台 · MVP</span>
         <button
           type="button"
           className="btn btn--ghost app__bar-action"

@@ -1,17 +1,18 @@
 # pi-desktop 桌面客户端架构方案
 
-- 版本：v0.3（2026-11-20）
-- 状态：待评审（v0.3：本地优先，远程改为 Phase 2 网关）
+- 版本：v0.4（2026-11-23）
+- 状态：已实现（v0.4：把主题、模型管理、发布与诊断并入正文，MVP 事实与文档合一）
 - 作者：architect
 - 目标读者：executor（实现者）、reviewer
 
 ## 版本变更记录
 
-| 版本 | 日期       | 关键变更                                                                                                                                                                           |
-| ---- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| v0.1 | 2026-11-20 | Electron + React + Vite；`PiTransport` 抽象；RPC 子进程默认；本地 session JSONL 为事实来源；M1–M6                                                                                  |
-| v0.2 | 2026-11-20 | 引入「pi 在云服务器」约束；新增部署模式章节；`PiTransport` 拆为 `PiConnection` + `PiTransport`；SSH 为 P0、网关 P1、镜像 P2；新增断连恢复、约束 11–17、M1–M8                       |
-| v0.3 | 2026-11-20 | **SSH 否决**；**MVP 只做本地模式**；远程降为 Phase 2「常驻网关 + WSS 零配置」；远程优先的过度设计收进附录 A；里程碑重排 M1–M6 / M7–M9；补齐 v0.2 遗留 8 处缺口；待确认项改为 Q1–Q7 |
+| 版本 | 日期       | 关键变更                                                                                                                                                                                                                         |
+| ---- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| v0.1 | 2026-11-20 | Electron + React + Vite；`PiTransport` 抽象；RPC 子进程默认；本地 session JSONL 为事实来源；M1–M6                                                                                                                                |
+| v0.2 | 2026-11-20 | 引入「pi 在云服务器」约束；新增部署模式章节；`PiTransport` 拆为 `PiConnection` + `PiTransport`；SSH 为 P0、网关 P1、镜像 P2；新增断连恢复、约束 11–17、M1–M8                                                                     |
+| v0.3 | 2026-11-20 | **SSH 否决**；**MVP 只做本地模式**；远程降为 Phase 2「常驻网关 + WSS 零配置」；远程优先的过度设计收进附录 A；里程碑重排 M1–M6 / M7–M9；补齐 v0.2 遗留 8 处缺口；待确认项改为 Q1–Q7                                               |
+| v0.4 | 2026-11-23 | **并入实现事实**：新增 §12 主题系统、§13 模型管理、§14 发布工程与诊断；§5.4 补 6 条 `models:*` 通道；§7 补约束 16–18；§9/§10 补 U22–U24、E11、A14–A16。原 `docs/themes.md`、`docs/models.md`、`docs/release.md` 合并进正文后删除 |
 
 **v0.2 → v0.3 的三条决策变更**
 
@@ -283,31 +284,37 @@ interface PiTransport {
 
 统一形态 `invoke(channel, payload) -> Promise<Result<T>>`，`Result<T> = { ok: true; data: T } | { ok: false; error: { code: string; message: string; detail?: string } }`。
 
-| 通道                 | 入参                                                                                            | 出参                                                              | 说明                                                                                                                         |
-| -------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `app:getBoot`        | `{}`                                                                                            | `{ config, piStatus, lastCwd? }`                                  | 启动态聚合，减少往返                                                                                                         |
-| `pi:locate`          | `{ path? }`                                                                                     | `SelfCheckResult`                                                 | 定位/自检 pi                                                                                                                 |
-| `session:list`       | `{ cwd?, cursor? }`                                                                             | `{ items, nextCursor }`                                           | 读 SessionIndex                                                                                                              |
-| `session:history`    | `{ sessionFile, maxRecords?, allowMissing? }`                                                   | `{ records, truncated, totalRecords, messageCount, fileAbsent? }` | **M3 补充**：只读回放 JSONL；**M4**：`maxRecords` 默认 2000；**M4 复核**：`allowMissing`（仅 fork 编排）= 文件未落盘按空会话 |
-| `session:create`     | `{ cwd, model?, name? }`                                                                        | `{ sessionKey, sessionId }`                                       | 启动子进程                                                                                                                   |
-| `session:resume`     | `{ sessionFile }`                                                                               | `{ sessionKey }`                                                  | 恢复既有会话                                                                                                                 |
-| `session:fork`       | `{ sessionKey, entryId? }`                                                                      | `{ sessionKey }`                                                  | **M4 修订**：`entryId` = 用户消息 entry（`messageId` 保留为同义别名）                                                        |
-| `session:prompt`     | `{ sessionKey, message, images?, streamingBehavior? }`                                          | `{ disposition }`                                                 | busy 时必带 `streamingBehavior`                                                                                              |
-| `session:abort`      | `{ sessionKey }`                                                                                | `{ ok: true }`                                                    | 中止并等 idle                                                                                                                |
-| `session:dispose`    | `{ sessionKey }`                                                                                | `{ ok: true }`                                                    | 释放子进程                                                                                                                   |
-| `session:state`      | `{ sessionKey }`                                                                                | `AgentState`                                                      | models/thinkingLevel/队列/成本                                                                                               |
-| `session:stats`      | `{ sessionKey }`                                                                                | `SessionStats`                                                    | **M4 补充**：pi `get_session_stats`（token/成本/上下文用量）                                                                 |
-| `session:forkPoints` | `{ sessionKey }`                                                                                | `{ points: {entryId,text}[] }`                                    | **M4 补充**：pi `get_fork_messages`（可分叉点）                                                                              |
-| `model:list`         | `{}`                                                                                            | `ModelInfo[]`                                                     | provider/model/cost                                                                                                          |
-| `model:set`          | `{ sessionKey, model, thinkingLevel? }`                                                         | `{ ok: true }`                                                    |                                                                                                                              |
-| `config:update`      | `{ piCommand?, sessionDir?, workspaceRoots?, maxActiveSessions?, idleRecycleMinutes?, theme? }` | `AppConfigView`                                                   | **M4 补充**：偏好持久化（拒疑似密钥字段）                                                                                    |
-| `extui:respond`      | `{ sessionKey, requestId, response }`                                                           | `{ ok: true }`                                                    | **M5**：回 `extension_ui_response`；`response` 收窄为 `{kind:'select',value}` / `{kind:'cancel'}`                            |
-| `permission:status`  | `{}`                                                                                            | `PermissionStatus`                                                | **M5 补充**：审批扩展安装/协议状态（只读）                                                                                   |
-| `fs:pickDirectory`   | `{ defaultPath? }`                                                                              | `{ path }`                                                        | 原生对话框                                                                                                                   |
-| `fs:listArtifacts`   | `{ sessionKey?, sessionFile? }`                                                                 | `ArtifactList`（M6）                                              | 工作区变更列表；**M6**：会话引用二选一，出参包上 `mode/truncated/totalCount/note`                                            |
-| `fs:readText`        | `{ path, maxBytes?, offset?, sessionKey?, sessionFile? }`                                       | `ReadTextResult`（M6）                                            | **M6**：默认前 64KB、`offset` 分页、二进制标记；路径必须在会话工作区（或主进程已知根）内                                     |
-| `fs:diff`            | `{ path, sessionKey?, sessionFile? }`                                                           | `UnifiedDiff`（M6）                                               | **M6**：git 走 `git diff`（暂存+未暂存），非 git 走快照比对合成；上限 2MB 显式截断                                           |
-| `artifact:open`      | `{ path, sessionKey?, sessionFile? }`                                                           | `{ ok: true }`                                                    | **M6**：`shell.openPath`（**不是** `openExternal`）打开前校验工作区与文件存在性，并记审计                                    |
+| 通道                    | 入参                                                                                            | 出参                                                              | 说明                                                                                                                         |
+| ----------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `app:getBoot`           | `{}`                                                                                            | `{ config, piStatus, lastCwd? }`                                  | 启动态聚合，减少往返                                                                                                         |
+| `pi:locate`             | `{ path? }`                                                                                     | `SelfCheckResult`                                                 | 定位/自检 pi                                                                                                                 |
+| `session:list`          | `{ cwd?, cursor? }`                                                                             | `{ items, nextCursor }`                                           | 读 SessionIndex                                                                                                              |
+| `session:history`       | `{ sessionFile, maxRecords?, allowMissing? }`                                                   | `{ records, truncated, totalRecords, messageCount, fileAbsent? }` | **M3 补充**：只读回放 JSONL；**M4**：`maxRecords` 默认 2000；**M4 复核**：`allowMissing`（仅 fork 编排）= 文件未落盘按空会话 |
+| `session:create`        | `{ cwd, model?, name? }`                                                                        | `{ sessionKey, sessionId }`                                       | 启动子进程                                                                                                                   |
+| `session:resume`        | `{ sessionFile }`                                                                               | `{ sessionKey }`                                                  | 恢复既有会话                                                                                                                 |
+| `session:fork`          | `{ sessionKey, entryId? }`                                                                      | `{ sessionKey }`                                                  | **M4 修订**：`entryId` = 用户消息 entry（`messageId` 保留为同义别名）                                                        |
+| `session:prompt`        | `{ sessionKey, message, images?, streamingBehavior? }`                                          | `{ disposition }`                                                 | busy 时必带 `streamingBehavior`                                                                                              |
+| `session:abort`         | `{ sessionKey }`                                                                                | `{ ok: true }`                                                    | 中止并等 idle                                                                                                                |
+| `session:dispose`       | `{ sessionKey }`                                                                                | `{ ok: true }`                                                    | 释放子进程                                                                                                                   |
+| `session:state`         | `{ sessionKey }`                                                                                | `AgentState`                                                      | models/thinkingLevel/队列/成本                                                                                               |
+| `session:stats`         | `{ sessionKey }`                                                                                | `SessionStats`                                                    | **M4 补充**：pi `get_session_stats`（token/成本/上下文用量）                                                                 |
+| `session:forkPoints`    | `{ sessionKey }`                                                                                | `{ points: {entryId,text}[] }`                                    | **M4 补充**：pi `get_fork_messages`（可分叉点）                                                                              |
+| `model:list`            | `{}`                                                                                            | `ModelInfo[]`                                                     | provider/model/cost                                                                                                          |
+| `model:set`             | `{ sessionKey, model, thinkingLevel? }`                                                         | `{ ok: true }`                                                    |                                                                                                                              |
+| `models:read`           | `{}`                                                                                            | `ModelConfigView`                                                 | **A14**：读 pi 的 `models.json` + `settings.json#defaultModel`；apiKey 只返回 `hasApiKey`/`apiKeyHint`                       |
+| `models:setDefault`     | `{ modelId: string \| null }`                                                                   | `ModelConfigWriteResult`                                          | **A14**：写入默认模型；`null` = 清除该键（恢复 pi 自动选择）                                                                 |
+| `models:upsertProvider` | `{ id, name?, baseUrl?, api?, apiKey?, models? }`                                               | `ModelConfigWriteResult`                                          | **A14**：新增/编辑 provider；`apiKey` 省略 = 保留、`''` = 清除                                                               |
+| `models:removeProvider` | `{ id }`                                                                                        | `ModelConfigWriteResult`                                          | **A14**：删除 provider 整段                                                                                                  |
+| `models:upsertModel`    | `{ providerId, model }`                                                                         | `ModelConfigWriteResult`                                          | **A14**：新增/编辑单个模型                                                                                                   |
+| `models:removeModel`    | `{ providerId, modelId }`                                                                       | `ModelConfigWriteResult`                                          | **A14**：删除单个模型                                                                                                        |
+| `config:update`         | `{ piCommand?, sessionDir?, workspaceRoots?, maxActiveSessions?, idleRecycleMinutes?, theme? }` | `AppConfigView`                                                   | **M4 补充**：偏好持久化（拒疑似密钥字段）                                                                                    |
+| `extui:respond`         | `{ sessionKey, requestId, response }`                                                           | `{ ok: true }`                                                    | **M5**：回 `extension_ui_response`；`response` 收窄为 `{kind:'select',value}` / `{kind:'cancel'}`                            |
+| `permission:status`     | `{}`                                                                                            | `PermissionStatus`                                                | **M5 补充**：审批扩展安装/协议状态（只读）                                                                                   |
+| `fs:pickDirectory`      | `{ defaultPath? }`                                                                              | `{ path }`                                                        | 原生对话框                                                                                                                   |
+| `fs:listArtifacts`      | `{ sessionKey?, sessionFile? }`                                                                 | `ArtifactList`（M6）                                              | 工作区变更列表；**M6**：会话引用二选一，出参包上 `mode/truncated/totalCount/note`                                            |
+| `fs:readText`           | `{ path, maxBytes?, offset?, sessionKey?, sessionFile? }`                                       | `ReadTextResult`（M6）                                            | **M6**：默认前 64KB、`offset` 分页、二进制标记；路径必须在会话工作区（或主进程已知根）内                                     |
+| `fs:diff`               | `{ path, sessionKey?, sessionFile? }`                                                           | `UnifiedDiff`（M6）                                               | **M6**：git 走 `git diff`（暂存+未暂存），非 git 走快照比对合成；上限 2MB 显式截断                                           |
+| `artifact:open`         | `{ path, sessionKey?, sessionFile? }`                                                           | `{ ok: true }`                                                    | **M6**：`shell.openPath`（**不是** `openExternal`）打开前校验工作区与文件存在性，并记审计                                    |
 
 事件（main → renderer）：
 
@@ -511,6 +518,10 @@ Phase 2 的连接级断连/重连见附录 A.5。
 14. **大小上限**：回放/`readAll` 50MB、预览 64KB、diff 2MB、stderr 200 行/64KB；超限必须显式提示（不静默截断）。
 15. **构建产物**：打包后不得出现 `NODE_ENV=development`、sourcemap 与本机绝对路径。
 
+16. **主题**：调色板只有一份真源（`shared/contracts/theme.ts`），运行时写成 `<html>` 的 CSS 变量 + `color-scheme`（§12）；**对比度是断言不是审美**——逐主题按 WCAG AA 校验（正文 ≥ 4.5、强调/状态/代码 token ≥ 3），不达标就改色，不放宽阈值。
+17. **模型配置（A14）**：写 pi 的 `models.json` / `settings.json` 时——apiKey **只进不出**（不进 IPC / 日志 / 审计）；客户端未建模的字段（`compat`/`samplingParams`/`cost`/`headers`/`modelOverrides`）必须原样保留；写入走「临时文件 + rename」原子替换并留 `.bak-<时间戳>`（保留 3 份）；坏 JSON 拒绝改动而非覆盖。
+18. **发布**：产物命名不带空格（GitHub 会把空格转点，与 `SHA256SUMS.txt` 对不上）；`electron-builder` 一律显式 `--publish never`（CI 环境下它会隐式发布并因缺 `GH_TOKEN` 失败）；Release notes 由 Node 脚本生成（§14），不放 shell 里拼。
+
 ---
 
 ## 8. 里程碑
@@ -569,6 +580,9 @@ Phase 2 的连接级断连/重连见附录 A.5。
 | U19 | MVP  | unified diff 解析与截断                                                                                      | 文件/hunk/行类型正确；超限按行截断并带显式说明（`tests/unit/unified-diff.test.ts`、`tests/unit/diff-parser.test.ts`） |
 | U20 | MVP  | 非 git 快照比对（新增/修改/删除/`touch` 不误报/大小变化内容前缀相同）                                        | 变更集合正确，`touch` 不算变化（`tests/unit/workspace-snapshot.test.ts`）                                             |
 | U21 | MVP  | 产物服务上限与审计（列表 1000、预览 64KB、diff 2MB、`artifact:open` 四种结果）                               | 超限显式 `truncated`；审计只含 `action/target/outcome/code`（`tests/unit/artifacts-service.test.ts`）                 |
+| U22 | MVP  | 主题注册表：9 套调色板逐项 WCAG 对比度（正文 ≥4.5 / 强调·状态·代码 token ≥3 / scheme 与背景亮度一致）        | 全部达标；`dark`/`light` 历史值归一为 `pi-dark`/`pi-light`（`tests/unit/theme.test.ts`）                              |
+| U23 | MVP  | 模型配置：apiKey 脱敏、未知字段保留、原子写 + 备份轮转、坏 JSON 拒绝、非法 id/baseUrl/api                    | 明文不出视图；`compat`/`headers` 等原样保留；`../evil`、`ftp://` 被拒（`tests/unit/model-config-store.test.ts`）      |
+| U24 | MVP  | 提示条同文案去重（连续保存不堆叠）                                                                           | 同 `level+message+detail` 替换而非追加，最多 5 条（`tests/unit/run-store-banners.test.ts`）                           |
 
 ### 9.2 集成（主进程 + 真实/mock pi 子进程）
 
@@ -594,18 +608,20 @@ Phase 2 的连接级断连/重连见附录 A.5。
 
 ### 9.3 E2E（Playwright + Electron）
 
-| ID  | 阶段 | 场景                                                                                                       | 期望                                                                          |
-| --- | ---- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| E1  | MVP  | 首次启动（无配置）                                                                                         | 空态 + 「定位 pi / 新建任务」引导，无报错                                     |
-| E2  | MVP  | 新建任务 → 选目录 → 发「列出当前目录」                                                                     | 流式回复，工具卡片含 bash 调用与输出                                          |
-| E3  | MVP  | 审批「拒绝」                                                                                               | 工具未执行，对话显示拒绝结果，流程继续                                        |
-| E4  | MVP  | 点击停止                                                                                                   | 300ms 内按钮置灰并显示已中止，可继续发消息                                    |
-| E5  | MVP  | 关闭窗口再打开                                                                                             | 任务列表在，选中会话历史完整                                                  |
-| E6  | MVP  | 主进程异常（mock 抛出）                                                                                    | 错误对话框，不白屏                                                            |
-| E7  | P2   | 粘贴连接串导入                                                                                             | 指纹确认后可连；指纹不符阻断且不落配置                                        |
-| E8  | P2   | 断网 → 横幅 → 重连 → 继续                                                                                  | 无重复消息，发送恢复                                                          |
-| E9  | P2   | 远端产物 diff 与下载打开                                                                                   | 预览正确，临时文件关闭即清理                                                  |
-| E10 | MVP  | 产物面板：settled 自动扫描 → diff 可见 → 确认后用系统程序打开（`shell.openPath` 被 stub） → 清理文件后刷新 | 变更可见、只在确认后调外部程序、清理后回到空态（`tests/e2e/app.e2e.test.ts`） |
+| ID  | 阶段 | 场景                                                                                                       | 期望                                                                                                                         |
+| --- | ---- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| E1  | MVP  | 首次启动（无配置）                                                                                         | 空态 + 「定位 pi / 新建任务」引导，无报错                                                                                    |
+| E2  | MVP  | 新建任务 → 选目录 → 发「列出当前目录」                                                                     | 流式回复，工具卡片含 bash 调用与输出                                                                                         |
+| E3  | MVP  | 审批「拒绝」                                                                                               | 工具未执行，对话显示拒绝结果，流程继续                                                                                       |
+| E4  | MVP  | 点击停止                                                                                                   | 300ms 内按钮置灰并显示已中止，可继续发消息                                                                                   |
+| E5  | MVP  | 关闭窗口再打开                                                                                             | 任务列表在，选中会话历史完整                                                                                                 |
+| E6  | MVP  | 主进程异常（mock 抛出）                                                                                    | 错误对话框，不白屏                                                                                                           |
+| E7  | P2   | 粘贴连接串导入                                                                                             | 指纹确认后可连；指纹不符阻断且不落配置                                                                                       |
+| E8  | P2   | 断网 → 横幅 → 重连 → 继续                                                                                  | 无重复消息，发送恢复                                                                                                         |
+| E9  | P2   | 远端产物 diff 与下载打开                                                                                   | 预览正确，临时文件关闭即清理                                                                                                 |
+| E10 | MVP  | 产物面板：settled 自动扫描 → diff 可见 → 确认后用系统程序打开（`shell.openPath` 被 stub） → 清理文件后刷新 | 变更可见、只在确认后调外部程序、清理后回到空态（`tests/e2e/app.e2e.test.ts`）                                                |
+| E11 | MVP  | 主题切换（9 套逐一切换 + 重载保持 + 跟随系统）                                                             | `data-theme`/`--bg` 生效、浏览器实算对比度 ≥4.5、截图留档（`tests/e2e/theme.e2e.test.ts`）                                   |
+| E12 | MVP  | 模型管理：打开弹层 → 新增 provider → 设默认模型 → 删除（隔离到临时 `PI_CODING_AGENT_DIR`）                 | 真写进 `models.json`/`settings.json`；界面只出现掩码；预置 provider 的额外字段仍在（`tests/e2e/models-manager.e2e.test.ts`） |
 
 ### 9.4 安全
 
@@ -651,6 +667,9 @@ Phase 2 的连接级断连/重连见附录 A.5。
 - A11 干净 Windows 10/11 x64 安装即启动（不要求预装 Node；pi 通过设置项指定可执行文件）。
 - A12 首启无 pi 时给出可操作引导，人工 3 步内解除阻塞（定位 → 自检 → 建任务）。
 - A13 会话 `agent_settled` 后产物面板显示工作区变更（git：`status`+`diff`；非 git：快照比对并**显式标注**），单文件 diff 超 2MB 截断有提示，越权路径 100% `PATH_DENIED`，「用系统程序打开」需用户确认且经主进程校验后走 `shell.openPath`。
+- A14 模型管理：客户端可列出 / 新增 / 编辑 / 删除 pi `models.json` 里的 provider 与模型，可设默认模型；**apiKey 明文不出主进程**（界面只有掩码）；写回保留客户端未建模字段；写入原子替换 + 备份，坏 JSON 拒绝改动；改动对已在运行的会话不生效且有明示。
+- A15 主题：内置 9 套主题 + 跟随系统，切换立即生效并持久化；每个主题正文对比度 ≥ 4.5、强调/状态/代码 token ≥ 3（单测按 WCAG 断言），浅色主题下代码高亮可读；历史配置值不致主题被重置。
+- A16 发布工程：`v*` tag 一键构建 NSIS 安装包并创建 Release（含 SHA-256 校验和与 CHANGELOG 段落）；产物带应用图标与正确版本资源；CI 失败可用 `junit-*`/`build-log` artifact 诊断（本机网络不可达 Actions 日志主机时仍然可查）。
 
 **Phase 2 [P2]**
 
@@ -677,7 +696,107 @@ Phase 2 的连接级断连/重连见附录 A.5。
 
 ---
 
-## 12. 参考来源
+## 12. 主题系统与视觉
+
+> 原 `docs/themes.md` 合并进本节。
+
+**单一真源**：`src/shared/contracts/theme.ts` 的 `THEMES` 注册表（id / 显示名 / 明暗 / 21 个颜色）。设置面板选项、单测、E2E 断言、截图回归全部读它，CSS 里不维护第二份调色板。
+
+**运行时应用**：`src/renderer/lib/theme.ts#useAppliedTheme` 把调色板写成 `<html>` 的 CSS 变量（`--bg`、`--panel`、`--text`、`--accent`…）+ `data-theme` + `color-scheme`（后者让原生滚动条 / 输入框 / 下拉跟随明暗）。`styles.css` 的 `:root` 保留一份 `pi-dark` 兜底首帧，配置到达前不闪白。选「跟随系统」时监听 `prefers-color-scheme` 实时切换，不必重启窗口。
+
+**代码高亮也走变量**：`--code-comment/keyword/string/number/title/builtin/deletion` 由主题提供，否则浅色主题里代码块会出现「深色语法色叠浅底」。
+
+| id                 | 名称             | 明暗 | 来源                               |
+| ------------------ | ---------------- | ---- | ---------------------------------- |
+| `pi-dark`          | pi 深色（默认）  | 暗   | 本应用原生配色（沿用 pi 视觉，Q6） |
+| `pi-light`         | pi 浅色          | 亮   | 同族浅色                           |
+| `github-light`     | GitHub Light     | 亮   | GitHub Primer                      |
+| `solarized-light`  | Solarized Light  | 亮   | Solarized（高对比度变体，见下）    |
+| `nord`             | Nord             | 暗   | Nord（Arctic Ice Studio）          |
+| `dracula`          | Dracula          | 暗   | Dracula                            |
+| `one-dark`         | One Dark         | 暗   | Atom One Dark                      |
+| `tokyonight`       | Tokyo Night      | 暗   | Tokyo Night（enkia）               |
+| `catppuccin-mocha` | Catppuccin Mocha | 暗   | Catppuccin                         |
+
+**对比度政策（不是装饰性选择）**：`tests/unit/theme.test.ts` 用 WCAG 2.1 相对亮度公式对每个主题断言——正文/次要文本 vs 背景（含 panel、elevated）≥ 4.5；强调色与 ok/warn/error ≥ 3；代码 token vs 代码块底色 ≥ 3；`scheme` 声明必须与背景亮度一致。E2E（`tests/e2e/theme.e2e.test.ts`）再用**浏览器算出的颜色**验一遍 ≥ 4.5，并为每套主题出整窗截图 `docs/screenshots/theme-<id>.png`。
+
+因此有两处**刻意偏离上游原版**（源码注释亦有说明）：Solarized Light 原版正文只有 4.39:1（同色相加深到 4.5+）；Dracula / One Dark / Tokyo Night / Catppuccin 的官方注释色对各自 elevated 底仅 1.7–2.6:1（提亮一档到 ≥3）。
+
+**新增一个主题**：在注册表加一项（缺字段 TS 直接报错）→ 跑 `npm run test:unit -- theme` 看对比度断言 → 跑 `npm run test:e2e -- theme` 出截图人工复核。不改 CSS、设置面板或配置层；配置里历史值 `dark`/`light` 由 `config-store` 读盘时归一为 `pi-dark`/`pi-light`（升级不重置主题），非法值退回 `system`。
+
+---
+
+## 13. 模型管理（A14）
+
+> 原 `docs/models.md` 合并进本节。
+
+入口：顶栏「模型」按钮 → 弹层。管的是 **pi 磁盘上的配置**，与会话内切换模型是两件事。
+
+| 文件                        | 管什么                           | 客户端行为                                      |
+| --------------------------- | -------------------------------- | ----------------------------------------------- |
+| `<agent-dir>/models.json`   | provider 与模型（`providers.*`） | 增删改 provider / model，保留客户端未建模的字段 |
+| `<agent-dir>/settings.json` | `defaultModel`（新会话启动模型） | 只改这一个键，其余键原样保留                    |
+
+`<agent-dir>` = `PI_CODING_AGENT_DIR` 环境变量，默认 `~/.pi/agent`。**生效时机**：pi 在启动会话时读取这些配置，所以改动对已在运行的会话不生效（弹层里有明示，不假装热更新）。
+
+**能做什么**：列出 provider 与模型（上下文 / 最大输出 / 是否 thinking）；新增 / 编辑 / 删除 provider 及其模型（id、显示名、Base URL、API 类型、key、模型行）；设置默认模型（选「自动」= 删除该键）。
+
+**三条数据/安全约束（§7 约束 17）**：
+
+1. **apiKey 只进不出**：读取时主进程只计算 `hasApiKey` 与掩码 `apiKeyHint`（`sk-…3456`），明文不进 IPC / 日志 / 审计；编辑已有 provider 时输入框永远空白（留空 = 保留原值），清除必须显式勾选。支持 pi 的三种形式：字面量、`$ENV_NAME`、`!command`（`!` 开头**不会**在客户端执行，只原样写入配置）。
+2. **不动用户没建模的字段**：`compat`、`samplingParams`、`cost.tiers`、`headers`、`modelOverrides`、`thinkingLevelMap` 等在写回时对象级就地合并、原样保留——否则「打开客户端改个名字」就会清空用户调好的兼容参数。
+3. **写入可回退**：同目录临时文件 + `rename`（同卷原子），覆盖前留 `<文件名>.bak-<时间戳>` 并只保留最近 3 份；**坏 JSON 直接拒绝改动**，不静默覆盖用户文件。
+
+**校验规则**（IPC 边界 zod + 服务层各一次）：provider/model id 为 `[A-Za-z0-9._:/-]{1,128}` 且不允许 `..`、不以 `/` 开头或结尾（pi 里真实存在 `google/gemma-3-12b-it` 这类带斜杠的 id）；`baseUrl` 只接受 http(s)——**刻意放行 http**，内网自建 endpoint（如 `http://10.x.x.x:6001/v1`）是真实用法；`api` 只接受 5 个枚举值，避免拼错到 pi 启动才报错。
+
+**已知不做**：不管理 `models-store.json`（pi 扩展/探测缓存，属上游状态）；不做连通性测试（要真发请求、要 key）；不做 OAuth 登录流程。
+
+---
+
+## 14. 发布工程与诊断（A16）
+
+> 原 `docs/release.md` 合并进本节。
+
+### 14.1 应用图标
+
+`resources/icon.svg` 是唯一真源（π 站在一条「桌面线」上，配色取应用主题）；`npm run icon` 用项目内 Electron 渲染出 `resources/icon.png`（1024×1024 透明底），`npm run icon:preview` 额外派生 16/24/32/48/64/128/256 预览图。
+
+**PNG 随仓库提交、CI 不重渲**：渲染要起 GUI 进程，在 GitHub runner 上曾整步失败且拿不到 stdout；图标是确定性产物，提交后打包只依赖「文件存在且 ≥256×256」。改图标：改 svg → `icon:preview` 看各档 → 提交 png。
+
+三个已踩的坑（源码注释里也有）：XML 注释不能含连续两个连字符（写 `--bg-panel` 会让整份 SVG 解析失败，渲出空白图）；直线（零高度包围盒）用 `objectBoundingBox` 渐变会退化成不可见，必须 `userSpaceOnUse`；Electron `capturePage()` 受系统 DPI 影响（200% 缩放的机器上 1024 窗口产出 2048 图），必须 `force-device-scale-factor=1`。
+
+### 14.2 打包配置
+
+- `win.icon: icon.png`；`win.signExecutable: false`（**不是** `signAndEditExecutable: false`——后者会把图标与版本资源一起跳过，导致 exe 在任务管理器里显示 "Electron"）。
+- `artifactName: ${productName}-${version}-${arch}.${ext}` → `pi-desktop-<版本>-x64.exe`：不带空格，避免 GitHub 把空格转成点后与 `SHA256SUMS.txt` 记录的文件名对不上。
+- 脚本固定 `--publish never`：electron-builder 在 CI 环境会**隐式推断要发布**（日志 `Implicit publishing triggered by CI detection`），缺 `GH_TOKEN` 直接失败。
+
+### 14.3 Release 工作流
+
+`.github/workflows/release.yml`：`push tag v*` → 校验 tag 与 `package.json` 版本一致（不一致直接 fail）→ 确认图标存在且 ≥256 → `typecheck` + `format:check` + `test:unit` → `npm run package:dist` → 计算 SHA-256 写 `SHA256SUMS.txt` → 上传 Actions artifact（安装包 + `build-log`）→ `node scripts/build-release-notes.mjs` 生成 notes（模板 + CHANGELOG 对应版本段落）→ `gh release create`。`workflow_dispatch` 只构建不发布，用于打 tag 前验证流水线。
+
+不引第三方 release action：本仓库策略是所有 action 固定到 commit SHA，而 `gh` 在 windows runner 上自带。安全细节：tag 名一律经 `env` 传入（不内联 `${{ }}`）；带 `contents: write` 的发布 job **不用** actions 缓存（防缓存投毒）。
+
+发版：`npm version X.Y.Z --no-git-tag-version` → 提交 → `git tag -a vX.Y.Z` → 推送 tag。
+
+### 14.4 校验与诊断
+
+**校验产物**：`Get-FileHash .\pi-desktop-<版本>-x64.exe -Algorithm SHA256` 与 `SHA256SUMS.txt` / Release 页面一致。Release 资产 API 也返回每个资产的 `digest`（`sha256:…`），用 `gh api repos/<owner>/<repo>/releases/tags/v<版本>` 可核对，不必下载校验和文件。注意不同机器构建的 SHA 不同（NSIS 打包含时间戳，不可复现），以 CI 发布的那份为准。
+
+**本机网络受限时的诊断通道**：开发机对 `results-receiver.actions.githubusercontent.com`（Actions 日志）与 `release-assets.githubusercontent.com`（Release 资产下载）不可达，因此 `gh run view --log` / `gh release download` 不可用。替代通道（都不依赖上述域名）：
+
+| 需求             | 通道                                                                                    |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| 失败用例完整堆栈 | CI 里 unit/integration/e2e 失败时上传 `junit-*` → `gh run download <run> -n junit-unit` |
+| 构建失败完整输出 | release 工作流 `if: always()` 上传 `build-log`（`package.log`）                         |
+| 快速看堆栈摘要   | `gh ann <jobId>`（= `gh api …/check-runs/<jobId>/annotations`）                         |
+| job / step 结论  | `gh run view <runId> --json jobs`                                                       |
+
+另：本机 `HTTP(S)_PROXY` 对 `api.github.com` 时好时坏（会表现为 `gh auth status` 误报 token invalid），已在用户级 `NO_PROXY` 追加 GitHub 相关域名。
+
+---
+
+## 15. 参考来源
 
 - pi 文档（本地安装）：`README.md`、`docs/rpc.md`、`docs/rpc-commands.md`、`docs/cli-integration.md`、`docs/sessions.md`、`docs/environment-variables.md`、`docs/session-format.md`、`docs/extensions.md`、`docs/sdk.md`（仅参考，`SdkTransport` 已作废）
 - WorkBuddy：`https://www.workbuddy.ai/docs/workbuddy/Overview`、`/docs/zh/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Task-Bar`、`https://www.workbuddy.cn/work/`、社区手册 `https://neohoy.github.io/workbuddybook/start/`

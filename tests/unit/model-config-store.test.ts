@@ -12,7 +12,7 @@ import {
 } from '../../src/main/services/model-config-store'
 
 /**
- * 模型配置服务（M7）：直接读写 pi 的 `models.json` / `settings.json#defaultModel`。
+ * 模型配置服务（A14）：直接读写 pi 的 `models.json` / `settings.json#defaultModel`。
  *
  * 这里守的四条硬约束：
  * 1. **apiKey 只进不出** —— 视图里只有 `hasApiKey` / `apiKeyHint`，明文不出主进程；

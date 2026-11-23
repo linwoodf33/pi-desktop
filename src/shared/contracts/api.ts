@@ -100,7 +100,7 @@ export interface PiInvokeApi {
     stats(input: { sessionKey: string }): Promise<Result<SessionStats>>
   }
   /**
-   * 模型管理（M7）：直接管理 pi 的 `models.json` 与 `settings.json#defaultModel`。
+   * 模型管理（A14）：直接管理 pi 的 `models.json` 与 `settings.json#defaultModel`。
    *
    * 与上面的 `model`（会话切换当前模型）不同：这里改的是**磁盘上的配置**，
    * 影响之后启动的会话，不影响已经在跑的会话。

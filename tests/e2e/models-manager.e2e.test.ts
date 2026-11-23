@@ -6,7 +6,7 @@ import { _electron as electron, type ElectronApplication, type Page } from 'play
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 /**
- * 模型管理弹层（M7）E2E。
+ * 模型管理弹层（A14）E2E。
  *
  * 用 `PI_CODING_AGENT_DIR` 把 pi 的 agent 目录指到临时目录：用例读写的全是假配置，
  * 绝不碰开发者本机的 `~/.pi/agent`。
