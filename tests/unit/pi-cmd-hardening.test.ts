@@ -156,7 +156,14 @@ describe('resolveNodeExecutable：PATH / 常见目录', () => {
   })
 
   it('找不到 node → undefined（调用方回退 cmd 分支）', () => {
-    expect(resolveNodeExecutable('win32', { PATH: '' }, () => false, () => [])).toBeUndefined()
+    expect(
+      resolveNodeExecutable(
+        'win32',
+        { PATH: '' },
+        () => false,
+        () => []
+      )
+    ).toBeUndefined()
   })
 
   it('POSIX：从 PATH 命中 node', () => {

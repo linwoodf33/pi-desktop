@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-import { IPC_EVENT_CHANNELS, IPC_INVOKE_CHANNELS, type EventChannel, type InvokeChannel } from '../shared/ipc-channels'
+import {
+  IPC_EVENT_CHANNELS,
+  IPC_INVOKE_CHANNELS,
+  type EventChannel,
+  type InvokeChannel
+} from '../shared/ipc-channels'
 import type { PiApi, Unsubscribe } from '../shared/contracts/api'
 
 /**

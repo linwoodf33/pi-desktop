@@ -9,18 +9,18 @@
 **通过**：渲染进程 RSS 从基准 118.9MB 增长到 136.8MB，
 增长 **15.1%**（验收阈值 < 30.0%）。
 
-| 指标 | 基准（第 20 轮） | 终值（第 240 轮） | 变化 |
-| --- | --- | --- | --- |
-| 渲染进程 RSS | 118.9 MB | 136.8 MB | 15.1% |
-| 渲染进程 JS 堆（V8 + Blink GC 后） | 8.6 MB | 9.3 MB | 8.1% |
-| Blink embedder 堆（DOM wrapper 等） | 1.5 MB | 1.6 MB | 6.7% |
-| 页内活 DOM 节点 | 481 | 481 | +0 |
-| **已挂载轮数 / 会话总轮数（窗口化渲染）** | 4 / 10 | 4 / 120 | 挂载占比 3.3% |
-| 堆内保留 DOM 节点（代理指标） | — | — | +0 |
-| JS 事件监听器 | — | — | +0 |
-| BrowserWindow 数量 | — | — | +0 |
-| 主进程 EventEmitter 监听器（所有事件名求和） | — | — | +0 |
-| 每轮墙钟耗时（自查 O(轮数) 退化） | 3717 ms | 3004 ms | -713 ms |
+| 指标                                         | 基准（第 20 轮） | 终值（第 240 轮） | 变化          |
+| -------------------------------------------- | ---------------- | ----------------- | ------------- |
+| 渲染进程 RSS                                 | 118.9 MB         | 136.8 MB          | 15.1%         |
+| 渲染进程 JS 堆（V8 + Blink GC 后）           | 8.6 MB           | 9.3 MB            | 8.1%          |
+| Blink embedder 堆（DOM wrapper 等）          | 1.5 MB           | 1.6 MB            | 6.7%          |
+| 页内活 DOM 节点                              | 481              | 481               | +0            |
+| **已挂载轮数 / 会话总轮数（窗口化渲染）**    | 4 / 10           | 4 / 120           | 挂载占比 3.3% |
+| 堆内保留 DOM 节点（代理指标）                | —                | —                 | +0            |
+| JS 事件监听器                                | —                | —                 | +0            |
+| BrowserWindow 数量                           | —                | —                 | +0            |
+| 主进程 EventEmitter 监听器（所有事件名求和） | —                | —                 | +0            |
+| 每轮墙钟耗时（自查 O(轮数) 退化）            | 3717 ms          | 3004 ms           | -713 ms       |
 
 判读要点：
 
@@ -46,22 +46,22 @@
 
 ## 2. 方法与口径
 
-| 项 | 取值 |
-| --- | --- |
-| 被测对象 | 生产构建产物（`out/`，与 `npm run test:e2e` 同一份），Electron 37.x |
-| pi | `tests/integration/fixtures/mock-pi.mjs`（RPC 协议回放，事件形状与真实 pi 1.5.2 一致） |
-| **轮数（真实）** | **240 轮**（A7 要求 > 200；不是「事件量等价」） |
-| 每轮流式增量 | 220 个 `text_delta`（markdown 渲染压力） |
-| 每轮协议事件 | 232 条（含工具调用序列与审批交互） |
-| 总事件量 | ≈ 55,680 条 |
-| 采样点 | 每 20 轮一次，共 12 个；基准 = 第 20 轮（warmup 后），终值 = 第 240 轮 |
-| 采样前处理 | 页面内 `gc()`（`--js-flags=--expose-gc`）+ CDP `HeapProfiler.collectGarbage`（Blink/Oilpan）+ 50ms 事件循环 |
-| 渲染进程 RSS / 私有 / 峰值 | 主进程 `app.getAppMetrics()` 中 `type === 'Tab'` |
-| 主进程 / GPU | 同上（`type === 'Browser'` / `'GPU'`） |
-| JS 堆 / embedder 堆 / backing store | CDP `Runtime.getHeapUsage`（`usedSize` / `embedderHeapUsedSize` / `backingStorageSize`） |
-| DOM / 监听器 | 页面内 `TreeWalker` 全树计数 + CDP `Memory.getDOMCounters` |
-| 窗口化观测量 | 页面内 `window.__piDesktopVirtual.metrics()`（`src/renderer/lib/virtual-bridge.ts`，非可视、无消息内容）：已挂载轮数 / 总轮数 |
-| 负载混合 | 审批：允许一次 164 次、本会话允许 28 次、拒绝 48 次；会话切换 36 次；产物手动刷新 9 次 |
+| 项                                  | 取值                                                                                                                          |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 被测对象                            | 生产构建产物（`out/`，与 `npm run test:e2e` 同一份），Electron 37.x                                                           |
+| pi                                  | `tests/integration/fixtures/mock-pi.mjs`（RPC 协议回放，事件形状与真实 pi 1.5.2 一致）                                        |
+| **轮数（真实）**                    | **240 轮**（A7 要求 > 200；不是「事件量等价」）                                                                               |
+| 每轮流式增量                        | 220 个 `text_delta`（markdown 渲染压力）                                                                                      |
+| 每轮协议事件                        | 232 条（含工具调用序列与审批交互）                                                                                            |
+| 总事件量                            | ≈ 55,680 条                                                                                                                   |
+| 采样点                              | 每 20 轮一次，共 12 个；基准 = 第 20 轮（warmup 后），终值 = 第 240 轮                                                        |
+| 采样前处理                          | 页面内 `gc()`（`--js-flags=--expose-gc`）+ CDP `HeapProfiler.collectGarbage`（Blink/Oilpan）+ 50ms 事件循环                   |
+| 渲染进程 RSS / 私有 / 峰值          | 主进程 `app.getAppMetrics()` 中 `type === 'Tab'`                                                                              |
+| 主进程 / GPU                        | 同上（`type === 'Browser'` / `'GPU'`）                                                                                        |
+| JS 堆 / embedder 堆 / backing store | CDP `Runtime.getHeapUsage`（`usedSize` / `embedderHeapUsedSize` / `backingStorageSize`）                                      |
+| DOM / 监听器                        | 页面内 `TreeWalker` 全树计数 + CDP `Memory.getDOMCounters`                                                                    |
+| 窗口化观测量                        | 页面内 `window.__piDesktopVirtual.metrics()`（`src/renderer/lib/virtual-bridge.ts`，非可视、无消息内容）：已挂载轮数 / 总轮数 |
+| 负载混合                            | 审批：允许一次 164 次、本会话允许 28 次、拒绝 48 次；会话切换 36 次；产物手动刷新 9 次                                        |
 
 ### 2.1 时间压缩说明（**轮数真实、时延压缩**）
 
@@ -102,15 +102,15 @@
 
 ## 4. 泄漏嫌疑点排查结论（本轮实测）
 
-| 嫌疑点 | 结论 | 证据 |
-| --- | --- | --- |
-| markdown + 代码高亮结果的缓存无限累积 | **否** | `Markdown` 无缓存；堆快照里无随轮次增长的高亮结果对象，`native:Text`/`<span>` 增量与消息数成比例 |
-| reducer/store 保留全部历史消息与工具输出全文 | **是，但属合法内容增长** | `sessionStore.chats[taskId].messages` 单调增长；JS 堆增量 8.1%，与消息数线性对应 |
-| diff/预览缓存 | **否** | 产物面板开关 0 次手动刷新 + 9 次自动刷新；backing store 全程 3.6 → 3.8 MB 无漂移 |
-| detached DOM（节点回收后仍被 JS 引用） | **否** | 保留 DOM 节点增量 +0，与活 DOM 增量 0 同阶 |
-| 事件监听器 / 订阅未清理 | **否** | JS 监听器 +0、主进程 EventEmitter +0、窗口数 +0 |
-| TextEncoder/Blob/URL.createObjectURL 未释放 | **否** | `backingStorageSize`（ArrayBuffer/Blob backing）全程稳定 |
-| **每次流式增量重解析全部历史消息（O(轮数²)）** | **是，已修复** | 修复前每轮耗时随历史线性增长（40 轮时 3.5s→7.3s），修复后稳定 3717→3004ms |
+| 嫌疑点                                         | 结论                     | 证据                                                                                             |
+| ---------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------ |
+| markdown + 代码高亮结果的缓存无限累积          | **否**                   | `Markdown` 无缓存；堆快照里无随轮次增长的高亮结果对象，`native:Text`/`<span>` 增量与消息数成比例 |
+| reducer/store 保留全部历史消息与工具输出全文   | **是，但属合法内容增长** | `sessionStore.chats[taskId].messages` 单调增长；JS 堆增量 8.1%，与消息数线性对应                 |
+| diff/预览缓存                                  | **否**                   | 产物面板开关 0 次手动刷新 + 9 次自动刷新；backing store 全程 3.6 → 3.8 MB 无漂移                 |
+| detached DOM（节点回收后仍被 JS 引用）         | **否**                   | 保留 DOM 节点增量 +0，与活 DOM 增量 0 同阶                                                       |
+| 事件监听器 / 订阅未清理                        | **否**                   | JS 监听器 +0、主进程 EventEmitter +0、窗口数 +0                                                  |
+| TextEncoder/Blob/URL.createObjectURL 未释放    | **否**                   | `backingStorageSize`（ArrayBuffer/Blob backing）全程稳定                                         |
+| **每次流式增量重解析全部历史消息（O(轮数²)）** | **是，已修复**           | 修复前每轮耗时随历史线性增长（40 轮时 3.5s→7.3s），修复后稳定 3717→3004ms                        |
 
 ## 5. 已完成的渲染优化（v2：O(轮数²) 重解析）
 
@@ -142,14 +142,14 @@ renderer 单轮 CPU 采样从「markdown 解析占满采样窗」变成 87% idle
 只挂载「视口 + 前 2 / 后 4 轮缓冲」，离屏轮次用**上下两个 spacer**
 撑住滚动高度（不是「每轮一个空 div」，否则 DOM 仍与轮数线性相关）：
 
-| 关注点 | 实现 |
-| --- | --- |
-| 虚拟单元 | groupTimeline 输出的轮次（src/renderer/lib/timeline.ts），不是单条消息 |
-| 高度策略 | 测量后缓存（ResizeObserver + offsetHeight 首帧测量），未知轮次用保守估算 360px（槽位含间距） |
-| 滚动补偿 | 估算被实测替换时按**滚动锚点**（视口顶部所在轮 + 轮内偏移）反算 scrollTop，文字视觉位置不变 |
-| 几何计算 | src/renderer/lib/virtual-window.ts（纯函数，单测 tests/unit/virtual-window.test.ts） |
-| 状态机 | src/renderer/lib/use-virtual-timeline.ts（窗口 / 测量 / 补偿 / 跟随底部 / 跳转） |
-| 缓存隔离 | 高度缓存按 sessionKey 隔离（turnHeightCache），会话切换不串台 |
+| 关注点   | 实现                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------------- |
+| 虚拟单元 | groupTimeline 输出的轮次（src/renderer/lib/timeline.ts），不是单条消息                            |
+| 高度策略 | 测量后缓存（ResizeObserver + offsetHeight 首帧测量），未知轮次用保守估算 360px（槽位含间距）      |
+| 滚动补偿 | 估算被实测替换时按**滚动锚点**（视口顶部所在轮 + 轮内偏移）反算 scrollTop，文字视觉位置不变       |
+| 几何计算 | src/renderer/lib/virtual-window.ts（纯函数，单测 tests/unit/virtual-window.test.ts）              |
+| 状态机   | src/renderer/lib/use-virtual-timeline.ts（窗口 / 测量 / 补偿 / 跟随底部 / 跳转）                  |
+| 缓存隔离 | 高度缓存按 sessionKey 隔离（turnHeightCache），会话切换不串台                                     |
 | 可观测性 | src/renderer/lib/virtual-bridge.ts 暴露 window.__piDesktopVirtual.metrics()（只含计数与滚动尺寸） |
 
 **交互语义（E2E tests/e2e/virtual-scroll.e2e.test.ts 覆盖）**：流式跟随底部；上滚后不强制跳回并给「回到底部」；

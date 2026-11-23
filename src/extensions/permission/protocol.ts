@@ -145,7 +145,9 @@ export function parsePolicy(raw: string | undefined): PermissionPolicy {
     timeoutMs: clampTimeout(record['timeoutMs']),
     clientProtocol,
     compatible,
-    ...(compatible ? {} : { warning: `客户端协议 v${clientProtocol} 与扩展 v${PERMISSION_PROTOCOL_VERSION} 不兼容` })
+    ...(compatible
+      ? {}
+      : { warning: `客户端协议 v${clientProtocol} 与扩展 v${PERMISSION_PROTOCOL_VERSION} 不兼容` })
   }
 }
 
@@ -208,7 +210,10 @@ const DESTRUCTIVE_PATTERNS: ReadonlyArray<{ pattern: RegExp; reason: string }> =
   { pattern: /\bmkfs(\.\w+)?\b/i, reason: '创建文件系统' },
   { pattern: /\bdd\s+if=/i, reason: '裸写块设备' },
   { pattern: /:\(\)\s*\{\s*:\|:&\s*\}/, reason: 'fork 炸弹' },
-  { pattern: /\bpowershell(\.exe)?\b[^\n]*-enc(odedcommand)?\b/i, reason: '编码后的 PowerShell 命令' },
+  {
+    pattern: /\bpowershell(\.exe)?\b[^\n]*-enc(odedcommand)?\b/i,
+    reason: '编码后的 PowerShell 命令'
+  },
   { pattern: /\bgit\s+push\b[^\n]*--force/i, reason: '强制推送' },
   { pattern: /\bshutdown\b|\breboot\b/i, reason: '关机/重启' },
   { pattern: /\bchmod\s+(-R\s+)?777\b/i, reason: '放开文件权限' },
@@ -281,15 +286,13 @@ export function summarizeToolInput(input: unknown): { args: ApprovalArg[]; summa
     .join(' · ')
   return {
     args,
-    summary: summary.length > MAX_SUMMARY_CHARS ? `${summary.slice(0, MAX_SUMMARY_CHARS)}…` : summary
+    summary:
+      summary.length > MAX_SUMMARY_CHARS ? `${summary.slice(0, MAX_SUMMARY_CHARS)}…` : summary
   }
 }
 
 /** 工具名 + 入参 → 风险级别与风险说明 */
-export function assessRisk(
-  toolName: string,
-  input: unknown
-): { risk: RiskLevel; reason: string } {
+export function assessRisk(toolName: string, input: unknown): { risk: RiskLevel; reason: string } {
   const tool = toolName.toLowerCase()
   const text = stringifyArgValue(
     (input as Record<string, unknown> | undefined)?.['command'] ??

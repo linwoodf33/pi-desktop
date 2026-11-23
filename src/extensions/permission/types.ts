@@ -36,11 +36,7 @@ export interface SelectOptionsLike {
 }
 
 export interface UiContextLike {
-  select?(
-    title: string,
-    options: string[],
-    opts?: SelectOptionsLike
-  ): Promise<string | undefined>
+  select?(title: string, options: string[], opts?: SelectOptionsLike): Promise<string | undefined>
   /** fire-and-forget；RPC 模式下 statusText 为 undefined 时清空该 key */
   setStatus?(key: string, text: string | undefined): void
   notify?(message: string, type?: 'info' | 'warning' | 'error'): void

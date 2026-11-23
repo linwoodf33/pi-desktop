@@ -73,7 +73,11 @@ function createCtx(harness: Harness, options: CtxOptions = {}): ExtensionContext
     sessionManager: { getSessionId: () => options.sessionId ?? 'sess-1' },
     ui: {
       select: (title, opts, dialogOptions) => {
-        harness.asks.push({ title, options: opts, ...(dialogOptions?.timeout === undefined ? {} : { timeout: dialogOptions.timeout }) })
+        harness.asks.push({
+          title,
+          options: opts,
+          ...(dialogOptions?.timeout === undefined ? {} : { timeout: dialogOptions.timeout })
+        })
         if (options.throws === true) return Promise.reject(new Error('ui boom'))
         return Promise.resolve(options.choice)
       },
@@ -204,7 +208,9 @@ describe('tool_call 钩子：拒绝路径（fail-closed）', () => {
 describe('策略生效面', () => {
   it('策略关闭（用户显式关掉）→ 不询问也不阻止', async () => {
     const harness = createPi(defaultPolicy({ enabled: false }))
-    expect(await runToolCall(harness, createCtx(harness, { choice: APPROVAL_OPTIONS[2] }))).toBeUndefined()
+    expect(
+      await runToolCall(harness, createCtx(harness, { choice: APPROVAL_OPTIONS[2] }))
+    ).toBeUndefined()
     expect(harness.asks).toHaveLength(0)
   })
 
@@ -233,7 +239,11 @@ describe('策略生效面', () => {
   it('未知 toolName → block（无法归类就不要执行）', async () => {
     const harness = createPi(defaultPolicy())
     expectBlocked(
-      await runToolCall(harness, createCtx(harness, {}), { type: 'tool_call', toolName: '', input: {} })
+      await runToolCall(harness, createCtx(harness, {}), {
+        type: 'tool_call',
+        toolName: '',
+        input: {}
+      })
     )
   })
 })
@@ -245,7 +255,10 @@ describe('版本握手', () => {
 
     await harness.handlers.session_start[0]?.({ type: 'session_start' }, ctx)
     expect(harness.statuses).toHaveLength(1)
-    const payload = JSON.parse(harness.statuses[0]?.text ?? '{}') as { protocol: number; ext: string }
+    const payload = JSON.parse(harness.statuses[0]?.text ?? '{}') as {
+      protocol: number
+      ext: string
+    }
     expect(payload.ext).toBe('pi-desktop-permission')
     expect(payload.protocol).toBe(1)
 

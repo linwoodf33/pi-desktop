@@ -41,9 +41,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       <div className="crash" data-testid="render-crash">
         <h1>界面渲染出错</h1>
         <p className="crash__message">{error.message}</p>
-        <p className="empty__hint">
-          pi 会话本身仍在主进程运行；关闭错误提示后可继续操作其它面板。
-        </p>
+        <p className="empty__hint">pi 会话本身仍在主进程运行；关闭错误提示后可继续操作其它面板。</p>
         <button
           type="button"
           className="btn btn--primary"

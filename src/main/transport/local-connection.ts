@@ -115,8 +115,9 @@ export function assertCmdSafeArg(token: string, source: string): void {
 }
 
 function tokensPreview(token: string): string {
-  const escaped = token.replace(/[\r\n\0]/g, (ch) =>
-    `\\x${ch.charCodeAt(0).toString(16).padStart(2, '0')}`
+  const escaped = token.replace(
+    /[\r\n\0]/g,
+    (ch) => `\\x${ch.charCodeAt(0).toString(16).padStart(2, '0')}`
   )
   return escaped.length > 80 ? `${escaped.slice(0, 80)}…` : escaped
 }

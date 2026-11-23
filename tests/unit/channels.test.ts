@@ -90,15 +90,15 @@ describe('入参 schema 细节', () => {
 
   it('session:prompt 的 streamingBehavior 只接受 steer / followUp（§7 约束 5）', () => {
     const schema = getInputSchema(IPC_INVOKE_CHANNELS.sessionPrompt)
-    expect(schema.safeParse({ sessionKey: 'k1', message: 'hi', streamingBehavior: 'steer' }).success).toBe(
-      true
-    )
+    expect(
+      schema.safeParse({ sessionKey: 'k1', message: 'hi', streamingBehavior: 'steer' }).success
+    ).toBe(true)
     expect(
       schema.safeParse({ sessionKey: 'k1', message: 'hi', streamingBehavior: 'followUp' }).success
     ).toBe(true)
-    expect(schema.safeParse({ sessionKey: 'k1', message: 'hi', streamingBehavior: 'queue' }).success).toBe(
-      false
-    )
+    expect(
+      schema.safeParse({ sessionKey: 'k1', message: 'hi', streamingBehavior: 'queue' }).success
+    ).toBe(false)
   })
 
   it('空 schema 通道拒绝任何多余字段', () => {

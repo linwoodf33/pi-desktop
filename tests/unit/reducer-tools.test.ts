@@ -17,7 +17,11 @@ import {
  * 工具卡片的名称/参数/状态/耗时/输出都必须来自事件本身，且按 `toolCallId` 关联。
  */
 
-const start = (id: string, name: string, args: unknown = { command: 'ls -la' }): {
+const start = (
+  id: string,
+  name: string,
+  args: unknown = { command: 'ls -la' }
+): {
   type: string
   [key: string]: unknown
 } => ({ type: 'tool_execution_start', toolCallId: id, toolName: name, args })
@@ -58,10 +62,7 @@ const assistantWithToolCall = (
 
 /** 所有可见的工具卡片：消息里已归属的 + 仍在流式期的 */
 function toolsOf(state: ChatState) {
-  return [
-    ...state.messages.flatMap((message) => message.tools ?? []),
-    ...state.streamingTools
-  ]
+  return [...state.messages.flatMap((message) => message.tools ?? []), ...state.streamingTools]
 }
 
 describe('工具卡片生命周期（tool_execution_start/update/end）', () => {
@@ -257,7 +258,9 @@ describe('纯函数辅助（参数摘要 / 输出提取 / 截断）', () => {
         ]
       }).output
     ).toBe('ab')
-    expect(extractToolOutput({ details: { fullOutputPath: '/tmp/x' } }).fullOutputPath).toBe('/tmp/x')
+    expect(extractToolOutput({ details: { fullOutputPath: '/tmp/x' } }).fullOutputPath).toBe(
+      '/tmp/x'
+    )
   })
 
   it('超长输出被截断并显式标记（不静默）', () => {

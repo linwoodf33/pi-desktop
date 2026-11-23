@@ -22,7 +22,13 @@ let root: string
 let sessionFile: string
 
 const header = (cwd = 'C:/work') =>
-  JSON.stringify({ type: 'session', version: 3, id: 'sess-1', timestamp: '2026-01-01T00:00:00.000Z', cwd })
+  JSON.stringify({
+    type: 'session',
+    version: 3,
+    id: 'sess-1',
+    timestamp: '2026-01-01T00:00:00.000Z',
+    cwd
+  })
 
 const userEntry = (text: string) =>
   JSON.stringify({
@@ -72,7 +78,9 @@ describe('路径收敛（§7 约束 8）', () => {
   })
 
   it('../ 逃逸被拒绝（PATH_DENIED）', () => {
-    expect(() => resolveSessionPath(join(root, '--group--'), '../--group--/sess-1.jsonl')).not.toThrow()
+    expect(() =>
+      resolveSessionPath(join(root, '--group--'), '../--group--/sess-1.jsonl')
+    ).not.toThrow()
     expect(() => resolveSessionPath(root, '../outside.jsonl')).toThrow(IpcFailure)
   })
 
@@ -98,9 +106,7 @@ describe('真实路径校验（junction / 符号链接逃逸）', () => {
     // Windows 创建文件级 symlink 需要开发者模式/管理员权限，因此这里注入 realpath
     // 模拟「词法在内、真实路径在外」的情况（junction 变体由下一个用例用真实 fs 验证）
     const realPath = (value: string): Promise<string> =>
-      Promise.resolve(
-        value === sessionFile ? 'C:/outside/secret.jsonl' : value
-      )
+      Promise.resolve(value === sessionFile ? 'C:/outside/secret.jsonl' : value)
     await expect(
       createSessionHistory({ sessionRoot: () => root, realPath }).read({ sessionFile })
     ).rejects.toMatchObject({ code: 'PATH_DENIED' })
@@ -164,9 +170,12 @@ describe('回放转换', () => {
   it('非 message 条目被忽略，损坏行不拖垮整个回放', async () => {
     await writeFile(
       sessionFile,
-      [header(), 'not json', JSON.stringify({ type: 'model_change', provider: 'x' }), userEntry('hi')].join(
-        '\n'
-      ),
+      [
+        header(),
+        'not json',
+        JSON.stringify({ type: 'model_change', provider: 'x' }),
+        userEntry('hi')
+      ].join('\n'),
       'utf8'
     )
     const history = createSessionHistory({ sessionRoot: () => root })
@@ -180,7 +189,9 @@ describe('回放转换', () => {
     expect(result.messageCount).toBe(1)
     expect(result.truncated).toBe(true)
     expect(result.totalRecords).toBe(2)
-    expect((result.records[0]?.['message'] as { role?: string } | undefined)?.role).toBe('assistant')
+    expect((result.records[0]?.['message'] as { role?: string } | undefined)?.role).toBe(
+      'assistant'
+    )
   })
 
   it('不传 maxRecords 时按默认 2000 条截断（M4：避免 O(n²) 回放）', async () => {
@@ -229,7 +240,8 @@ describe('回放转换', () => {
 })
 
 describe('纯函数', () => {
-  it('toReplayRecords 只映射 message 条目', () => {    const records = toReplayRecords([
+  it('toReplayRecords 只映射 message 条目', () => {
+    const records = toReplayRecords([
       { type: 'session' },
       { type: 'message', message: { role: 'user', content: 'x' } },
       { type: 'message' },
@@ -275,9 +287,9 @@ describe('尚未落盘的新会话文件（B1：allowMissing 容错，安全闸�
     await expect(history.read({ sessionFile: missingFile() })).rejects.toMatchObject({
       code: 'PATH_DENIED'
     })
-    await expect(history.read({ sessionFile: missingFile(), allowMissing: false })).rejects.toMatchObject(
-      { code: 'PATH_DENIED' }
-    )
+    await expect(
+      history.read({ sessionFile: missingFile(), allowMissing: false })
+    ).rejects.toMatchObject({ code: 'PATH_DENIED' })
   })
 
   it('词法闸照旧：allowMissing 也不能读会话根外的路径', async () => {
@@ -356,9 +368,9 @@ describe('尚未落盘的新会话文件（B1：allowMissing 容错，安全闸�
     const afterWrite = await history.read({ sessionFile: target })
     expect(afterWrite.fileAbsent).toBeUndefined()
     expect(afterWrite.messageCount).toBe(2)
-    expect(
-      (afterWrite.records[0]?.['message'] as { content?: string } | undefined)?.content
-    ).toBe('分叉后的第一句')
+    expect((afterWrite.records[0]?.['message'] as { content?: string } | undefined)?.content).toBe(
+      '分叉后的第一句'
+    )
   })
 
   it('realpath 与 read 之间文件消失时也按空会话处理（allowMissing）', async () => {

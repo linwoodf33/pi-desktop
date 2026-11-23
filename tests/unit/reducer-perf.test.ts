@@ -72,7 +72,9 @@ describe('回放归约性能（20k 条 < 300ms）', () => {
 
     const { state, ms } = timeReduce(records)
     // 实测数字直接打印，便于报告与回归对比
-    console.log(`[perf] reduceRecords 20k 条：${ms.toFixed(1)}ms，产出 ${state.messages.length} 条消息`)
+    console.log(
+      `[perf] reduceRecords 20k 条：${ms.toFixed(1)}ms，产出 ${state.messages.length} 条消息`
+    )
 
     expect(state.messages).toHaveLength(20_000)
     expect(ms).toBeLessThan(300)
@@ -83,7 +85,9 @@ describe('回放归约性能（20k 条 < 300ms）', () => {
     expect(records).toHaveLength(20_000)
 
     const { state, ms } = timeReplay(records)
-    console.log(`[perf] sessionStore.replay 20k 条：${ms.toFixed(1)}ms，产出 ${state.messages.length} 条消息`)
+    console.log(
+      `[perf] sessionStore.replay 20k 条：${ms.toFixed(1)}ms，产出 ${state.messages.length} 条消息`
+    )
 
     expect(state.messages).toHaveLength(20_000)
     // 逐条 reduceRecord 的老实现是 8,296ms 级；这里必须落在百毫秒内
@@ -158,7 +162,12 @@ describe('批量归约与逐条归约等价', () => {
       name: '乱序工具卡片（start/end 早于 message_end，结果消息晚到）',
       records: [
         { type: 'agent_start' },
-        { type: 'tool_execution_start', toolCallId: 'call_1', toolName: 'bash', args: { command: 'ls' } },
+        {
+          type: 'tool_execution_start',
+          toolCallId: 'call_1',
+          toolName: 'bash',
+          args: { command: 'ls' }
+        },
         {
           type: 'tool_execution_end',
           toolCallId: 'call_1',

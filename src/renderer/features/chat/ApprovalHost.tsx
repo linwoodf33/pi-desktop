@@ -43,10 +43,6 @@ export function ApprovalHost({ taskId, now }: ApprovalHostProps) {
   }
 
   return (
-    <ApprovalDialog
-      pending={pending}
-      elapsedMs={tick - pending.receivedAt}
-      onRespond={respond}
-    />
+    <ApprovalDialog pending={pending} elapsedMs={tick - pending.receivedAt} onRespond={respond} />
   )
 }

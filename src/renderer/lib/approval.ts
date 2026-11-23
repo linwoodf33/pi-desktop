@@ -74,7 +74,9 @@ export function clearApprovalTimers(sessionKey?: string): void {
   }
 }
 
-function findPending(requestId: string): { sessionKey: string; request: ApprovalRequest } | undefined {
+function findPending(
+  requestId: string
+): { sessionKey: string; request: ApprovalRequest } | undefined {
   const sessions = usePermissionStore.getState().sessions
   for (const [sessionKey, session] of Object.entries(sessions)) {
     const hit = session.pending.find((item) => item.requestId === requestId)
@@ -83,7 +85,11 @@ function findPending(requestId: string): { sessionKey: string; request: Approval
   return undefined
 }
 
-function banner(input: { level: 'info' | 'warn' | 'error'; message: string; detail?: string }): void {
+function banner(input: {
+  level: 'info' | 'warn' | 'error'
+  message: string
+  detail?: string
+}): void {
   useRunStore.getState().pushBanner(input)
 }
 

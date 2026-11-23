@@ -1,0 +1,23 @@
+# 构建产物 / 依赖 / 缓存：不参与格式化（也不该被 `--check` 报错）
+node_modules/
+out/
+release/
+coverage/
+.vitest/
+.ruff_cache/
+node_modules/.tmp/
+
+# 性能压测的原始数据（大体量机器产物，逐字段重排只会制造噪音 diff）
+docs/perf/*.data.json
+
+# 截图等二进制
+docs/screenshots/
+*.png
+*.jpg
+*.jpeg
+*.ico
+*.exe
+*.asar
+
+# 锁文件由 npm 维护，格式化会破坏完整性校验
+package-lock.json

@@ -36,7 +36,10 @@ export function shouldFlushStreaming(
 }
 
 /** 把流式文本按 `intervalMs` 节流后再交给 UI（尾部保证：最后一次一定被渲染） */
-export function useThrottledStreaming(text: string, intervalMs = STREAMING_RENDER_INTERVAL_MS): string {
+export function useThrottledStreaming(
+  text: string,
+  intervalMs = STREAMING_RENDER_INTERVAL_MS
+): string {
   const [shown, setShown] = useState(text)
   const lastFlushRef = useRef(0)
 
@@ -49,10 +52,13 @@ export function useThrottledStreaming(text: string, intervalMs = STREAMING_RENDE
       return
     }
     // 追加型更新：等到下一个节拍再渲染（清理时取消，避免「定稿后又刷一次旧文本」）
-    const timer = setTimeout(() => {
-      lastFlushRef.current = Date.now()
-      setShown(text)
-    }, Math.max(intervalMs - elapsed, 0))
+    const timer = setTimeout(
+      () => {
+        lastFlushRef.current = Date.now()
+        setShown(text)
+      },
+      Math.max(intervalMs - elapsed, 0)
+    )
     return () => {
       clearTimeout(timer)
     }

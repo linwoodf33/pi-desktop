@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { clearApprovalTimers, forgetSession, handleExtUiEvent, respondApproval } from '../../src/renderer/lib/approval'
+import {
+  clearApprovalTimers,
+  forgetSession,
+  handleExtUiEvent,
+  respondApproval
+} from '../../src/renderer/lib/approval'
 import { usePermissionStore } from '../../src/renderer/stores/permissionStore'
 import { useRunStore } from '../../src/renderer/stores/runStore'
 import { useSessionStore } from '../../src/renderer/stores/sessionStore'
@@ -25,11 +30,7 @@ import type { ExtUiEvent } from '../../src/shared/contracts/types'
 
 const ALLOW_ONCE = APPROVAL_OPTIONS[0] as string
 
-function approvalTitle(options: {
-  tool?: string
-  timeoutMs?: number
-  protocol?: number
-}): string {
+function approvalTitle(options: { tool?: string; timeoutMs?: number; protocol?: number }): string {
   const meta = {
     protocol: options.protocol ?? 1,
     version: '1.0.0',
@@ -45,7 +46,11 @@ function approvalTitle(options: {
   return `需要批准：${meta.tool}\nls -la\n风险：执行 shell\n\n${PERMISSION_MARKER_PREFIX}${JSON.stringify(meta)}`
 }
 
-function approvalEvent(requestId: string, sessionKey = 's1', meta: Parameters<typeof approvalTitle>[0] = {}): ExtUiEvent {
+function approvalEvent(
+  requestId: string,
+  sessionKey = 's1',
+  meta: Parameters<typeof approvalTitle>[0] = {}
+): ExtUiEvent {
   return {
     sessionKey,
     request: {

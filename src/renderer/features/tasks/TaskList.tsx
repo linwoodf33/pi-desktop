@@ -1,9 +1,4 @@
-import {
-  formatCost,
-  formatTimestamp,
-  formatTokens,
-  shortenPath
-} from '../../lib/format'
+import { formatCost, formatTimestamp, formatTokens, shortenPath } from '../../lib/format'
 import type { TaskItem } from '../../stores/sessionStore'
 
 /**
@@ -51,9 +46,7 @@ export function TaskList({ tasks, selectedId, loading, onSelect, onNewTask }: Ta
               <li key={task.id}>
                 <button
                   type="button"
-                  className={
-                    task.id === selectedId ? 'task-item task-item--active' : 'task-item'
-                  }
+                  className={task.id === selectedId ? 'task-item task-item--active' : 'task-item'}
                   data-testid="task-item"
                   data-task-id={task.id}
                   onClick={() => {

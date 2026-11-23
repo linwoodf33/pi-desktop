@@ -75,7 +75,12 @@ export function NewTaskDialog({
       <section className="modal" role="dialog" aria-modal="true" aria-label="新建任务">
         <header className="modal__header">
           <h2>新建任务</h2>
-          <button type="button" className="btn btn--ghost" data-testid="new-task-cancel" onClick={onCancel}>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            data-testid="new-task-cancel"
+            onClick={onCancel}
+          >
             取消
           </button>
         </header>

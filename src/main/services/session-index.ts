@@ -79,7 +79,10 @@ export function createSessionIndex(options: SessionIndexOptions = {}): SessionIn
    * 按 mtime 取摘要：命中缓存直接复用；未命中读头部并写入。
    * 缓存是 **per-root** 的（root 变化就清空，避免会话目录覆盖后拿到旧摘要）。
    */
-  async function summarizeCached(filePath: string, mtimeMs: number): Promise<SessionSummary | undefined> {
+  async function summarizeCached(
+    filePath: string,
+    mtimeMs: number
+  ): Promise<SessionSummary | undefined> {
     const cached = cache.get(filePath)
     if (cached !== undefined && cached.mtimeMs === mtimeMs) {
       // 刷新 LRU 顺序（Map 保插入序，删除后重插即最近使用）
@@ -248,7 +251,8 @@ function extractText(content: unknown): string | undefined {
   const parts: string[] = []
   for (const block of content) {
     const record = asRecord(block)
-    if (record?.['type'] === 'text' && typeof record['text'] === 'string') parts.push(record['text'])
+    if (record?.['type'] === 'text' && typeof record['text'] === 'string')
+      parts.push(record['text'])
   }
   return parts.length > 0 ? parts.join('\n') : undefined
 }

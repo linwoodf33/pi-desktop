@@ -105,7 +105,10 @@ function createFakeApi(options: FakeApiOptions = {}) {
       history: (input: { sessionFile: string }) => {
         calls.push({ method: 'session.history', input })
         return Promise.resolve(
-          options.history ?? { ok: true, data: { records: [], truncated: false, messageCount: 0, totalRecords: 0 } }
+          options.history ?? {
+            ok: true,
+            data: { records: [], truncated: false, messageCount: 0, totalRecords: 0 }
+          }
         )
       },
       create: (input: { cwd: string }) => {
@@ -170,7 +173,9 @@ function createFakeApi(options: FakeApiOptions = {}) {
       },
       set: (input: unknown) => {
         calls.push({ method: 'model.set', input })
-        return Promise.resolve(options.modelSet ?? { ok: true as const, data: { ok: true as const } })
+        return Promise.resolve(
+          options.modelSet ?? { ok: true as const, data: { ok: true as const } }
+        )
       }
     },
     extui: { respond: () => Promise.resolve({ ok: true as const, data: { ok: true as const } }) },
@@ -180,8 +185,7 @@ function createFakeApi(options: FakeApiOptions = {}) {
         return Promise.resolve(options.pickedPath ?? { ok: true, data: { path: 'C:/work' } })
       },
       listArtifacts: () => Promise.resolve({ ok: true as const, data: [] }),
-      readText: () =>
-        Promise.resolve({ ok: true as const, data: { text: '', truncated: false } }),
+      readText: () => Promise.resolve({ ok: true as const, data: { text: '', truncated: false } }),
       diff: () => Promise.resolve({ ok: true as const, data: { path: '', patch: '' } })
     },
     artifact: { open: () => Promise.resolve({ ok: true as const, data: { ok: true as const } }) },
@@ -343,7 +347,9 @@ describe('任务列表：session:list + 选中回放', () => {
       history: {
         ok: true,
         data: {
-          records: [{ type: 'message_end', message: { role: 'user', content: 'hi', timestamp: 1 } }],
+          records: [
+            { type: 'message_end', message: { role: 'user', content: 'hi', timestamp: 1 } }
+          ],
           truncated: false,
           messageCount: 1,
           totalRecords: 1
@@ -360,7 +366,10 @@ describe('任务列表：session:list + 选中回放', () => {
   it('回放被截断时标记 truncated（UI 显式提示）', async () => {
     const fake = createFakeApi({
       list: { ok: true, data: { items: [summary()] } },
-      history: { ok: true, data: { records: [], truncated: true, messageCount: 0, totalRecords: 0 } }
+      history: {
+        ok: true,
+        data: { records: [], truncated: true, messageCount: 0, totalRecords: 0 }
+      }
     })
 
     await loadTasks({ api: fake.api })
@@ -583,7 +592,10 @@ describe('M4：模型与档位切换（model:set）', () => {
     await newTask({ api: fake.api })
     const taskId = useSessionStore.getState().selectedId as string
 
-    const ok = await switchModel({ model: 'openai/gpt-4o', thinkingLevel: 'low' }, { api: fake.api })
+    const ok = await switchModel(
+      { model: 'openai/gpt-4o', thinkingLevel: 'low' },
+      { api: fake.api }
+    )
 
     expect(ok).toBe(true)
     expect(fake.calls.find((call) => call.method === 'model.set')?.input).toEqual({
@@ -607,7 +619,9 @@ describe('M4：模型与档位切换（model:set）', () => {
 
     expect(ok).toBe(false)
     expect(useRunStore.getState().banners[0]?.message).toContain('PI_COMMAND_FAILED')
-    expect(useSessionStore.getState().tasks.find((item) => item.id === taskId)?.model).toBeUndefined()
+    expect(
+      useSessionStore.getState().tasks.find((item) => item.id === taskId)?.model
+    ).toBeUndefined()
   })
 
   it('没有运行中的会话时提示先「继续对话」，不发 model:set', async () => {
@@ -616,7 +630,10 @@ describe('M4：模型与档位切换（model:set）', () => {
         ok: true,
         data: { items: [summary({ id: 'hist-1', title: '历史' })] }
       },
-      history: { ok: true, data: { records: [], truncated: false, messageCount: 0, totalRecords: 0 } }
+      history: {
+        ok: true,
+        data: { records: [], truncated: false, messageCount: 0, totalRecords: 0 }
+      }
     })
     await loadTasks({ api: fake.api })
 
@@ -632,7 +649,10 @@ describe('M4：恢复与分叉', () => {
   it('「继续对话」才 session:resume（选历史任务本身不起进程）', async () => {
     const fake = createFakeApi({
       list: { ok: true, data: { items: [summary({ id: 'hist-1', title: '历史任务' })] } },
-      history: { ok: true, data: { records: [], truncated: false, messageCount: 0, totalRecords: 0 } }
+      history: {
+        ok: true,
+        data: { records: [], truncated: false, messageCount: 0, totalRecords: 0 }
+      }
     })
     await loadTasks({ api: fake.api })
     expect(fake.calls.some((call) => call.method === 'session.resume')).toBe(false)
@@ -793,7 +813,10 @@ describe('M4：恢复与分叉', () => {
   it('没有运行中的会话时分叉给出可操作提示', async () => {
     const fake = createFakeApi({
       list: { ok: true, data: { items: [summary()] } },
-      history: { ok: true, data: { records: [], truncated: false, messageCount: 0, totalRecords: 0 } }
+      history: {
+        ok: true,
+        data: { records: [], truncated: false, messageCount: 0, totalRecords: 0 }
+      }
     })
     await loadTasks({ api: fake.api })
 
@@ -883,7 +906,10 @@ describe('M4：设置持久化（config:update）', () => {
 
   it('保存失败给错误条且不覆盖当前配置', async () => {
     const fake = createFakeApi({
-      configUpdate: { ok: false, error: { code: 'VALIDATION', message: '配置不得包含疑似密钥字段' } }
+      configUpdate: {
+        ok: false,
+        error: { code: 'VALIDATION', message: '配置不得包含疑似密钥字段' }
+      }
     })
     useAppStore.getState().setConfig(BOOT_CONFIG)
 

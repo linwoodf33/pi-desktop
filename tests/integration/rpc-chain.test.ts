@@ -509,16 +509,20 @@ describe('M4 集成链路：steer / followUp 真正生效（I3）', () => {
     expect(queued.disposition).toBe('queued')
 
     // 第一轮 settled 之后，mock 会把排队的 prompt 当成下一轮真正跑起来
-    await waitFor(() => records.filter((payload) => payload.record.type === 'agent_start').length >= 2)
+    await waitFor(
+      () => records.filter((payload) => payload.record.type === 'agent_start').length >= 2
+    )
     const userTexts = records
       .filter((payload) => payload.record.type === 'message_end')
-      .map((payload) => (payload.record['message'] as { role?: string; content?: unknown }))
+      .map((payload) => payload.record['message'] as { role?: string; content?: unknown })
       .filter((message) => message.role === 'user')
       .map((message) => message.content)
     expect(userTexts).toContain('第一句')
     expect(userTexts).toContain('排队的一句')
 
-    await waitFor(() => records.filter((payload) => payload.record.type === 'agent_settled').length >= 2)
+    await waitFor(
+      () => records.filter((payload) => payload.record.type === 'agent_settled').length >= 2
+    )
     await service.disposeAll()
   })
 
@@ -539,7 +543,9 @@ describe('M4 集成链路：steer / followUp 真正生效（I3）', () => {
 
     // 当轮内就能看到这条用户消息（不是等下一轮）
     await waitFor(() => {
-      const settledCount = records.filter((payload) => payload.record.type === 'agent_settled').length
+      const settledCount = records.filter(
+        (payload) => payload.record.type === 'agent_settled'
+      ).length
       const hasSteer = records.some(
         (payload) =>
           payload.record.type === 'message_end' &&
@@ -699,9 +705,9 @@ describe('M4 集成链路（B1）：从首条用户消息分叉 = 空会话、�
       const after = await history.read({ sessionFile: forkedFile as string })
       expect(after.fileAbsent).toBeUndefined()
       expect(after.messageCount).toBe(1)
-      expect(
-        (after.records[0]?.['message'] as { content?: string } | undefined)?.content
-      ).toBe('分叉后的第一句')
+      expect((after.records[0]?.['message'] as { content?: string } | undefined)?.content).toBe(
+        '分叉后的第一句'
+      )
     } finally {
       await service.disposeAll()
       await rm(sessionRoot, { recursive: true, force: true })

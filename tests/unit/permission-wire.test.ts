@@ -156,7 +156,13 @@ describe('classifyExtUi：审批 / 握手 / 忽略', () => {
   it('其它扩展的 setStatus / notify / confirm 都不参与审批', () => {
     const other: ExtUiEvent = {
       sessionKey: 's1',
-      request: { type: 'extension_ui_request', id: 'x', method: 'setStatus', statusKey: 'other-ext', statusText: '{}' }
+      request: {
+        type: 'extension_ui_request',
+        id: 'x',
+        method: 'setStatus',
+        statusKey: 'other-ext',
+        statusText: '{}'
+      }
     }
     expect(classifyExtUi(other).kind).toBe('ignored')
     const notify: ExtUiEvent = {
@@ -166,7 +172,13 @@ describe('classifyExtUi：审批 / 握手 / 忽略', () => {
     expect(classifyExtUi(notify).kind).toBe('ignored')
     const confirm: ExtUiEvent = {
       sessionKey: 's1',
-      request: { type: 'extension_ui_request', id: 'z', method: 'confirm', title: 't', message: 'm' }
+      request: {
+        type: 'extension_ui_request',
+        id: 'z',
+        method: 'confirm',
+        title: 't',
+        message: 'm'
+      }
     }
     expect(classifyExtUi(confirm).kind).toBe('ignored')
   })

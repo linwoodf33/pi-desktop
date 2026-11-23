@@ -51,6 +51,9 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
+      # 格式化门禁：prettier 只做风格约束，不参与构建；放这里是为了避免
+      # 「本地编辑器自动格式化 → 额外产生纯格式 commit」的噪音。
+      - run: npm run format:check
 
   unit:
     name: 单元测试

@@ -77,8 +77,7 @@ export function App() {
   }, [probeBridge])
 
   const task = selectedId === undefined ? undefined : tasks.find((item) => item.id === selectedId)
-  const chat =
-    selectedId === undefined ? initialChatState : (chats[selectedId] ?? initialChatState)
+  const chat = selectedId === undefined ? initialChatState : (chats[selectedId] ?? initialChatState)
   const phase = selectedId === undefined ? 'idle' : (phases[selectedId] ?? 'idle')
   const piStatus = bridge.phase === 'ok' ? bridge.boot.piStatus : undefined
   const piReady = piStatus?.state === 'ok'

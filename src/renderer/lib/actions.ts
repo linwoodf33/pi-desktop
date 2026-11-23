@@ -163,13 +163,11 @@ export async function createTask(
 
   const sessionKey = created.data.sessionKey
   const title = input.name === undefined ? undefined : input.name.trim()
-  const taskId = useSessionStore
-    .getState()
-    .addLiveTask({
-      sessionKey,
-      cwd: input.cwd,
-      ...(title === undefined || title.length === 0 ? {} : { title })
-    })
+  const taskId = useSessionStore.getState().addLiveTask({
+    sessionKey,
+    cwd: input.cwd,
+    ...(title === undefined || title.length === 0 ? {} : { title })
+  })
   useRunStore.getState().setPhase(taskId, 'idle')
   useRunStore.getState().clearBanners()
 

@@ -16,7 +16,11 @@ function delta(text: string, contentIndex = 0): { type: string; [key: string]: u
   }
 }
 
-function messageEnd(text: string, role = 'assistant', timestamp = 1733234402000): {
+function messageEnd(
+  text: string,
+  role = 'assistant',
+  timestamp = 1733234402000
+): {
   type: string
   [key: string]: unknown
 } {
@@ -67,7 +71,10 @@ describe('U5：delta 序列 + message_end', () => {
   it('string 形式的 content 与 content 数组都被正确提取', () => {
     const state = reduceRecords(initialChatState, [
       { type: 'message_end', message: { role: 'user', content: 'hi', timestamp: 1 } },
-      { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'yo' }], timestamp: 2 } }
+      {
+        type: 'message_end',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'yo' }], timestamp: 2 }
+      }
     ])
     expect(state.messages.map((message) => message.text)).toEqual(['hi', 'yo'])
   })

@@ -5,10 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import type { EventChannel } from '../../src/shared/ipc-channels'
-import {
-  createSessionHistory,
-  DEFAULT_MAX_RECORDS
-} from '../../src/main/services/session-history'
+import { createSessionHistory, DEFAULT_MAX_RECORDS } from '../../src/main/services/session-history'
 import { createSessionService } from '../../src/main/services/session-service'
 import { buildLaunchSpec, commonPiPaths } from '../../src/main/services/pi-locator'
 import { LocalConnection } from '../../src/main/transport/local-connection'
@@ -77,7 +74,11 @@ describe.skipIf(!available)('真实 pi（B1）：从首条用户消息分叉 = �
         message: { role: 'user', content: '第二句问题', timestamp: 1735689603000 }
       }
     ]
-    await writeFile(sessionFile, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`, 'utf8')
+    await writeFile(
+      sessionFile,
+      `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`,
+      'utf8'
+    )
 
     const connection = new LocalConnection({
       resolveLaunch: () => Promise.resolve(buildLaunchSpec(piPath, process.platform))

@@ -12,16 +12,22 @@ const bootState: BootState = {
     maxActiveSessions: 3,
     idleRecycleMinutes: 30,
     theme: 'system',
-    permission: { enabled: true, tools: ['bash', 'powershell', 'write', 'edit'], timeoutMs: 120_000 }
+    permission: {
+      enabled: true,
+      tools: ['bash', 'powershell', 'write', 'edit'],
+      timeoutMs: 120_000
+    }
   },
   piStatus: { state: 'unknown', message: 'M1 未实现' }
 }
 
 /** 只桩掉探测用到的两个方法，其余方法不会被调用 */
-function fakeApi(overrides: {
-  getBoot?: PiApi['app']['getBoot']
-  list?: PiApi['session']['list']
-} = {}): PiApi {
+function fakeApi(
+  overrides: {
+    getBoot?: PiApi['app']['getBoot']
+    list?: PiApi['session']['list']
+  } = {}
+): PiApi {
   return {
     app: { getBoot: overrides.getBoot ?? vi.fn(() => Promise.resolve(ok(bootState))) },
     session: {

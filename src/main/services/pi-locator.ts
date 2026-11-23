@@ -459,9 +459,7 @@ export function defaultRunCapture(
 ): Promise<CaptureResult> {
   return new Promise((resolve, reject) => {
     const prefix = spec.prefixArgs ?? []
-    const argv = spec.commandLine
-      ? [...prefix, spec.commandLine(args)]
-      : [...prefix, ...args]
+    const argv = spec.commandLine ? [...prefix, spec.commandLine(args)] : [...prefix, ...args]
     const child = spawn(spec.command, argv, {
       shell: false,
       windowsHide: true,

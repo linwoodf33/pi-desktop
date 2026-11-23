@@ -51,11 +51,7 @@ export interface PermissionStoreState {
   sessions: Record<string, SessionPermissionState>
 
   /** 记录扩展握手（setStatus 载荷） */
-  applyHandshake: (
-    sessionKey: string,
-    handshake: PermissionHandshake,
-    compatible: boolean
-  ) => void
+  applyHandshake: (sessionKey: string, handshake: PermissionHandshake, compatible: boolean) => void
   /** 入队一条审批请求（同 requestId 不重复入队） */
   pushApproval: (input: {
     sessionKey: string

@@ -5,10 +5,7 @@ import {
   DEFAULT_APPROVAL_TOOLS as EXTENSION_DEFAULT_APPROVAL_TOOLS
 } from '../../src/extensions/permission/protocol'
 import { defaultConfigView } from '../../src/main/services/config-store'
-import {
-  APPROVAL_ACTIONS,
-  APPROVAL_ACTION_LABELS
-} from '../../src/renderer/lib/approval-copy'
+import { APPROVAL_ACTIONS, APPROVAL_ACTION_LABELS } from '../../src/renderer/lib/approval-copy'
 import { DEFAULT_APPROVAL_TOOLS as SHARED_DEFAULT_APPROVAL_TOOLS } from '../../src/shared/contracts/permission'
 
 /**

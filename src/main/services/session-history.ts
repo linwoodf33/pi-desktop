@@ -140,11 +140,7 @@ export async function resolveRealSessionPath(
 ): Promise<string> {
   const realRoot = await resolveRealRoot(realPath, sessionRoot)
   const realTarget = await realPath(lexicalTarget).catch(() => {
-    throw new IpcFailure(
-      'PATH_DENIED',
-      '会话文件无法解析为真实路径，拒绝回放',
-      'realpath failed'
-    )
+    throw new IpcFailure('PATH_DENIED', '会话文件无法解析为真实路径，拒绝回放', 'realpath failed')
   })
   assertInsideRoot(realRoot, realTarget)
   return realTarget
@@ -176,11 +172,7 @@ export async function resolveRealSessionPathOrAbsent(
   } catch (error) {
     if (!isMissingFile(error)) {
       // 非「文件不存在」：保持 fail-closed（与 resolveRealSessionPath 同码同文案）
-      throw new IpcFailure(
-        'PATH_DENIED',
-        '会话文件无法解析为真实路径，拒绝回放',
-        'realpath failed'
-      )
+      throw new IpcFailure('PATH_DENIED', '会话文件无法解析为真实路径，拒绝回放', 'realpath failed')
     }
   }
 

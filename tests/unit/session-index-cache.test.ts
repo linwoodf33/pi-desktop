@@ -148,7 +148,9 @@ describe('SessionIndex：20 / 100 / 1000 会话实测耗时（A3）', () => {
     await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })))
   })
 
-  async function measure(count: number): Promise<{ cold: number; warm: number; firstPage: number }> {
+  async function measure(
+    count: number
+  ): Promise<{ cold: number; warm: number; firstPage: number }> {
     const root = await mkdtemp(join(tmpdir(), `pi-index-bench-${count}-`))
     dirs.push(root)
     const groups = 10

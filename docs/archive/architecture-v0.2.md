@@ -23,15 +23,15 @@ pi（`@earendil-works/pi-coding-agent`）是终端优先的 agent harness，主�
 
 WorkBuddy 调研结论（来源：workbuddy.ai / workbuddy.cn 文档与手册）：
 
-| 维度 | WorkBuddy 做法 | 对 pi-desktop 的启示 |
-|---|---|---|
+| 维度 | WorkBuddy 做法                                                   | 对 pi-desktop 的启示                           |
+| ---- | ---------------------------------------------------------------- | ---------------------------------------------- |
 | 入口 | 新建任务栏：模式 → 模型 → 目录 → 技能 → 描述任务，仅任务描述必填 | 用「新建任务」弹层承接会话创建，其余项给默认值 |
-| 布局 | 左：任务列表；中：对话；右：产物/文件 | 三栏，右侧按需可折叠 |
-| 执行 | 自主拆解步骤、逐步展示进度、可中断、可全程审计 | 事件流可视化 + 中止按钮 + 步骤时间线 |
-| 权限 | 操作本地文件前需授权，可设置授权范围 | 工具调用前审批弹窗（risk-based） |
-| 产物 | 交付可直接使用的文件，右侧可直接预览 | 右侧产物面板 + 变更 diff |
-| 扩展 | 专家 / 技能 / 连接器（MCP）/ 资料库 | 映射到 pi 的 extensions / skills / MCP |
-| 模式 | 办公模式 / 编程模式；模型档位 auto/快速/均衡/极致；Plan 模式 | 模式切换映射到 agent/prompt 预设与模型选择 |
+| 布局 | 左：任务列表；中：对话；右：产物/文件                            | 三栏，右侧按需可折叠                           |
+| 执行 | 自主拆解步骤、逐步展示进度、可中断、可全程审计                   | 事件流可视化 + 中止按钮 + 步骤时间线           |
+| 权限 | 操作本地文件前需授权，可设置授权范围                             | 工具调用前审批弹窗（risk-based）               |
+| 产物 | 交付可直接使用的文件，右侧可直接预览                             | 右侧产物面板 + 变更 diff                       |
+| 扩展 | 专家 / 技能 / 连接器（MCP）/ 资料库                              | 映射到 pi 的 extensions / skills / MCP         |
+| 模式 | 办公模式 / 编程模式；模型档位 auto/快速/均衡/极致；Plan 模式     | 模式切换映射到 agent/prompt 预设与模型选择     |
 
 ### 1.2 远程部署约束（v0.2 新增背景）
 
@@ -68,20 +68,20 @@ WorkBuddy 调研结论（来源：workbuddy.ai / workbuddy.cn 文档与手册）
 
 ### D1：桌面框架选 Electron（推荐）
 
-| 方案 | 优势 | 劣势 | 结论 |
-|---|---|---|---|
-| **Electron + React + Vite** | 主进程即 Node 运行时，可直接 `import` pi SDK 做 in-process 嵌入；官方 `RpcClient` 可直接在 main 使用；Windows 打包成熟（electron-builder）；Chromium 渲染一致性高 | 安装包约 100MB+；内存占用较高 | **推荐** |
-| Tauri 2 + React | 体积小、内存低 | Rust 侧无法直接跑 pi SDK，只能靠 RPC 子进程 + 用户机器上的 Node/pi；扩展 UI 桥与文件能力需双语言维护 | 备选，P2 可评估 |
-| Web + 本地 server | 开发最快 | 无原生文件对话框/托盘/深链，安全边界弱 | 不采用 |
+| 方案                        | 优势                                                                                                                                                              | 劣势                                                                                                 | 结论            |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------- |
+| **Electron + React + Vite** | 主进程即 Node 运行时，可直接 `import` pi SDK 做 in-process 嵌入；官方 `RpcClient` 可直接在 main 使用；Windows 打包成熟（electron-builder）；Chromium 渲染一致性高 | 安装包约 100MB+；内存占用较高                                                                        | **推荐**        |
+| Tauri 2 + React             | 体积小、内存低                                                                                                                                                    | Rust 侧无法直接跑 pi SDK，只能靠 RPC 子进程 + 用户机器上的 Node/pi；扩展 UI 桥与文件能力需双语言维护 | 备选，P2 可评估 |
+| Web + 本地 server           | 开发最快                                                                                                                                                          | 无原生文件对话框/托盘/深链，安全边界弱                                                               | 不采用          |
 
 **理由**：pi 的唯一官方进程内集成面是 Node/Bun SDK，Electron 让「进程内」与「子进程」两种集成都保留在同一种语言栈内，避免双语言成本；且 pi 本身需要 Node 22.19+，Electron 主进程天然满足。`ssh2` 是纯 JS 实现，主进程可直接使用，无需额外原生依赖。
 
 ### D2：与 pi 的集成方式 —— 协议统一为 pi RPC，仅保留 RPC 通道实现
 
-| 方式 | 优点 | 缺点 |
-|---|---|---|
-| RPC 子进程（`pi --mode rpc`） | 崩溃隔离；可与 CLI 共用同一份安装；会话文件天然一致；扩展 UI 有正式子协议；可多会话并行（每会话一进程） | 需定位可运行的 pi 入口；JSONL 序列化开销；启动有 ~百毫秒级延迟 |
-| SDK in-process（`createAgentSession`） | 零序列化、延迟最低、可拿到全部对象引用 | pi 崩溃即拖垮窗口；扩展 UI 需要宿主自己实现；多会话共享一个进程，`PI_CODEMODE_MAX_WORKERS` 等资源竞争 |
+| 方式                                   | 优点                                                                                                    | 缺点                                                                                                  |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| RPC 子进程（`pi --mode rpc`）          | 崩溃隔离；可与 CLI 共用同一份安装；会话文件天然一致；扩展 UI 有正式子协议；可多会话并行（每会话一进程） | 需定位可运行的 pi 入口；JSONL 序列化开销；启动有 ~百毫秒级延迟                                        |
+| SDK in-process（`createAgentSession`） | 零序列化、延迟最低、可拿到全部对象引用                                                                  | pi 崩溃即拖垮窗口；扩展 UI 需要宿主自己实现；多会话共享一个进程，`PI_CODEMODE_MAX_WORKERS` 等资源竞争 |
 
 **决策（v0.2 修订）**：抽象出 `PiConnection` + `PiTransport` 双层接口（见 §5.3），实现形式按链路分为 `LocalConnection`（`child_process` stdio）、`SshConnection`（`ssh2` exec，P0）、`GatewayConnection`（wss，P1）。**`SdkTransport` 移出规划**：SDK 必须在 pi 所在机器上跑 Node，远程部署下不适用，保留它会迫使 UI 层为两套语义做兼容。
 
@@ -107,16 +107,16 @@ v0.2 补充：远程部署下扩展必须装在**云服务器**（本地安装�
 
 ### 3.1 路径对比
 
-| 维度 | (a) SSH 隧道 stdio | (b) 常驻网关 + WSS | (c) 仅同步 JSONL |
-|---|---|---|---|
-| 实现成本 | 低：`exec` 通道即双向流，与本地子进程同构 | 中高：自研路由/鉴权/重放/多客户端 | 低，但只读 |
-| 云端依赖 | 仅 sshd + 已装 pi | 常驻服务、守护、TLS 证书 | 仅 sshd |
-| 交互能力 | 完整（prompt/abort/审批/切模型） | 完整 | 无 |
-| 断连语义 | 连接断开 → pi 收到 stdin EOF → 有序退出，会话已落盘 | 云端继续跑，客户端断开无影响 | — |
-| 重连 | 重新 exec + `get_messages` 全量对齐（秒级） | 按 seq 重放增量（毫秒级，零重跑） | 重拉文件 |
-| 多会话 | 同连接多 channel | 单连接多路复用 | 只读 |
-| 安全面 | 复用 SSH 信任模型（known_hosts/密钥/2FA） | 需自建鉴权 + TLS + 端口暴露 + 限流 | 复用 SSH |
-| 可观测 | 弱（仅 stderr 尾部） | 强（集中日志/指标） | 弱 |
+| 维度     | (a) SSH 隧道 stdio                                  | (b) 常驻网关 + WSS                 | (c) 仅同步 JSONL |
+| -------- | --------------------------------------------------- | ---------------------------------- | ---------------- |
+| 实现成本 | 低：`exec` 通道即双向流，与本地子进程同构           | 中高：自研路由/鉴权/重放/多客户端  | 低，但只读       |
+| 云端依赖 | 仅 sshd + 已装 pi                                   | 常驻服务、守护、TLS 证书           | 仅 sshd          |
+| 交互能力 | 完整（prompt/abort/审批/切模型）                    | 完整                               | 无               |
+| 断连语义 | 连接断开 → pi 收到 stdin EOF → 有序退出，会话已落盘 | 云端继续跑，客户端断开无影响       | —                |
+| 重连     | 重新 exec + `get_messages` 全量对齐（秒级）         | 按 seq 重放增量（毫秒级，零重跑）  | 重拉文件         |
+| 多会话   | 同连接多 channel                                    | 单连接多路复用                     | 只读             |
+| 安全面   | 复用 SSH 信任模型（known_hosts/密钥/2FA）           | 需自建鉴权 + TLS + 端口暴露 + 限流 | 复用 SSH         |
+| 可观测   | 弱（仅 stderr 尾部）                                | 强（集中日志/指标）                | 弱               |
 
 **结论与推荐（分阶段，接口先定型）**
 
@@ -128,40 +128,55 @@ v0.2 补充：远程部署下扩展必须装在**云服务器**（本地安装�
 
 **模式矩阵**
 
-| 维度 | 本地（Local） | 远程-SSH（默认） | 远程-Gateway（P1） |
-|---|---|---|---|
-| 通道 | `child_process` stdio | `ssh2` exec（**无 PTY**） | `wss` |
-| 会话文件 | 本地 | 云端，客户端不落盘 | 云端 |
-| 文件访问 | 本地 fs | SFTP + 只读 exec | 网关 fs RPC |
-| 断连行为 | 不适用 | pi 退出、会话保留 | pi 继续跑 |
-| 目标用户 | 开发调试/单机 | **主场景** | 多设备/长任务 |
+| 维度     | 本地（Local）         | 远程-SSH（默认）          | 远程-Gateway（P1） |
+| -------- | --------------------- | ------------------------- | ------------------ |
+| 通道     | `child_process` stdio | `ssh2` exec（**无 PTY**） | `wss`              |
+| 会话文件 | 本地                  | 云端，客户端不落盘        | 云端               |
+| 文件访问 | 本地 fs               | SFTP + 只读 exec          | 网关 fs RPC        |
+| 断连行为 | 不适用                | pi 退出、会话保留         | pi 继续跑          |
+| 目标用户 | 开发调试/单机         | **主场景**                | 多设备/长任务      |
 
 **六项关键架构变化（v0.1 → v0.2）**
 
-| # | 变化 | 理由 |
-|---|---|---|
-| 1 | `PiTransport` 拆为 `PiConnection`（物理连接 + 状态机）与 `PiTransport`（一会话一通道） | 远程下连接与进程生命周期分离：一条 SSH 连接可承载多 channel |
-| 2 | 协议唯一：只用 pi RPC JSONL；`SdkTransport` 移出规划 | SDK 必须在 pi 所在机器跑 Node，远程不适用 |
-| 3 | 事实来源仍是 pi session JSONL，但位于云端；客户端**零持久化会话内容** | 避免双写不一致；允许的本地缓存仅限元数据且必须可失效 |
-| 4 | 凭据分层：provider key 只在云端；SSH 口令/token 走 `safeStorage` | 渲染进程永不接触密钥 |
-| 5 | 新增 `RemoteFs`，路径校验**在远端**执行；产物 diff 优先走 `git status/diff` | 本地校验不能作为唯一防线 |
-| 6 | 审批扩展必须装在**云端**，超时 auto-resolve 出的 `undefined` 一律视为**拒绝** | 否则断网默认放行，违背安全目标 |
+| #   | 变化                                                                                   | 理由                                                        |
+| --- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| 1   | `PiTransport` 拆为 `PiConnection`（物理连接 + 状态机）与 `PiTransport`（一会话一通道） | 远程下连接与进程生命周期分离：一条 SSH 连接可承载多 channel |
+| 2   | 协议唯一：只用 pi RPC JSONL；`SdkTransport` 移出规划                                   | SDK 必须在 pi 所在机器跑 Node，远程不适用                   |
+| 3   | 事实来源仍是 pi session JSONL，但位于云端；客户端**零持久化会话内容**                  | 避免双写不一致；允许的本地缓存仅限元数据且必须可失效        |
+| 4   | 凭据分层：provider key 只在云端；SSH 口令/token 走 `safeStorage`                       | 渲染进程永不接触密钥                                        |
+| 5   | 新增 `RemoteFs`，路径校验**在远端**执行；产物 diff 优先走 `git status/diff`            | 本地校验不能作为唯一防线                                    |
+| 6   | 审批扩展必须装在**云端**，超时 auto-resolve 出的 `undefined` 一律视为**拒绝**          | 否则断网默认放行，违背安全目标                              |
 
 ### 3.2 连接配置模型（两模式共用，仅以引用存密钥）
 
 ```ts
 type ConnectionConfig =
   | { kind: 'local'; id: string; label: string }
-  | { kind: 'ssh'; id: string; label: string; host: string; port: number; username: string;
-      auth: { type: 'key'; privateKeyPath: string; passphraseRef?: string }
-          | { type: 'agent' }
-          | { type: 'password'; passwordRef: string };
-      hostKeyPolicy: 'strict' | 'tofu';   // tofu = 首次指纹确认后固定
-      piCommand: string;                  // 默认 'pi'，可填绝对路径
-      sessionDir?: string;                // 远程 --session-dir
-      workspaceRoots: string[];           // 允许浏览/读取的远端根
-      keepAliveMs: number }               // 默认 15000
-  | { kind: 'gateway'; id: string; label: string; url: string; tokenRef: string; workspaceRoots: string[] }
+  | {
+      kind: 'ssh'
+      id: string
+      label: string
+      host: string
+      port: number
+      username: string
+      auth:
+        | { type: 'key'; privateKeyPath: string; passphraseRef?: string }
+        | { type: 'agent' }
+        | { type: 'password'; passwordRef: string }
+      hostKeyPolicy: 'strict' | 'tofu' // tofu = 首次指纹确认后固定
+      piCommand: string // 默认 'pi'，可填绝对路径
+      sessionDir?: string // 远程 --session-dir
+      workspaceRoots: string[] // 允许浏览/读取的远端根
+      keepAliveMs: number
+    } // 默认 15000
+  | {
+      kind: 'gateway'
+      id: string
+      label: string
+      url: string
+      tokenRef: string
+      workspaceRoots: string[]
+    }
 ```
 
 约束：配置 JSON 只允许出现 keychain **引用名**；zod schema 拒绝疑似明文密钥字段；renderer 只能拿到脱敏视图。
@@ -277,58 +292,74 @@ pi-desktop/
 
 ### 5.2 主进程模块职责
 
-| 模块 | 职责 | 不做什么 |
-|---|---|---|
-| `window.ts` | 创建 BrowserWindow；强制 `contextIsolation:true`、`nodeIntegration:false`、`sandbox:true`、`webSecurity:true`；拦截 `will-navigate` 与 `setWindowOpenHandler` | 不向渲染进程注入任何 Node 能力 |
-| `ConnectionManager` | 管理 `ConnectionConfig` 的生命周期与状态机；按 id 取连接；连接级资源与诊断汇总 | 不解析会话语义，不持有会话状态 |
-| `PiConnection` 实现 | `LocalConnection`（子进程）、`SshConnection`（ssh2 exec + keepalive + host key 校验）、`GatewayConnection`（P1）；`openChannel` 产出一会话一通道 | 不做业务状态机 |
-| `Transport`（Channel） | 启动/停止 pi 进程（本地）或 exec（远端）；写命令；读事件；进程退出与错误上报 | 不做业务状态机 |
-| `SessionService` | 会话生命周期与资源回收；`create/resume/fork/prompt/abort/dispose`；进程级串行化 | 不解析会话语义 |
-| `SessionIndex` / `SessionSource` | 只读扫描/读取 session JSONL，产出列表（id、标题、cwd、mtime、token、成本）；`SessionSource` 抽象 local/ssh/gateway 三种来源 | 不写会话文件 |
-| `SessionMirror` | 远端会话元数据内存 LRU，供列表加速与离线查看 | **只读单向，禁止回写远端** |
-| `FsBridge` | 本地文件对话框、受限读写（仅工作区内 + 显式授权路径）、产物列表与 diff | 不做通用 fs 代理 |
-| `RemoteFs` | 远端列目录/stat/range 读/只读 git 命令；**路径校验在远端执行** | 不做本地路径校验替代品 |
-| `ConfigStore` | 偏好与连接配置持久化（`app.getPath('userData')/config.json`），schema 校验 + 迁移；密钥仅存引用名 | 不存会话内容，不存明文密钥 |
-| `IpcRouter` | 通道注册、入参 zod 校验、错误码映射、超时 | 不含业务逻辑 |
+| 模块                             | 职责                                                                                                                                                          | 不做什么                       |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `window.ts`                      | 创建 BrowserWindow；强制 `contextIsolation:true`、`nodeIntegration:false`、`sandbox:true`、`webSecurity:true`；拦截 `will-navigate` 与 `setWindowOpenHandler` | 不向渲染进程注入任何 Node 能力 |
+| `ConnectionManager`              | 管理 `ConnectionConfig` 的生命周期与状态机；按 id 取连接；连接级资源与诊断汇总                                                                                | 不解析会话语义，不持有会话状态 |
+| `PiConnection` 实现              | `LocalConnection`（子进程）、`SshConnection`（ssh2 exec + keepalive + host key 校验）、`GatewayConnection`（P1）；`openChannel` 产出一会话一通道              | 不做业务状态机                 |
+| `Transport`（Channel）           | 启动/停止 pi 进程（本地）或 exec（远端）；写命令；读事件；进程退出与错误上报                                                                                  | 不做业务状态机                 |
+| `SessionService`                 | 会话生命周期与资源回收；`create/resume/fork/prompt/abort/dispose`；进程级串行化                                                                               | 不解析会话语义                 |
+| `SessionIndex` / `SessionSource` | 只读扫描/读取 session JSONL，产出列表（id、标题、cwd、mtime、token、成本）；`SessionSource` 抽象 local/ssh/gateway 三种来源                                   | 不写会话文件                   |
+| `SessionMirror`                  | 远端会话元数据内存 LRU，供列表加速与离线查看                                                                                                                  | **只读单向，禁止回写远端**     |
+| `FsBridge`                       | 本地文件对话框、受限读写（仅工作区内 + 显式授权路径）、产物列表与 diff                                                                                        | 不做通用 fs 代理               |
+| `RemoteFs`                       | 远端列目录/stat/range 读/只读 git 命令；**路径校验在远端执行**                                                                                                | 不做本地路径校验替代品         |
+| `ConfigStore`                    | 偏好与连接配置持久化（`app.getPath('userData')/config.json`），schema 校验 + 迁移；密钥仅存引用名                                                             | 不存会话内容，不存明文密钥     |
+| `IpcRouter`                      | 通道注册、入参 zod 校验、错误码映射、超时                                                                                                                     | 不含业务逻辑                   |
 
 ### 5.3 `PiConnection` / `PiTransport` 接口（核心抽象）
 
 ```ts
 interface PiConnection {
-  readonly id: string;
-  state(): 'disconnected'|'connecting'|'ready'|'degraded'|'reconnecting'|'failed';
-  onStateChange(cb: (s: string, info?: unknown) => void): () => void;
-  openChannel(opts: OpenChannelOptions): Promise<PiTransport>;   // 一会话一通道
-  dispose(): Promise<void>;
+  readonly id: string
+  state(): 'disconnected' | 'connecting' | 'ready' | 'degraded' | 'reconnecting' | 'failed'
+  onStateChange(cb: (s: string, info?: unknown) => void): () => void
+  openChannel(opts: OpenChannelOptions): Promise<PiTransport> // 一会话一通道
+  dispose(): Promise<void>
 }
 
-interface PiTransport {               // 与 v0.1 等价，仅增 link 元信息
-  readonly channelId: string;
-  readonly link: 'local' | 'ssh' | 'gateway';
-  start(opts: { cwd: string; model?: string; thinkingLevel?: string; sessionFile?: string; extraArgs?: string[] }): Promise<void>;
-  send(cmd: RpcCommand, id?: string): void;
-  onRecord(l: (rec: RpcRecord) => void): () => void;
-  onExit(l: (i: { code: number|null; signal: string|null; stderrTail: string }) => void): () => void;
-  stop(): Promise<void>;
+interface PiTransport {
+  // 与 v0.1 等价，仅增 link 元信息
+  readonly channelId: string
+  readonly link: 'local' | 'ssh' | 'gateway'
+  start(opts: {
+    cwd: string
+    model?: string
+    thinkingLevel?: string
+    sessionFile?: string
+    extraArgs?: string[]
+  }): Promise<void>
+  send(cmd: RpcCommand, id?: string): void
+  onRecord(l: (rec: RpcRecord) => void): () => void
+  onExit(
+    l: (i: { code: number | null; signal: string | null; stderrTail: string }) => void
+  ): () => void
+  stop(): Promise<void>
 }
 
 interface SessionSource {
-  list(o: { cwd?: string; limit?: number; cursor?: string }): Promise<SessionSummary[]>;
-  stat(f: string): Promise<{ mtime: number; size: number }>;
-  readTail(f: string, maxBytes: number): Promise<string>;
-  readAll(f: string): Promise<string>;          // 50MB 上限
+  list(o: { cwd?: string; limit?: number; cursor?: string }): Promise<SessionSummary[]>
+  stat(f: string): Promise<{ mtime: number; size: number }>
+  readTail(f: string, maxBytes: number): Promise<string>
+  readAll(f: string): Promise<string> // 50MB 上限
 }
 
 interface RemoteFs {
-  list(dir: string): Promise<DirEntry[]>;
-  stat(p: string): Promise<FileStat>;
-  readText(p: string, o: { offset?: number; limit: number }): Promise<{ text: string; truncated: boolean }>;
-  readBinary(p: string, maxBytes: number): Promise<{ data: Uint8Array }>;
-  execReadonly(cmd: 'git-status' | 'git-diff', args: string[]): Promise<{ stdout: string; code: number }>;
+  list(dir: string): Promise<DirEntry[]>
+  stat(p: string): Promise<FileStat>
+  readText(
+    p: string,
+    o: { offset?: number; limit: number }
+  ): Promise<{ text: string; truncated: boolean }>
+  readBinary(p: string, maxBytes: number): Promise<{ data: Uint8Array }>
+  execReadonly(
+    cmd: 'git-status' | 'git-diff',
+    args: string[]
+  ): Promise<{ stdout: string; code: number }>
 }
 ```
 
 契约要点：
+
 - `send` 只保证「写入」，不保证被接受；接受与否由匹配 `id` 的 `response.success` 表达。
 - 命令必须支持并发在途（异步处理），客户端**按 id 关联**，不得依赖响应顺序。
 - 子进程 stdout **只**承载协议记录；stderr 单独收集环形缓冲（最后 200 行）供诊断展示。
@@ -339,56 +370,56 @@ interface RemoteFs {
 
 统一形态：`invoke(channel, payload) -> Promise<Result<T>>`，`Result<T> = { ok: true, data: T } | { ok: false, error: { code: string, message: string, detail?: string } }`。
 
-| 通道 | 入参 | 出参 | 说明 |
-|---|---|---|---|
-| `conn:list` | `{}` | `ConnectionConfigView[]` | 连接配置脱敏列表 |
-| `conn:test` | `{ config }` | `SelfCheckResult` | 三步自检（§3.3），不建立会话 |
-| `conn:connect` | `{ configId }` | `{ state }` | 建立物理连接（不启动 pi） |
-| `conn:disconnect` | `{ configId }` | `{ ok: true }` | 断开物理连接，释放所有通道 |
-| `conn:pickRemoteDir` | `{ configId, path?, mode: 'file'|'dir' }` | `{ path }` | 远程目录浏览器，替代原生对话框 |
-| `session:list` | `{ configId, cwd?, cursor? }` | `{ items, nextCursor, stale }` | `stale=true` 表示来自缓存 |
-| `session:create` | `{ configId, cwd, model?, mode?, name? }` | `{ sessionKey, sessionId }` | 启动子进程/exec 通道 |
-| `session:resume` | `{ configId, sessionFile }` | `{ sessionKey }` | 恢复既有会话 |
-| `session:fork` | `{ sessionKey, messageId? }` | `{ sessionKey }` | 新建分支会话 |
-| `session:reconnect` | `{ sessionKey }` | `{ sessionKey }` | 断连后重开通道并全量对齐（§6.4） |
-| `session:prompt` | `{ sessionKey, message, images?, streamingBehavior? }` | `{ disposition }` | 流式中必须带 `streamingBehavior` |
-| `session:abort` | `{ sessionKey }` | `{ ok: true }` | 中止并等 idle |
-| `session:dispose` | `{ sessionKey }` | `{ ok: true }` | 释放子进程/通道 |
-| `session:state` | `{ sessionKey }` | `AgentState` | models / thinkingLevel / 队列 / 成本 |
-| `model:list` | `{ configId }` | `ModelInfo[]` | provider/model/cost |
-| `model:set` | `{ sessionKey, model, thinkingLevel? }` | `{ ok: true }` | |
-| `extui:respond` | `{ sessionKey, requestId, response }` | `{ ok: true }` | 回 `extension_ui_response` |
-| `fs:pickDirectory` | `{ defaultPath? }` | `{ path }` | 原生对话框（仅本地连接） |
-| `fs:listArtifacts` | `{ sessionKey }` | `ArtifactEntry[]` | 工作区内变更/新建文件 |
-| `fs:readText` | `{ path, maxBytes }` | `{ text, truncated }` | 仅工作区/授权路径 |
-| `fs:diff` | `{ path, sessionKey }` | `UnifiedDiff` | 相对会话起始快照 |
-| `artifact:open` | `{ sessionKey, path }` | `{ localPath }` | 远端产物下载到临时目录后打开，关闭即清理 |
+| 通道                 | 入参                                                   | 出参                           | 说明                                     |
+| -------------------- | ------------------------------------------------------ | ------------------------------ | ---------------------------------------- |
+| `conn:list`          | `{}`                                                   | `ConnectionConfigView[]`       | 连接配置脱敏列表                         |
+| `conn:test`          | `{ config }`                                           | `SelfCheckResult`              | 三步自检（§3.3），不建立会话             |
+| `conn:connect`       | `{ configId }`                                         | `{ state }`                    | 建立物理连接（不启动 pi）                |
+| `conn:disconnect`    | `{ configId }`                                         | `{ ok: true }`                 | 断开物理连接，释放所有通道               |
+| `conn:pickRemoteDir` | `{ configId, path?, mode: 'file'                       | 'dir' }`                       | `{ path }`                               | 远程目录浏览器，替代原生对话框 |
+| `session:list`       | `{ configId, cwd?, cursor? }`                          | `{ items, nextCursor, stale }` | `stale=true` 表示来自缓存                |
+| `session:create`     | `{ configId, cwd, model?, mode?, name? }`              | `{ sessionKey, sessionId }`    | 启动子进程/exec 通道                     |
+| `session:resume`     | `{ configId, sessionFile }`                            | `{ sessionKey }`               | 恢复既有会话                             |
+| `session:fork`       | `{ sessionKey, messageId? }`                           | `{ sessionKey }`               | 新建分支会话                             |
+| `session:reconnect`  | `{ sessionKey }`                                       | `{ sessionKey }`               | 断连后重开通道并全量对齐（§6.4）         |
+| `session:prompt`     | `{ sessionKey, message, images?, streamingBehavior? }` | `{ disposition }`              | 流式中必须带 `streamingBehavior`         |
+| `session:abort`      | `{ sessionKey }`                                       | `{ ok: true }`                 | 中止并等 idle                            |
+| `session:dispose`    | `{ sessionKey }`                                       | `{ ok: true }`                 | 释放子进程/通道                          |
+| `session:state`      | `{ sessionKey }`                                       | `AgentState`                   | models / thinkingLevel / 队列 / 成本     |
+| `model:list`         | `{ configId }`                                         | `ModelInfo[]`                  | provider/model/cost                      |
+| `model:set`          | `{ sessionKey, model, thinkingLevel? }`                | `{ ok: true }`                 |                                          |
+| `extui:respond`      | `{ sessionKey, requestId, response }`                  | `{ ok: true }`                 | 回 `extension_ui_response`               |
+| `fs:pickDirectory`   | `{ defaultPath? }`                                     | `{ path }`                     | 原生对话框（仅本地连接）                 |
+| `fs:listArtifacts`   | `{ sessionKey }`                                       | `ArtifactEntry[]`              | 工作区内变更/新建文件                    |
+| `fs:readText`        | `{ path, maxBytes }`                                   | `{ text, truncated }`          | 仅工作区/授权路径                        |
+| `fs:diff`            | `{ path, sessionKey }`                                 | `UnifiedDiff`                  | 相对会话起始快照                         |
+| `artifact:open`      | `{ sessionKey, path }`                                 | `{ localPath }`                | 远端产物下载到临时目录后打开，关闭即清理 |
 
 事件通道（main → renderer，`webContents.send`）：
 
-| 通道 | 载荷 | 频率策略 |
-|---|---|---|
-| `evt:record` | 归一化后的 session 事件 | 逐条，`text_delta` 合并窗口 16ms |
-| `evt:extui` | `extension_ui_request` | 逐条，需 UI 立即响应 |
-| `evt:status` | 进程状态（starting/running/settled/exited/restarting） | 状态变更时 |
-| `evt:diagnostic` | stderr 摘要、崩溃信息 | 变更时 |
-| `evt:conn` | 连接状态机变更（`idle/connecting/ready/degraded/reconnecting/failed`） | 状态变更时 |
-| `evt:netstat` | RTT、seq 水位 | 采样 1s，供 UI 降级提示 |
+| 通道             | 载荷                                                                   | 频率策略                         |
+| ---------------- | ---------------------------------------------------------------------- | -------------------------------- |
+| `evt:record`     | 归一化后的 session 事件                                                | 逐条，`text_delta` 合并窗口 16ms |
+| `evt:extui`      | `extension_ui_request`                                                 | 逐条，需 UI 立即响应             |
+| `evt:status`     | 进程状态（starting/running/settled/exited/restarting）                 | 状态变更时                       |
+| `evt:diagnostic` | stderr 摘要、崩溃信息                                                  | 变更时                           |
+| `evt:conn`       | 连接状态机变更（`idle/connecting/ready/degraded/reconnecting/failed`） | 状态变更时                       |
+| `evt:netstat`    | RTT、seq 水位                                                          | 采样 1s，供 UI 降级提示          |
 
 ### 5.5 渲染进程模块
 
-| 模块 | 职责 |
-|---|---|
-| `stores/sessionStore` | 会话元数据、选中会话、消息树（按 branch） |
-| `stores/runStore` | 当前运行状态：`idle / streaming / tool_running / awaiting_approval / settling` |
-| `stores/artifactStore` | 产物列表与选中产物 |
-| `stores/connStore` | 连接配置列表、连接状态、断连横幅与重连入口 |
-| `lib/reducer.ts` | **纯函数**：`(state, record) => newState`，消费合并后的记录；负责把 delta 增量拼接，并在 `message_end` 用权威消息整体替换 |
-| `features/chat/ToolCard` | 工具名、参数摘要（可展开全文）、耗时、状态、输出前 N 行 + 展开 |
-| `features/chat/Timeline` | 按 assistant turn 分组的步骤时间线 |
-| `features/artifacts/DiffView` | unified diff 着色、按文件折叠 |
-| `features/connections` | 连接配置表单、自检向导、远程目录浏览器 |
-| `features/settings` | 模型/provider、推理档位、审批策略、主题、快捷键 |
+| 模块                          | 职责                                                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `stores/sessionStore`         | 会话元数据、选中会话、消息树（按 branch）                                                                                 |
+| `stores/runStore`             | 当前运行状态：`idle / streaming / tool_running / awaiting_approval / settling`                                            |
+| `stores/artifactStore`        | 产物列表与选中产物                                                                                                        |
+| `stores/connStore`            | 连接配置列表、连接状态、断连横幅与重连入口                                                                                |
+| `lib/reducer.ts`              | **纯函数**：`(state, record) => newState`，消费合并后的记录；负责把 delta 增量拼接，并在 `message_end` 用权威消息整体替换 |
+| `features/chat/ToolCard`      | 工具名、参数摘要（可展开全文）、耗时、状态、输出前 N 行 + 展开                                                            |
+| `features/chat/Timeline`      | 按 assistant turn 分组的步骤时间线                                                                                        |
+| `features/artifacts/DiffView` | unified diff 着色、按文件折叠                                                                                             |
+| `features/connections`        | 连接配置表单、自检向导、远程目录浏览器                                                                                    |
+| `features/settings`           | 模型/provider、推理档位、审批策略、主题、快捷键                                                                           |
 
 ---
 
@@ -440,6 +471,7 @@ pi: tool_call 前置钩子 (permission 扩展，安装在 pi 所在机器)
 状态机：`idle → connecting → ready ⇄ degraded → reconnecting → ready | failed`（退避 1/2/4/8/15s，上限 5 次）。
 
 **SSH 语义**
+
 1. 断连 → pi 收到 stdin EOF → 有序退出，会话已落盘，客户端不会把断连伪装成「完成」。
 2. 2s 内显示横幅「连接已中断，会话已保存」，禁用发送。
 3. `session:reconnect`：重开 `exec` 同 `--session <file>` → `get_state` + `get_messages` → 与镜像集合对齐（远端为准，丢弃未确认增量）。
@@ -511,85 +543,86 @@ pi: tool_call 前置钩子 (permission 扩展，安装在 pi 所在机器)
 
 ### 9.1 单元（Vitest）
 
-| ID | 场景 | 期望 |
-|---|---|---|
-| U1 | `JsonlReader` 收到跨 chunk 边界的半个 JSON | 补齐后产出 1 条记录，不产出半条 |
-| U2 | JSON 字符串内含 `U+2028`/`U+2029` | 不切分，1 条记录 |
-| U3 | CRLF 行 | 剥离 CR 后正常解析 |
-| U4 | 非法 JSON 行 | 不崩溃，产出 parse 诊断，后续行继续 |
-| U5 | `reducer` 处理 `text_delta` 序列后接 `message_end` | 最终文本 == `message_end` 权威文本 |
-| U6 | `reducer` 收到重复 `message_end` | 幂等，不重复追加 |
-| U7 | `agent_end` 后仍有排队事件 | 状态保持 `settling`，直到 `agent_settled` |
-| U8 | IPC 入参缺字段/类型错 | 返回 `ok:false, code:VALIDATION`，不进入业务层 |
-| U9 | `fs:readText` 路径含 `../` 或指向授权外符号链接 | 拒绝，`code:PATH_DENIED` |
-| U10 | 审批请求超时 | 自动发送拒绝响应且 UI 状态复位 |
-| U11 | 连接状态机非法迁移（如 `failed → ready` 直接跳跃） | 状态不倒退，非法迁移被拒绝并记录 |
-| U12 | POSIX 单引号转义函数对 `'`、`$()`、反引号、换行 | 输出不可逃逸出单引号包裹，无额外命令 |
-| U13 | 重连对齐：本地有未确认增量、远端已多出消息 | 以远端为准，不重复、不丢条 |
-| U14 | 二次聚合（增量拼接后再整体替换）前后文本 | 完全一致，幂等 |
-| U15 | 网关事件 seq 出现空洞 | 触发 `GAP`，回退全量快照 |
-| U16 | `readTail` 作用于 100MB 会话文件 | 只读尾部、不 OOM、不整文件载入 |
-| U17 | 连接配置 schema 遇到疑似明文密钥字段 | 拒绝并给出字段路径 |
+| ID  | 场景                                               | 期望                                           |
+| --- | -------------------------------------------------- | ---------------------------------------------- |
+| U1  | `JsonlReader` 收到跨 chunk 边界的半个 JSON         | 补齐后产出 1 条记录，不产出半条                |
+| U2  | JSON 字符串内含 `U+2028`/`U+2029`                  | 不切分，1 条记录                               |
+| U3  | CRLF 行                                            | 剥离 CR 后正常解析                             |
+| U4  | 非法 JSON 行                                       | 不崩溃，产出 parse 诊断，后续行继续            |
+| U5  | `reducer` 处理 `text_delta` 序列后接 `message_end` | 最终文本 == `message_end` 权威文本             |
+| U6  | `reducer` 收到重复 `message_end`                   | 幂等，不重复追加                               |
+| U7  | `agent_end` 后仍有排队事件                         | 状态保持 `settling`，直到 `agent_settled`      |
+| U8  | IPC 入参缺字段/类型错                              | 返回 `ok:false, code:VALIDATION`，不进入业务层 |
+| U9  | `fs:readText` 路径含 `../` 或指向授权外符号链接    | 拒绝，`code:PATH_DENIED`                       |
+| U10 | 审批请求超时                                       | 自动发送拒绝响应且 UI 状态复位                 |
+| U11 | 连接状态机非法迁移（如 `failed → ready` 直接跳跃） | 状态不倒退，非法迁移被拒绝并记录               |
+| U12 | POSIX 单引号转义函数对 `'`、`$()`、反引号、换行    | 输出不可逃逸出单引号包裹，无额外命令           |
+| U13 | 重连对齐：本地有未确认增量、远端已多出消息         | 以远端为准，不重复、不丢条                     |
+| U14 | 二次聚合（增量拼接后再整体替换）前后文本           | 完全一致，幂等                                 |
+| U15 | 网关事件 seq 出现空洞                              | 触发 `GAP`，回退全量快照                       |
+| U16 | `readTail` 作用于 100MB 会话文件                   | 只读尾部、不 OOM、不整文件载入                 |
+| U17 | 连接配置 schema 遇到疑似明文密钥字段               | 拒绝并给出字段路径                             |
 
 ### 9.2 集成（主进程 + 真实/mock pi 子进程）
 
-| ID | 场景 | 期望 |
-|---|---|---|
-| I1 | 启动 → prompt → 收到完整事件序列 → settled | 记录顺序符合 golden JSONL，UI 状态回 idle |
-| I2 | 会话 busy 时无 `streamingBehavior` 的 prompt | 客户端报错并提示，不挂起 |
-| I3 | `steer` 与 `followUp` 分别注入 | 消息插入时机符合协议（当前轮工具调用后 / 整轮结束后） |
-| I4 | `abort` 运行中的会话 | 在合理时间内回 idle，进程存活可继续用 |
-| I5 | 子进程被强杀 | `evt:diagnostic` 收到 stderr 尾部，UI 显示「重连」，重连后可继续对话 |
-| I6 | 扩展命令（`/xxx`）经 prompt 发送 | `disposition=handled`，客户端不等待 settled |
-| I7 | 恢复既有 session 文件 | 历史消息与 pi 内部状态一致（消息数、末条内容） |
-| I8 | 10 个会话并行进程 | 无端口/资源冲突；空闲回收后恢复可用 |
-| I9 | 高频 `text_delta`（>500 条/秒） | 主进程合并后 renderer 帧率不下降（CPU 采样断言） |
-| I10 | `iptables DROP` 制造 30s 断网后恢复 | 重连后消息条数与末条哈希与远端 JSONL 一致 |
-| I11 | 云端 `kill -9` 后重连 | 无重复工具执行记录 |
-| I12 | RTT 200ms + 2% 丢包 | 无错帧（JSONL 解析零失败），首 token 增量 ≤ 1.5×RTT |
-| I13 | 远端工具输出 >100KB | 可经 `RemoteFs` 按需读取 `fullOutputPath`，不整块推入 UI |
-| I14 | 同一连接上 3 个会话并行 | 事件不串流，通道互不干扰 |
-| I15 | 审批等待期间断连并超过 TTL | 视为拒绝生效，重连后流程继续 |
-| I16 | 网关事件缓冲溢出 | 回退 `get_messages` 全量快照，无静默丢事件 |
-| I17 | 云端未安装 `pi-desktop-permission` 扩展 | UI 显式告警（高风险工具不静默放行） |
-| I18 | 登录 shell 启动横幅污染首条记录 | 判定 `PROTOCOL`，给出诊断且不进入坏状态 |
+| ID  | 场景                                         | 期望                                                                 |
+| --- | -------------------------------------------- | -------------------------------------------------------------------- |
+| I1  | 启动 → prompt → 收到完整事件序列 → settled   | 记录顺序符合 golden JSONL，UI 状态回 idle                            |
+| I2  | 会话 busy 时无 `streamingBehavior` 的 prompt | 客户端报错并提示，不挂起                                             |
+| I3  | `steer` 与 `followUp` 分别注入               | 消息插入时机符合协议（当前轮工具调用后 / 整轮结束后）                |
+| I4  | `abort` 运行中的会话                         | 在合理时间内回 idle，进程存活可继续用                                |
+| I5  | 子进程被强杀                                 | `evt:diagnostic` 收到 stderr 尾部，UI 显示「重连」，重连后可继续对话 |
+| I6  | 扩展命令（`/xxx`）经 prompt 发送             | `disposition=handled`，客户端不等待 settled                          |
+| I7  | 恢复既有 session 文件                        | 历史消息与 pi 内部状态一致（消息数、末条内容）                       |
+| I8  | 10 个会话并行进程                            | 无端口/资源冲突；空闲回收后恢复可用                                  |
+| I9  | 高频 `text_delta`（>500 条/秒）              | 主进程合并后 renderer 帧率不下降（CPU 采样断言）                     |
+| I10 | `iptables DROP` 制造 30s 断网后恢复          | 重连后消息条数与末条哈希与远端 JSONL 一致                            |
+| I11 | 云端 `kill -9` 后重连                        | 无重复工具执行记录                                                   |
+| I12 | RTT 200ms + 2% 丢包                          | 无错帧（JSONL 解析零失败），首 token 增量 ≤ 1.5×RTT                  |
+| I13 | 远端工具输出 >100KB                          | 可经 `RemoteFs` 按需读取 `fullOutputPath`，不整块推入 UI             |
+| I14 | 同一连接上 3 个会话并行                      | 事件不串流，通道互不干扰                                             |
+| I15 | 审批等待期间断连并超过 TTL                   | 视为拒绝生效，重连后流程继续                                         |
+| I16 | 网关事件缓冲溢出                             | 回退 `get_messages` 全量快照，无静默丢事件                           |
+| I17 | 云端未安装 `pi-desktop-permission` 扩展      | UI 显式告警（高风险工具不静默放行）                                  |
+| I18 | 登录 shell 启动横幅污染首条记录              | 判定 `PROTOCOL`，给出诊断且不进入坏状态                              |
 
 ### 9.3 E2E（Playwright + Electron）
 
-| ID | 场景 | 期望 |
-|---|---|---|
-| E1 | 首次启动（无配置） | 显示空态与「新建任务」引导，无报错 |
-| E2 | 新建任务 → 选目录 → 发送「列出当前目录」 | 流式出现回复，工具卡片显示 bash 调用与输出 |
-| E3 | 审批弹窗「拒绝」 | 工具未执行，对话中显示拒绝结果，流程继续 |
-| E4 | 点击停止 | 300ms 内按钮变为不可用并显示已中止，会话可继续发新消息 |
-| E5 | 关闭窗口再打开 | 任务列表仍在，选中会话历史完整 |
-| E6 | 触发主进程异常（mock 抛出） | 显示错误对话框，不白屏 |
-| E7 | 首次连接向导（3 步） | 可完成；指纹不符立即阻断且不落配置 |
-| E8 | 断网 → 横幅 → 重连 → 继续对话 | 无重复消息，发送按钮恢复可用 |
-| E9 | 本地/远程连接来回切换 | 无残留路径与残留会话，上下文隔离 |
-| E10 | 远端产物 diff 与临时文件打开 | 预览正确；关闭后临时文件被清理 |
+| ID  | 场景                                     | 期望                                                   |
+| --- | ---------------------------------------- | ------------------------------------------------------ |
+| E1  | 首次启动（无配置）                       | 显示空态与「新建任务」引导，无报错                     |
+| E2  | 新建任务 → 选目录 → 发送「列出当前目录」 | 流式出现回复，工具卡片显示 bash 调用与输出             |
+| E3  | 审批弹窗「拒绝」                         | 工具未执行，对话中显示拒绝结果，流程继续               |
+| E4  | 点击停止                                 | 300ms 内按钮变为不可用并显示已中止，会话可继续发新消息 |
+| E5  | 关闭窗口再打开                           | 任务列表仍在，选中会话历史完整                         |
+| E6  | 触发主进程异常（mock 抛出）              | 显示错误对话框，不白屏                                 |
+| E7  | 首次连接向导（3 步）                     | 可完成；指纹不符立即阻断且不落配置                     |
+| E8  | 断网 → 横幅 → 重连 → 继续对话            | 无重复消息，发送按钮恢复可用                           |
+| E9  | 本地/远程连接来回切换                    | 无残留路径与残留会话，上下文隔离                       |
+| E10 | 远端产物 diff 与临时文件打开             | 预览正确；关闭后临时文件被清理                         |
 
 ### 9.4 安全测试
 
-| ID | 场景 | 期望 |
-|---|---|---|
-| S1 | renderer 尝试 `require('fs')` | 失败（无 Node 集成） |
-| S2 | 渲染进程调用未注册的 IPC 通道 | 拒绝 |
-| S3 | 恶意 markdown 内嵌 `<script>` / `javascript:` 链接 | 不执行，链接被拦截 |
-| S4 | `will-navigate` 到外部 URL | 阻止并交给 `shell.openExternal` 前确认 |
-| S5 | 检查打包产物 | 无 API key 落盘到 userData；日志不含 token |
-| S6 | 远端 host key 变更 | 连接阻断，不降级为 tofu 放行 |
-| S7 | 网关 token 缺失/过期 | 拒绝连接，错误信息不泄露细节 |
-| S8 | 远端越权路径（`../../etc/passwd`、根外符号链接） | 由**远端**拒绝，不依赖本地校验 |
-| S9 | renderer 尝试读取口令/私钥明文 | 无法获取（仅引用名，密钥在 `safeStorage`） |
-| S10 | 伪造其他通道 id 的审批请求 | 拒绝，只接受当前通道 id 的请求 |
-| S11 | exec 参数注入（`; rm -rf`、`$(...)`） | 不产生额外命令 |
+| ID  | 场景                                               | 期望                                       |
+| --- | -------------------------------------------------- | ------------------------------------------ |
+| S1  | renderer 尝试 `require('fs')`                      | 失败（无 Node 集成）                       |
+| S2  | 渲染进程调用未注册的 IPC 通道                      | 拒绝                                       |
+| S3  | 恶意 markdown 内嵌 `<script>` / `javascript:` 链接 | 不执行，链接被拦截                         |
+| S4  | `will-navigate` 到外部 URL                         | 阻止并交给 `shell.openExternal` 前确认     |
+| S5  | 检查打包产物                                       | 无 API key 落盘到 userData；日志不含 token |
+| S6  | 远端 host key 变更                                 | 连接阻断，不降级为 tofu 放行               |
+| S7  | 网关 token 缺失/过期                               | 拒绝连接，错误信息不泄露细节               |
+| S8  | 远端越权路径（`../../etc/passwd`、根外符号链接）   | 由**远端**拒绝，不依赖本地校验             |
+| S9  | renderer 尝试读取口令/私钥明文                     | 无法获取（仅引用名，密钥在 `safeStorage`） |
+| S10 | 伪造其他通道 id 的审批请求                         | 拒绝，只接受当前通道 id 的请求             |
+| S11 | exec 参数注入（`; rm -rf`、`$(...)`）              | 不产生额外命令                             |
 
 ---
 
 ## 10. 验收标准
 
 **功能**
+
 - A1 新建会话后 1 次点击即可发送首条消息，首次 token 在 1.5s 内出现（本地 mock provider 基准）；**远程基准：RTT ≤ 50ms 时首 token ≤ 2.5s**。
 - A2 任意一轮对话中，工具调用在 UI 上可见「名称 + 参数摘要 + 状态 + 输出」，且与 pi 事件一一对应。
 - A3 会话列表能正确展示至少 20 个历史会话的标题、时间、cwd、token 与成本，且与 JSONL 一致。
@@ -598,18 +631,22 @@ pi: tool_call 前置钩子 (permission 扩展，安装在 pi 所在机器)
 - A5b 可保存 ≥3 个连接配置（含本地与远程），切换后上下文隔离。
 
 **健壮性**
+
 - A6 强杀 pi 子进程后，UI 在 2s 内呈现可操作的重连入口，重连后历史完整、可继续对话。
 - A7 连续 30 分钟高频对话（>200 轮）无内存单调增长（渲染进程 RSS 增长 < 30%）。
 - A8 空闲 30 分钟后会话进程被回收，再次点击不报错。
 
 **安全**
+
 - A9 S1–S5 全部通过；`npm run audit:security` 无高危项。
 
 **工程**
+
 - A10 `npm run typecheck`、`npm run lint`、`npm run test:unit`、`npm run test:e2e` 全绿；CI 在 Windows 上通过。
 - A11 打包产物可在干净 Windows 10/11 x64 机器上安装并启动（无预装 Node 依赖要求，pi 通过配置项指定可执行文件）。
 
 **远程与连接（v0.2 新增）**
+
 - A12 断网 30s 恢复：≤5s 出现重连入口，重连后消息条数与远端 JSONL 完全一致。
 - A13 RTT 100ms / 丢包 1% 下无 >300ms 渲染卡顿，`agent_settled` 正常到达。
 - A14 重连不产生任何自动重发或重复工具执行。
@@ -621,18 +658,18 @@ pi: tool_call 前置钩子 (permission 扩展，安装在 pi 所在机器)
 
 ## 11. 待用户确认项
 
-| ID | 问题 | 建议 |
-|---|---|---|
-| Q1 | 云服务器 SSH 是否可用（端口、密钥登录、是否有堡垒机/跳板） | 必须明确；若不可用则默认路径切为网关 |
-| Q2 | 是否允许云端常驻网关（systemd 自启） | 先规划允许，但 MVP 不阻塞 |
-| Q3 | 云端 pi 启动方式（PATH / 绝对路径 / node dist/cli.js） | `piCommand` 配置项，默认 `pi`，自动探测 |
-| Q4 | 会话目录是否显式 `--session-dir` | 建议显式，便于备份与授权根划分 |
-| Q5 | `workspaceRoots` 范围 | 建议单项目目录，按连接可加白名单 |
-| Q6 | 审批默认策略 | 仅高风险（bash/powershell/write/edit/delete） |
-| Q7 | 断连期间是否要后台继续执行 | 要 → 网关升为 P0 |
-| Q8 | 是否需要多设备同看同一会话 | 是 → 网关升为 P0 |
-| Q9 | 主题与品牌 | 沿用 pi |
-| Q10 | 是否需要办公模式预设 | 延后到 M5 之后 |
+| ID  | 问题                                                       | 建议                                          |
+| --- | ---------------------------------------------------------- | --------------------------------------------- |
+| Q1  | 云服务器 SSH 是否可用（端口、密钥登录、是否有堡垒机/跳板） | 必须明确；若不可用则默认路径切为网关          |
+| Q2  | 是否允许云端常驻网关（systemd 自启）                       | 先规划允许，但 MVP 不阻塞                     |
+| Q3  | 云端 pi 启动方式（PATH / 绝对路径 / node dist/cli.js）     | `piCommand` 配置项，默认 `pi`，自动探测       |
+| Q4  | 会话目录是否显式 `--session-dir`                           | 建议显式，便于备份与授权根划分                |
+| Q5  | `workspaceRoots` 范围                                      | 建议单项目目录，按连接可加白名单              |
+| Q6  | 审批默认策略                                               | 仅高风险（bash/powershell/write/edit/delete） |
+| Q7  | 断连期间是否要后台继续执行                                 | 要 → 网关升为 P0                              |
+| Q8  | 是否需要多设备同看同一会话                                 | 是 → 网关升为 P0                              |
+| Q9  | 主题与品牌                                                 | 沿用 pi                                       |
+| Q10 | 是否需要办公模式预设                                       | 延后到 M5 之后                                |
 
 ---
 

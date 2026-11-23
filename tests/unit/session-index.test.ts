@@ -14,7 +14,10 @@ interface FakeFs {
   files: Map<string, { content: string; mtimeMs: number }>
 }
 
-function fakeIndex(fs: FakeFs, options: { pageSize?: number } = {}): ReturnType<typeof createSessionIndex> {
+function fakeIndex(
+  fs: FakeFs,
+  options: { pageSize?: number } = {}
+): ReturnType<typeof createSessionIndex> {
   return createSessionIndex({
     sessionDir: () => 'C:/sessions',
     pageSize: options.pageSize ?? 20,
@@ -38,12 +41,7 @@ function fakeIndex(fs: FakeFs, options: { pageSize?: number } = {}): ReturnType<
   })
 }
 
-function sessionFile(options: {
-  id: string
-  cwd: string
-  title?: string
-  name?: string
-}): string {
+function sessionFile(options: { id: string; cwd: string; title?: string; name?: string }): string {
   const lines = [
     JSON.stringify({
       type: 'session',
@@ -108,7 +106,10 @@ describe('SessionIndex：摘要与排序', () => {
       files: new Map([
         [
           join('C:/sessions', '--a--', '1.jsonl'),
-          { content: sessionFile({ id: 'x', cwd: 'C:/a', title: '首条消息', name: '任务名' }), mtimeMs: 1 }
+          {
+            content: sessionFile({ id: 'x', cwd: 'C:/a', title: '首条消息', name: '任务名' }),
+            mtimeMs: 1
+          }
         ]
       ])
     })
@@ -118,8 +119,14 @@ describe('SessionIndex：摘要与排序', () => {
 
   it('cwd 过滤只返回该目录的会话（Windows 大小写不敏感）', async () => {
     const files = new Map([
-      [join('C:/sessions', '--a--', '1.jsonl'), { content: sessionFile({ id: 'a', cwd: 'C:/Work' }), mtimeMs: 2 }],
-      [join('C:/sessions', '--b--', '2.jsonl'), { content: sessionFile({ id: 'b', cwd: 'D:/other' }), mtimeMs: 1 }]
+      [
+        join('C:/sessions', '--a--', '1.jsonl'),
+        { content: sessionFile({ id: 'a', cwd: 'C:/Work' }), mtimeMs: 2 }
+      ],
+      [
+        join('C:/sessions', '--b--', '2.jsonl'),
+        { content: sessionFile({ id: 'b', cwd: 'D:/other' }), mtimeMs: 1 }
+      ]
     ])
     const index = fakeIndex({
       dirs: {
@@ -154,7 +161,9 @@ describe('SessionIndex：摘要与排序', () => {
     expect(first.items).toHaveLength(2)
     expect(first.nextCursor).toBe('2')
 
-    const second = await index.list({ ...(first.nextCursor === undefined ? {} : { cursor: first.nextCursor }) })
+    const second = await index.list({
+      ...(first.nextCursor === undefined ? {} : { cursor: first.nextCursor })
+    })
     expect(second.items).toHaveLength(2)
     expect(second.items[0]?.id).toBe('id-2')
   })
@@ -162,7 +171,10 @@ describe('SessionIndex：摘要与排序', () => {
   it('损坏 / 无 header 的文件被跳过，不影响其他条目', async () => {
     const files = new Map([
       [join('C:/sessions', '--a--', 'bad.jsonl'), { content: 'not json\n', mtimeMs: 9 }],
-      [join('C:/sessions', '--a--', 'ok.jsonl'), { content: sessionFile({ id: 'ok', cwd: 'C:/a' }), mtimeMs: 1 }]
+      [
+        join('C:/sessions', '--a--', 'ok.jsonl'),
+        { content: sessionFile({ id: 'ok', cwd: 'C:/a' }), mtimeMs: 1 }
+      ]
     ])
     const index = fakeIndex({
       dirs: { 'C:/sessions': ['--a--'], [join('C:/sessions', '--a--')]: ['bad.jsonl', 'ok.jsonl'] },
@@ -190,7 +202,10 @@ describe('SessionIndex：root 解析', () => {
   })
 
   it('PI_CODING_AGENT_SESSION_DIR 覆盖默认目录（docs/sessions.md）', () => {
-    const root = defaultSessionsRoot({ PI_CODING_AGENT_SESSION_DIR: 'C:/env/sessions' }, 'C:/Users/u')
+    const root = defaultSessionsRoot(
+      { PI_CODING_AGENT_SESSION_DIR: 'C:/env/sessions' },
+      'C:/Users/u'
+    )
     expect(root).toBe('C:/env/sessions')
   })
 

@@ -2,7 +2,12 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import type { EventChannel } from '../../src/shared/ipc-channels'
-import type { DiagnosticEvent, ExtUiEvent, RecordEvent, StatusEvent } from '../../src/shared/contracts/types'
+import type {
+  DiagnosticEvent,
+  ExtUiEvent,
+  RecordEvent,
+  StatusEvent
+} from '../../src/shared/contracts/types'
 import { classifyExtUi } from '../../src/shared/contracts/permission'
 // 选项文案/顺序的单一来源是扩展侧协议模块
 import { APPROVAL_OPTIONS } from '../../src/extensions/permission/protocol'
@@ -104,12 +109,19 @@ function firstApproval(events: ExtUiEvent[]): ApprovalRequest {
 function toolResults(records: RecordEvent[]): Array<{ text: string; isError: boolean }> {
   return records
     .filter((payload) => payload.record.type === 'message_end')
-    .map((payload) => payload.record['message'] as { role?: string; content?: unknown; isError?: boolean })
+    .map(
+      (payload) =>
+        payload.record['message'] as { role?: string; content?: unknown; isError?: boolean }
+    )
     .filter((message) => message?.role === 'toolResult')
     .map((message) => {
       const content = Array.isArray(message.content) ? message.content : []
       const text = content
-        .map((item) => (typeof item === 'object' && item !== null ? String((item as { text?: string }).text ?? '') : ''))
+        .map((item) =>
+          typeof item === 'object' && item !== null
+            ? String((item as { text?: string }).text ?? '')
+            : ''
+        )
         .join('')
       return { text, isError: message.isError === true }
     })
@@ -151,7 +163,11 @@ describe('M5 审批链路：允许 → 工具执行', () => {
   })
 
   it('审批请求带 options / timeout，且选项顺序与 choices 对齐', async () => {
-    const harness = createHarness({ MOCK_PI_APPROVAL: '1', MOCK_PI_TOOL: '1', MOCK_PI_APPROVAL_TIMEOUT_MS: '9000' })
+    const harness = createHarness({
+      MOCK_PI_APPROVAL: '1',
+      MOCK_PI_TOOL: '1',
+      MOCK_PI_APPROVAL_TIMEOUT_MS: '9000'
+    })
     const { service, extUi, waitFor } = harness
     const created = await service.create({ cwd: process.cwd() })
     await service.prompt({ sessionKey: created.sessionKey, message: 'go' })
@@ -305,7 +321,9 @@ describe('M5：会话销毁时对所有未决请求回拒绝', () => {
     await service.dispose({ sessionKey: created.sessionKey })
 
     expect(
-      diagnostics.some((item) => item.message.includes('已拒绝') && item.message.includes('未决审批'))
+      diagnostics.some(
+        (item) => item.message.includes('已拒绝') && item.message.includes('未决审批')
+      )
     ).toBe(true)
   })
 })

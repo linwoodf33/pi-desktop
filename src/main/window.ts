@@ -85,7 +85,10 @@ export function createNavigationAllowList(options: {
  * 放行集合**只有两项**：dev 模式下的 dev server 来源、生产模式下的渲染入口文件本身。
  * 其它 `file:`（含 `file:///C:/Windows/...`）、`javascript:`、`data:` 一律不放行。
  */
-export function isAllowedNavigationTarget(targetUrl: string, allowed: NavigationAllowList): boolean {
+export function isAllowedNavigationTarget(
+  targetUrl: string,
+  allowed: NavigationAllowList
+): boolean {
   if (allowed.devOrigin !== undefined) {
     const origin = originOf(targetUrl)
     return origin !== undefined && origin === allowed.devOrigin

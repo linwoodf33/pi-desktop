@@ -430,11 +430,7 @@ const ARG_SUMMARY_KEYS = [
   'name'
 ] as const
 
-export function createToolItem(
-  toolCallId: string,
-  toolName: string,
-  rawArgs: unknown
-): ToolItem {
+export function createToolItem(toolCallId: string, toolName: string, rawArgs: unknown): ToolItem {
   const args = asRecord(rawArgs)
   const argsText = formatArgs(rawArgs)
   return {
@@ -518,7 +514,8 @@ function upsertTool(build: Build, item: ToolItem): void {
 }
 
 function findToolLocation(build: Build, toolCallId: string): ToolLocation | undefined {
-  if (build.streamingTools.some((tool) => tool.toolCallId === toolCallId)) return { kind: 'streaming' }
+  if (build.streamingTools.some((tool) => tool.toolCallId === toolCallId))
+    return { kind: 'streaming' }
   const index = toolIndexOf(build).get(toolCallId)
   return index === undefined ? undefined : { kind: 'message', index }
 }
@@ -529,11 +526,7 @@ function findToolLocation(build: Build, toolCallId: string): ToolLocation | unde
  * 只更新**最近一条**持有该 `toolCallId` 的消息：`toolCallId` 在 pi 里唯一，
  * 历史回放与实时事件都按它关联，重复 id 只会出现在脏数据里。
  */
-function updateTool(
-  build: Build,
-  toolCallId: string,
-  update: (tool: ToolItem) => ToolItem
-): void {
+function updateTool(build: Build, toolCallId: string, update: (tool: ToolItem) => ToolItem): void {
   const location = findToolLocation(build, toolCallId)
   if (location === undefined) return
 
@@ -580,7 +573,8 @@ export function extractText(content: unknown): string {
   const parts: string[] = []
   for (const block of content) {
     const record = asRecord(block)
-    if (record?.['type'] === 'text' && typeof record['text'] === 'string') parts.push(record['text'])
+    if (record?.['type'] === 'text' && typeof record['text'] === 'string')
+      parts.push(record['text'])
   }
   return parts.join('')
 }
@@ -597,8 +591,7 @@ export function extractToolOutput(value: unknown): {
   }
   const text = extractText(record['content'])
   const details = asRecord(record['details'])
-  const fullOutputPath =
-    asString(details?.['fullOutputPath']) ?? asString(record['fullOutputPath'])
+  const fullOutputPath = asString(details?.['fullOutputPath']) ?? asString(record['fullOutputPath'])
   const capped = capOutput(text)
   return {
     output: capped.text,
