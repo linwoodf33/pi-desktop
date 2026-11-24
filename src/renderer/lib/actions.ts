@@ -511,11 +511,17 @@ export async function renameTask(
   const api = resolveApi(deps)
   if (api === undefined) return false
   const trimmed = name.trim()
-  if (trimmed.length === 0) return false
+  if (trimmed.length === 0) {
+    useRunStore.getState().pushBanner({ level: 'warn', message: '会话名不能为空' })
+    return false
+  }
 
   const store = useSessionStore.getState()
   const task = store.tasks.find((item) => item.id === taskId)
-  if (task === undefined) return false
+  if (task === undefined) {
+    useRunStore.getState().pushBanner({ level: 'error', message: '找不到该任务，改名失败' })
+    return false
+  }
 
   const ref =
     task.sessionKey !== undefined
@@ -540,8 +546,8 @@ export async function renameTask(
     reportError(result.error)
     return false
   }
-  // 乐观更新标题；下一次 session:list 会以 JSONL 里的 session_info 为准
-  store.setTaskTitle(taskId, trimmed)
+  // 乐观更新标题（无条件）：历史任务用 setTaskTitle 会被忽略 → 看起来「没保存」
+  store.renameTaskTitle(taskId, trimmed)
   return true
 }
 

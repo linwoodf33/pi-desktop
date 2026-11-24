@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { useRunStore } from '../../src/renderer/stores/runStore'
+import { useSessionStore } from '../../src/renderer/stores/sessionStore'
 
 /**
  * 横幅（提示条）队列语义。
@@ -64,5 +65,27 @@ describe('runStore.pushBanner', () => {
 
     useRunStore.getState().dismissBanner(first.id)
     expect(useRunStore.getState().banners.map((banner) => banner.message)).toEqual(['B'])
+  })
+})
+
+describe('renameTaskTitle（A23）', () => {
+  it('历史任务（非 live、标题非「新任务」）也能无条件改名', () => {
+    const store = useSessionStore.getState()
+    // 用真实入口种一条历史任务（store 没有 setTasks）
+    store.setHistoryTasks([
+      {
+        id: 'h1',
+        title: '旧标题',
+        cwd: '/w',
+        updatedAt: '2026-11-24T00:00:00.000Z',
+        filePath: '/w/s.jsonl'
+      }
+    ])
+    // 旧接口对历史任务不生效（这正是「改名看起来没保存」的原因）
+    store.setTaskTitle('h1', 'ignored')
+    expect(useSessionStore.getState().tasks[0]?.title).toBe('旧标题')
+
+    store.renameTaskTitle('h1', '新标题')
+    expect(useSessionStore.getState().tasks[0]?.title).toBe('新标题')
   })
 })

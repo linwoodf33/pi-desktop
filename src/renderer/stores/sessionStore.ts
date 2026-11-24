@@ -72,6 +72,12 @@ export interface SessionStoreState {
   replay: (taskId: string, records: Array<{ type: string; [key: string]: unknown }>) => ChatState
   appendUserMessage: (taskId: string, text: string, images?: readonly string[]) => void
   setTaskTitle: (taskId: string, title: string) => void
+  /**
+   * A23：改名专用 —— **无条件**更新标题。
+   * `setTaskTitle` 只在「live 任务 / 标题仍是『新任务』」时写，历史任务改名会被它忽略，
+   * 表现为「改名没生效、也没有任何错误」。
+   */
+  renameTaskTitle: (taskId: string, title: string) => void
   markTruncated: (taskId: string) => void
   taskIdForSession: (sessionKey: string) => string | undefined
   resetChat: (taskId: string) => void
@@ -231,6 +237,12 @@ export const useSessionStore = create<SessionStoreState>()((set, get) => ({
         }
       }
     })
+  },
+
+  renameTaskTitle: (taskId, title) => {
+    set((state) => ({
+      tasks: state.tasks.map((task) => (task.id === taskId ? { ...task, title } : task))
+    }))
   },
 
   setTaskTitle: (taskId, title) => {
