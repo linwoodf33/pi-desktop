@@ -1,5 +1,29 @@
 # 更新日志（Changelog）
 
+## v0.10.0（2026-11-24）
+
+版本号可见 + 诊断面板（反馈提速）。
+
+### 新增
+
+- **顶栏显示客户端版本**（`app.getVersion()` → `app:getBoot.appVersion`）：
+  以后能一眼确认跑的是哪一版，避免把「旧包没更新」误判成功能没修好。
+- **「诊断」面板**（`app:diagnostics`，只读、脱敏）：客户端版本、pi 版本/状态/可执行文件路径、
+  pi 配置目录、会话目录、`models.json` / `settings.json` 路径、默认工作目录、主题、
+  已索引会话数、Electron/Chromium/Node 版本、平台与架构；支持「复制全部」。
+
+### 说明
+
+- 面板不含 apiKey / token，也不读会话内容；E2E 有一条断言扫描面板文本不得出现密钥形态。
+- 上一版想用 `electron.vite.config.ts` 的 `renderer.define` 注入版本，实测产物里未被替换，
+  改为走主进程 `app.getVersion()`（更可靠，也是 Electron 推荐做法）。
+
+### 测试
+
+unit 720（通道白名单含 `app:diagnostics`）、integration 51、e2e 49（E21 版本号与诊断面板）。
+
+---
+
 ## v0.9.4（2026-11-24）
 
 「引用文件」在 Windows 上只能选文件夹 —— 修掉并拆成两个动作。

@@ -14,6 +14,7 @@ import type {
   AppConfigView,
   BootState,
   DiagnosticEvent,
+  Diagnostics,
   ExtUiEvent,
   ModelInfo,
   PermissionStatus,
@@ -51,6 +52,8 @@ export interface ArtifactRefInput {
 export interface PiInvokeApi {
   app: {
     getBoot(): Promise<Result<BootState>>
+    /** A25：诊断信息（版本 / 目录 / pi 状态；不含密钥） */
+    diagnostics(): Promise<Result<Diagnostics>>
   }
   pi: {
     locate(input?: { path?: string }): Promise<Result<PiSelfCheckStatus>>

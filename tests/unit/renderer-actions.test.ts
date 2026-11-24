@@ -845,7 +845,7 @@ describe('A12：定位 pi 后回写自检状态', () => {
     useAppStore.setState({
       bridge: {
         phase: 'ok',
-        boot: { config: BOOT_CONFIG, piStatus: { state: 'unknown' } },
+        boot: { config: BOOT_CONFIG, piStatus: { state: 'unknown' }, appVersion: '0.0.0-test' },
         sessionCount: 0
       }
     })
@@ -866,7 +866,7 @@ describe('A12：定位 pi 后回写自检状态', () => {
     useAppStore.setState({
       bridge: {
         phase: 'ok',
-        boot: { config: BOOT_CONFIG, piStatus: { state: 'unknown' } },
+        boot: { config: BOOT_CONFIG, piStatus: { state: 'unknown' }, appVersion: '0.0.0-test' },
         sessionCount: 0
       }
     })

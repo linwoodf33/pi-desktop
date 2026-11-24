@@ -709,3 +709,40 @@ describe('E20 修改任务名称（A23）', () => {
       .toBeGreaterThan(0)
   })
 })
+
+describe('E21 版本号与诊断面板（A25）', () => {
+  it('顶栏显示客户端版本，诊断面板列出关键信息', async () => {
+    // 顶栏版本来自 app.getVersion()，至少应是「v」+ 数字
+    await expect
+      .poll(async () => page.textContent('.app__bar-note'), { timeout: 20_000 })
+      .toMatch(/本地工作台 · v\d+\.\d+\.\d+/)
+
+    await page.click('[data-testid="open-diagnostics"]')
+    await page.waitForSelector('[data-testid="diagnostics-panel"]', { timeout: 20_000 })
+
+    // 关键行存在且有值（不依赖具体路径）
+    await expect
+      .poll(async () => page.locator('[data-testid="diagnostics-appVersion"]').count(), {
+        timeout: 20_000
+      })
+      .toBe(1)
+    const appVersion = await page.textContent('[data-testid="diagnostics-appVersion"]')
+    expect(appVersion).toMatch(/^\d+\.\d+\.\d+/)
+    expect((await page.textContent('[data-testid="diagnostics-agentDir"]')) ?? '').not.toHaveLength(
+      0
+    )
+    expect(
+      (await page.textContent('[data-testid="diagnostics-sessionDir"]')) ?? ''
+    ).not.toHaveLength(0)
+    // 面板里不该出现任何 key 字样（脱敏自查）
+    const body = (await page.textContent('[data-testid="diagnostics-panel"]')) ?? ''
+    expect(body).not.toMatch(/apiKey|sk-[A-Za-z0-9]{8}/)
+
+    await page.click('[data-testid="diagnostics-close"]')
+    await expect
+      .poll(async () => page.locator('[data-testid="diagnostics-panel"]').count(), {
+        timeout: 10_000
+      })
+      .toBe(0)
+  })
+})

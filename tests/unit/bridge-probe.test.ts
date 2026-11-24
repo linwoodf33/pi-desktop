@@ -6,6 +6,7 @@ import type { PiApi } from '../../src/shared/contracts/api'
 import { ok, fail } from '../../src/shared/contracts/result'
 
 const bootState: BootState = {
+  appVersion: '0.0.0-test',
   config: {
     piCommand: 'pi',
     workspaceRoots: [],

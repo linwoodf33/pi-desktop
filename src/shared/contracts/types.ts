@@ -80,9 +80,44 @@ export type PiSelfCheckStatus = z.infer<typeof piSelfCheckStatusSchema>
 export const bootStateSchema = z.object({
   config: appConfigViewSchema,
   piStatus: piSelfCheckStatusSchema,
-  lastCwd: z.string().optional()
+  lastCwd: z.string().optional(),
+  /** 客户端版本（`app.getVersion()`）：顶栏显示，便于判断用户跑的是哪一版 */
+  appVersion: z.string()
 })
 export type BootState = z.infer<typeof bootStateSchema>
+
+/**
+ * A25：诊断信息（只读、脱敏）。
+ *
+ * 用途：用户反馈问题时一眼看到「跑的是哪一版 / pi 什么版本 / 配置目录在哪」，
+ * 省掉来回猜测。**不包含任何密钥**（apiKey、token 一律不出现）。
+ */
+export const diagnosticsSchema = z.object({
+  appVersion: z.string(),
+  electron: z.string(),
+  chrome: z.string(),
+  node: z.string(),
+  platform: z.string(),
+  arch: z.string(),
+  /** pi 自检状态（版本/路径/失败原因） */
+  piState: z.string(),
+  piVersion: z.string().optional(),
+  piPath: z.string().optional(),
+  piMessage: z.string().optional(),
+  /** pi 配置目录（`PI_CODING_AGENT_DIR` 或 `~/.pi/agent`） */
+  agentDir: z.string(),
+  /** 实际生效的会话目录 */
+  sessionDir: z.string(),
+  modelsPath: z.string(),
+  settingsPath: z.string(),
+  /** 默认工作目录（用户主目录） */
+  lastCwd: z.string().optional(),
+  theme: z.string(),
+  /** 已索引的历史会话数 */
+  sessionCount: z.number()
+})
+
+export type Diagnostics = z.infer<typeof diagnosticsSchema>
 
 /** 会话摘要（来自 session JSONL 只读索引，§5.2 SessionIndex） */
 export const sessionSummarySchema = z.object({

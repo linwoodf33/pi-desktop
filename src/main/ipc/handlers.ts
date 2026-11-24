@@ -24,7 +24,12 @@ import type {
   ModelEntryInput,
   UpsertProviderInput
 } from '../../shared/contracts/model-config'
-import type { AppConfigView, BootState, PermissionStatus } from '../../shared/contracts/types'
+import type {
+  AppConfigView,
+  BootState,
+  Diagnostics,
+  PermissionStatus
+} from '../../shared/contracts/types'
 
 import { IpcFailure } from '../../shared/contracts/result'
 
@@ -82,6 +87,8 @@ export interface RouterDeps {
   modelConfigStore: ModelConfigStore
   /** A18：agent 目录（只读；同时回报 pi 是否支持 `--agent`） */
   agentCatalog: AgentCatalog
+  /** A25：客户端版本（`app.getVersion()`，由 main 注入；测试可覆盖） */
+  appVersion?: () => string
 }
 
 /** 短命令的通道级超时预算（§7 约束 13；比 pi 侧单命令 60s 略宽，pi 侧先超时） */
@@ -144,6 +151,8 @@ export function createRouter(
    * 而且会直接体现在新建任务弹层与原生目录对话框的初始位置上。
    */
   const defaultCwd = deps.defaultCwd ?? ((): string => homedir())
+  /** 客户端版本：main 注入 `app.getVersion()`；测试/无 Electron 环境下给占位值 */
+  const appVersion = deps.appVersion ?? ((): string => '0.0.0')
   const service = deps.sessionService
 
   /**
@@ -173,8 +182,41 @@ export function createRouter(
       Promise.resolve({
         config: deps.configStore.getConfigView(),
         piStatus: deps.piLocator.status(),
-        lastCwd: defaultCwd()
+        lastCwd: defaultCwd(),
+        appVersion: appVersion()
       }),
+
+    /**
+     * A25：诊断信息（只读、脱敏）。用户反馈问题时一眼看到版本与目录，
+     * 不必来回猜「你跑的是哪一版」。**不含任何密钥**。
+     */
+    [IPC_INVOKE_CHANNELS.appDiagnostics]: async (): Promise<Diagnostics> => {
+      const config = deps.configStore.getConfigView()
+      const piStatus = deps.piLocator.status()
+      const paths = deps.modelConfigStore.paths()
+      const sessions = await deps.sessionIndex.list({})
+      const versions = process.versions
+      const view: Diagnostics = {
+        appVersion: appVersion(),
+        electron: versions['electron'] ?? 'unknown',
+        chrome: versions['chrome'] ?? 'unknown',
+        node: versions['node'] ?? 'unknown',
+        platform: process.platform,
+        arch: process.arch,
+        piState: piStatus.state,
+        agentDir: paths.agentDir,
+        sessionDir: deps.sessionIndex.root(),
+        modelsPath: paths.modelsPath,
+        settingsPath: paths.settingsPath,
+        theme: String(config.theme),
+        sessionCount: sessions.items.length,
+        lastCwd: defaultCwd()
+      }
+      if (piStatus.version !== undefined) view.piVersion = piStatus.version
+      if (piStatus.path !== undefined) view.piPath = piStatus.path
+      if (piStatus.message !== undefined) view.piMessage = piStatus.message
+      return view
+    },
 
     [IPC_INVOKE_CHANNELS.piLocate]: (raw) => {
       const input = raw as PiLocateInput

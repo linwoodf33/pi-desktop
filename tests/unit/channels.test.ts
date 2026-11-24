@@ -15,6 +15,8 @@ describe('IPC 通道白名单（§5.4）', () => {
     expect([...INVOKE_CHANNELS].sort()).toEqual(
       [
         'app:getBoot',
+        // A25 补充：诊断信息（版本/目录/pi 状态；不含密钥）
+        'app:diagnostics',
         'pi:locate',
         'session:list',
         // M3 补充：§5.4 缺「选中历史会话只回放 JSONL」的通道（§6.1 第 4 步）

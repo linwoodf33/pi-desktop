@@ -4,6 +4,7 @@ import type { ForkPoint } from '../../shared/contracts/types'
 import { Artifacts } from '../features/artifacts/Artifacts'
 import { ApprovalHost } from '../features/chat/ApprovalHost'
 import { Conversation } from '../features/chat/Conversation'
+import { DiagnosticsPanel } from '../features/diagnostics/DiagnosticsPanel'
 import { ModelManager } from '../features/models/ModelManager'
 import { SettingsPanel } from '../features/settings/SettingsPanel'
 import { NewTaskDialog } from '../features/tasks/NewTaskDialog'
@@ -91,6 +92,8 @@ export function App() {
   const [dialogOpen, setDialogOpen] = useState(false)
   // A14：模型管理弹层（改 pi 的 models.json / 默认模型）
   const [modelsOpen, setModelsOpen] = useState(false)
+  /** A25：诊断面板 */
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
 
   useEffect(() => {
     const api = getApi()
@@ -123,7 +126,19 @@ export function App() {
     <div className="app">
       <header className="app__bar">
         <span className="app__brand">pi-desktop</span>
-        <span className="app__bar-note">本地工作台 · MVP</span>
+        <span className="app__bar-note">
+          本地工作台 · v{bridge.phase === 'ok' ? bridge.boot.appVersion : '…'}
+        </span>
+        <button
+          type="button"
+          className="btn btn--ghost app__bar-action"
+          data-testid="open-diagnostics"
+          onClick={() => {
+            setDiagnosticsOpen(true)
+          }}
+        >
+          诊断
+        </button>
         <button
           type="button"
           className="btn btn--ghost app__bar-action"
@@ -206,6 +221,14 @@ export function App() {
           </details>
         )}
       </footer>
+
+      {diagnosticsOpen ? (
+        <DiagnosticsPanel
+          onClose={() => {
+            setDiagnosticsOpen(false)
+          }}
+        />
+      ) : null}
 
       {modelsOpen ? (
         <ModelManager
