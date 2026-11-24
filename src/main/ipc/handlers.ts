@@ -206,7 +206,12 @@ export function createRouter(
      * 返回工作区相对路径（POSIX），消息里直接引用，模型用自己的 read 工具读取。
      */
     [IPC_INVOKE_CHANNELS.fsPickWorkspaceFile]: async (raw) => {
-      const input = raw as { sessionKey?: string; sessionFile?: string; defaultPath?: string }
+      const input = raw as {
+        sessionKey?: string
+        sessionFile?: string
+        defaultPath?: string
+        kind?: 'file' | 'directory'
+      }
 
       // 工作区根必须来自主进程能核实的事实：
       // - 活跃会话 → SessionService 的 cwd；
@@ -223,7 +228,10 @@ export function createRouter(
       const defaultPath =
         requested !== undefined && isInsideRoot(realRoot, requested) ? requested : realRoot
 
-      const picked = await deps.fsBridge.pickFile({ defaultPath })
+      const picked = await deps.fsBridge.pickFile({
+        defaultPath,
+        ...(input.kind === undefined ? {} : { kind: input.kind })
+      })
       if (picked.canceled) return { canceled: true }
       const pickedPath = picked.path
       if (pickedPath === undefined) return { canceled: true }

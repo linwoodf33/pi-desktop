@@ -173,7 +173,7 @@ export function App() {
           onAbort={() => {
             void abortRun()
           }}
-          onPickFile={pickWorkspaceFile}
+          onPickFile={(kind) => pickWorkspaceFile(kind)}
           onNewTask={openDialog}
           onLocate={() => {
             useRunStore.getState().setLocating(true)

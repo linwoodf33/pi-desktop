@@ -239,7 +239,9 @@ export const fsPickWorkspaceFileInputSchema = z
   .object({
     sessionKey: sessionKeySchema.optional(),
     sessionFile: z.string().min(1).max(2048).optional(),
-    defaultPath: z.string().min(1).max(2048).optional()
+    defaultPath: z.string().min(1).max(2048).optional(),
+    /** 选文件还是文件夹（Windows 上原生对话框只能二选一） */
+    kind: z.enum(['file', 'directory']).optional()
   })
   .strict()
   .refine((value) => value.sessionKey !== undefined || value.sessionFile !== undefined, {

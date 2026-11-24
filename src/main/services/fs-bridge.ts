@@ -30,8 +30,16 @@ export interface PickFileResult {
 
 export interface FsBridge {
   pickDirectory(input: { defaultPath?: string }): Promise<PickDirectoryResult>
-  /** A22：选择单个文件（用于「引用工作区文件」；路径由调用方再校验是否在工作区内） */
-  pickFile(input: { defaultPath?: string }): Promise<PickFileResult>
+  /**
+   * A22/A24：选择文件**或**文件夹（`kind` 决定）。
+   *
+   * 为什么必须分成两种而不能再合成一个：Electron 文档明确写着
+   * 「On Windows and Linux an open dialog can not be both a file selector and a
+   * directory selector, so if you set `properties` to `['openFile','openDirectory']`
+   * on these platforms, a directory selector will be shown.」
+   * 也就是说同时设置两者在 Windows 上只会弹**目录选择器**（v0.9.2 的实际表现）。
+   */
+  pickFile(input: { defaultPath?: string; kind?: 'file' | 'directory' }): Promise<PickFileResult>
 }
 
 export function createFsBridge(deps: FsBridgeDeps): FsBridge {
@@ -53,10 +61,10 @@ export function createFsBridge(deps: FsBridgeDeps): FsBridge {
 
     async pickFile(input) {
       const result = await deps.showOpenDialog({
-        title: '引用工作区文件或文件夹',
+        title: input.kind === 'directory' ? '引用工作区文件夹' : '引用工作区文件',
         ...(input.defaultPath === undefined ? {} : { defaultPath: input.defaultPath }),
-        // 同时允许选文件与文件夹（Windows/Linux 上两者可共存）；只选文件夹时插入该目录的相对路径
-        properties: ['openFile', 'openDirectory']
+        // 只能二选一：同时设置会在 Windows 上退化成目录选择器（见接口注释）
+        properties: input.kind === 'directory' ? ['openDirectory'] : ['openFile']
       })
       const picked = result.filePaths[0]
       if (result.canceled || picked === undefined || picked.length === 0) {

@@ -558,7 +558,10 @@ export async function renameTask(
  * （docs/cli.md#rpc-mode-rejects-file-arguments）。所以这里只把相对路径插进消息，
  * 让模型用自己的 read 工具去读 —— 这是 RPC 集成下唯一真实可行的引用方式。
  */
-export async function pickWorkspaceFile(deps: ActionDeps = {}): Promise<string | undefined> {
+export async function pickWorkspaceFile(
+  kind: 'file' | 'directory' = 'file',
+  deps: ActionDeps = {}
+): Promise<string | undefined> {
   const api = resolveApi(deps)
   if (api === undefined) return undefined
   const task = selectedTask()
@@ -580,6 +583,7 @@ export async function pickWorkspaceFile(deps: ActionDeps = {}): Promise<string |
 
   const result = await api.fs.pickWorkspaceFile({
     ...ref,
+    kind,
     ...(task.cwd.length === 0 ? {} : { defaultPath: task.cwd })
   })
   if (!result.ok) {

@@ -1,5 +1,31 @@
 # 更新日志（Changelog）
 
+## v0.9.4（2026-11-24）
+
+「引用文件」在 Windows 上只能选文件夹 —— 修掉并拆成两个动作。
+
+### 根因（平台限制，不是配置错误）
+
+Electron 类型文档原文：
+
+> On Windows and Linux an open dialog can not be both a file selector and a directory selector,
+> so if you set `properties` to `['openFile','openDirectory']` on these platforms,
+> a directory selector will be shown.
+
+v0.9.2 想让一个按钮同时选文件与文件夹，结果在 Windows 上退化成**只能选目录**。
+
+### 修复
+
+- 输入框拆成两个按钮：**「引用文件」**（`['openFile']`）与**「引用文件夹」**（`['openDirectory']`），
+  两者选到的路径都会插入工作区相对路径，且都受工作区边界校验。
+- `fs:pickWorkspaceFile` 增加 `kind: 'file' | 'directory'`（默认 `file`），沿用原有边界与取消语义。
+
+### 测试
+
+unit 720（新增：`kind` 决定 dialog 属性，且两者不会同时出现）、integration 51、e2e 48。
+
+---
+
 ## v0.9.3（2026-11-24）
 
 修掉「改名没生效、也不报错」的真因。

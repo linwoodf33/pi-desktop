@@ -26,8 +26,8 @@ export interface ComposerProps {
   /** `images` 是 data URL 数组（A19：粘贴截图） */
   onSend: (text: string, images: string[]) => void
   onAbort: () => void
-  /** A22：选工作区文件（返回相对路径；取消返回 undefined） */
-  onPickFile?: () => Promise<string | undefined>
+  /** A22/A24：选工作区文件或文件夹（返回相对路径；取消返回 undefined） */
+  onPickFile?: (kind: 'file' | 'directory') => Promise<string | undefined>
 }
 
 export function Composer({
@@ -58,6 +58,12 @@ export function Composer({
     setImages([])
     setPasteError(undefined)
     onSend(text, payload)
+  }
+
+  /** 把选到的相对路径插进输入框（末尾追加；已有内容时空格分隔） */
+  const insertPath = (relative: string | undefined): void => {
+    if (relative === undefined) return
+    setInput((current) => (current.length === 0 ? relative : `${current} ${relative}`))
   }
 
   const appendImages = (result: { attachments: ImageAttachment[]; errors: string[] }): void => {
@@ -184,14 +190,23 @@ export function Composer({
           title="插入工作区文件的相对路径（模型会用自己的 read 工具去读）"
           onClick={() => {
             if (onPickFile === undefined) return
-            void onPickFile().then((relative) => {
-              if (relative === undefined) return
-              // 插在光标处更符合直觉；没有光标位置信息时追加到末尾
-              setInput((current) => (current.length === 0 ? relative : `${current} ${relative}`))
-            })
+            void onPickFile('file').then(insertPath)
           }}
         >
           引用文件
+        </button>
+        <button
+          type="button"
+          className="btn btn--ghost"
+          data-testid="pick-folder-button"
+          disabled={disabled || onPickFile === undefined}
+          title="插入工作区文件夹的相对路径（Windows 上原生对话框只能二选一，所以文件/文件夹分开）"
+          onClick={() => {
+            if (onPickFile === undefined) return
+            void onPickFile('directory').then(insertPath)
+          }}
+        >
+          引用文件夹
         </button>
         <button
           type="button"
