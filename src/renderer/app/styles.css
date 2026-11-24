@@ -415,6 +415,16 @@ kbd {
   border-color: var(--border-strong);
 }
 
+.task-item__rename {
+  width: 100%;
+  padding: 2px 4px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+}
+
 .task-item__title {
   font-weight: 600;
   overflow: hidden;

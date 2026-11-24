@@ -35,6 +35,7 @@ function stubSessionService(overrides: Partial<SessionService> = {}): SessionSer
     forkPoints: unexpected,
     listModels: unexpected,
     setModel: unexpected,
+    setName: unexpected,
     respondExtUi: unexpected,
     keys: () => [],
     workspaceOf: () => undefined,

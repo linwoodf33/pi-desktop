@@ -111,6 +111,18 @@ export const sessionPromptInputSchema = z
     }
   })
 
+/** A23：改会话名。会话引用二选一：活跃会话 `sessionKey` / 历史任务 `sessionFile` */
+export const sessionSetNameInputSchema = z
+  .object({
+    sessionKey: sessionKeySchema.optional(),
+    sessionFile: z.string().min(1).max(2048).optional(),
+    name: z.string().min(1).max(120)
+  })
+  .strict()
+  .refine((value) => value.sessionKey !== undefined || value.sessionFile !== undefined, {
+    message: '需要 sessionKey 或 sessionFile'
+  })
+
 export const sessionKeyInputSchema = z
   .object({
     sessionKey: sessionKeySchema
@@ -302,6 +314,7 @@ export const invokeInputSchemas = {
   [IPC_INVOKE_CHANNELS.sessionDispose]: sessionKeyInputSchema,
   [IPC_INVOKE_CHANNELS.sessionState]: sessionKeyInputSchema,
   [IPC_INVOKE_CHANNELS.sessionStats]: sessionKeyInputSchema,
+  [IPC_INVOKE_CHANNELS.sessionSetName]: sessionSetNameInputSchema,
   [IPC_INVOKE_CHANNELS.sessionForkPoints]: sessionKeyInputSchema,
   [IPC_INVOKE_CHANNELS.modelList]: emptyInputSchema,
   [IPC_INVOKE_CHANNELS.modelSet]: modelSetInputSchema,

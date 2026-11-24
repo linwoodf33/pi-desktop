@@ -32,6 +32,8 @@
 import { appendFileSync, writeFileSync } from 'node:fs'
 
 const SESSION_ID = 'mock-session-0001'
+/** A23：会话显示名（`set_session_name` 后回显到 get_state.sessionName） */
+let sessionName = ''
 const SESSION_FILE =
   process.env['MOCK_PI_SESSION_FILE'] ?? 'C:/mock-sessions/mock-session-0001.jsonl'
 const REPLY = process.env['MOCK_PI_REPLY'] ?? 'Hello from mock pi'
@@ -445,6 +447,8 @@ function handleCommand(command) {
         followUpMode: 'one-at-a-time',
         sessionFile: sessionFile,
         sessionId: sessionId,
+        // A23：改名后 get_state 回显（真实 pi 同形）
+        ...(sessionName.length === 0 ? {} : { sessionName }),
         messageCount,
         pendingMessageCount: 0
       })
@@ -514,6 +518,11 @@ function handleCommand(command) {
       // 事件先于响应（真实 pi 会等会话 idle 后才回 response）
       abortRun()
       respond(id, 'abort')
+      return
+    case 'set_session_name':
+      // A23：改名（活跃会话）→ pi 侧只回成功；真实 pi 会把 session_info 写进 JSONL
+      sessionName = String(command.name ?? '')
+      respond(id, 'set_session_name')
       return
     case 'set_model':
     case 'set_thinking_level':

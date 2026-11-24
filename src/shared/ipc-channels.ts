@@ -20,6 +20,8 @@ export const IPC_INVOKE_CHANNELS = {
   sessionState: 'session:state',
   /** M4：会话 token/成本统计（pi `get_session_stats`，§5.4 注） */
   sessionStats: 'session:stats',
+  /** A23：改会话显示名（活跃会话走 RPC；历史任务追加 session_info 记录） */
+  sessionSetName: 'session:setName',
   /** M4：可分叉点列表（pi `get_fork_messages`，§5.4 注） */
   sessionForkPoints: 'session:forkPoints',
   modelList: 'model:list',

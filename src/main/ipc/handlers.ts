@@ -31,6 +31,7 @@ import { IpcFailure } from '../../shared/contracts/result'
 import { homedir } from 'node:os'
 
 import type { AgentCatalog } from '../services/agent-catalog'
+import { appendSessionName } from '../services/pi-session-name'
 import { isInsideRoot, normalizeForCompare, toPosixRelative } from '../services/path-guard'
 import { realpathNative } from '../services/realpath-native'
 import type { ModelConfigStore } from '../services/model-config-store'
@@ -322,6 +323,35 @@ export function createRouter(
 
     [IPC_INVOKE_CHANNELS.sessionForkPoints]: (raw) =>
       service.forkPoints({ sessionKey: (raw as SessionKeyInput).sessionKey }),
+
+    /**
+     * A23：改会话显示名。
+     *
+     * 活跃会话 → RPC `set_session_name`（pi 自己写 JSONL）；
+     * 历史任务 → 追加一条 `session_info`（与 pi 的写法同形，只 append）。
+     * 历史路径必须校验文件在**会话根**内：否则「改名字」就变成任意文件追加。
+     */
+    [IPC_INVOKE_CHANNELS.sessionSetName]: async (raw) => {
+      const input = raw as { sessionKey?: string; sessionFile?: string; name: string }
+      if (input.sessionKey !== undefined) {
+        return service.setName({ sessionKey: input.sessionKey, name: input.name })
+      }
+      const sessionFile = input.sessionFile
+      if (sessionFile === undefined) {
+        throw new IpcFailure('VALIDATION', '需要 sessionKey 或 sessionFile')
+      }
+      const sessionRoot = await realpathNative(deps.sessionIndex.root()).catch(() =>
+        deps.sessionIndex.root()
+      )
+      const realFile = await realpathNative(sessionFile).catch(() => {
+        throw new IpcFailure('NOT_FOUND', '会话文件不存在', sessionFile)
+      })
+      if (!isInsideRoot(sessionRoot, realFile)) {
+        throw new IpcFailure('PATH_DENIED', '只能修改会话根内的会话文件', sessionFile)
+      }
+      appendSessionName({ sessionFile: realFile, name: input.name })
+      return { ok: true }
+    },
 
     [IPC_INVOKE_CHANNELS.sessionStats]: (raw) =>
       service.stats({ sessionKey: (raw as SessionKeyInput).sessionKey }),

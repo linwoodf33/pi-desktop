@@ -498,6 +498,47 @@ export async function sendMessage(text: string, options: SendMessageOptions = {}
 }
 
 /**
+ * A23：改任务（会话）显示名。
+ *
+ * 活跃会话 → 主进程发 RPC `set_session_name`；历史任务 → 主进程追加一条
+ * `session_info` 记录（与 pi 的 `/name` 同形，只 append）。
+ */
+export async function renameTask(
+  taskId: string,
+  name: string,
+  deps: ActionDeps = {}
+): Promise<boolean> {
+  const api = resolveApi(deps)
+  if (api === undefined) return false
+  const trimmed = name.trim()
+  if (trimmed.length === 0) return false
+
+  const store = useSessionStore.getState()
+  const task = store.tasks.find((item) => item.id === taskId)
+  if (task === undefined) return false
+
+  const ref =
+    task.sessionKey !== undefined
+      ? { sessionKey: task.sessionKey }
+      : task.filePath !== undefined
+        ? { sessionFile: task.filePath }
+        : undefined
+  if (ref === undefined) {
+    useRunStore.getState().pushBanner({ level: 'warn', message: '该任务没有会话引用，无法改名' })
+    return false
+  }
+
+  const result = await api.session.setName({ ...ref, name: trimmed })
+  if (!result.ok) {
+    reportError(result.error)
+    return false
+  }
+  // 乐观更新标题；下一次 session:list 会以 JSONL 里的 session_info 为准
+  store.setTaskTitle(taskId, trimmed)
+  return true
+}
+
+/**
  * A22：选一个工作区文件，返回**工作区相对路径**（取消/失败返回 undefined）。
  *
  * 为什么不插入 `@path`：pi 的 `@file` 只在 CLI 解析，RPC 模式明确拒绝

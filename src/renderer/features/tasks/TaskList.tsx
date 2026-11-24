@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { formatCost, formatTimestamp, formatTokens, shortenPath } from '../../lib/format'
 import type { TaskItem } from '../../stores/sessionStore'
 
@@ -13,9 +15,21 @@ export interface TaskListProps {
   loading: boolean
   onSelect: (taskId: string) => void
   onNewTask: () => void
+  /** A23：改名（返回是否成功） */
+  onRename?: (taskId: string, name: string) => Promise<boolean>
 }
 
-export function TaskList({ tasks, selectedId, loading, onSelect, onNewTask }: TaskListProps) {
+export function TaskList({
+  tasks,
+  selectedId,
+  loading,
+  onSelect,
+  onNewTask,
+  onRename
+}: TaskListProps) {
+  /** 正在改名的任务 id 与草稿（A23） */
+  const [renaming, setRenaming] = useState<string | undefined>(undefined)
+  const [draft, setDraft] = useState('')
   return (
     <aside className="pane pane--tasks" aria-label="任务列表">
       <header className="pane__header">
@@ -53,7 +67,54 @@ export function TaskList({ tasks, selectedId, loading, onSelect, onNewTask }: Ta
                     onSelect(task.id)
                   }}
                 >
-                  <span className="task-item__title">{task.title}</span>
+                  {renaming === task.id ? (
+                    <input
+                      className="task-item__rename"
+                      data-testid="task-rename-input"
+                      value={draft}
+                      autoFocus
+                      onChange={(event) => {
+                        setDraft(event.target.value)
+                      }}
+                      onClick={(event) => {
+                        // 编辑态点击不要触发外层按钮的「选中任务」
+                        event.stopPropagation()
+                      }}
+                      onKeyDown={(event) => {
+                        event.stopPropagation()
+                        if (event.key === 'Escape') {
+                          setRenaming(undefined)
+                          return
+                        }
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          const next = draft.trim()
+                          if (next.length === 0) {
+                            setRenaming(undefined)
+                            return
+                          }
+                          void onRename?.(task.id, next).then((ok) => {
+                            if (ok) setRenaming(undefined)
+                          })
+                        }
+                      }}
+                      // 刻意不在失焦时关闭：双击的第二下会立刻让输入框失焦，
+                      // 导致「刚出现就被关掉」。结束编辑只认 Enter / Esc。
+                    />
+                  ) : (
+                    <span
+                      className="task-item__title"
+                      title={onRename === undefined ? undefined : '双击改名'}
+                      onDoubleClick={(event) => {
+                        if (onRename === undefined) return
+                        event.stopPropagation()
+                        setDraft(task.title)
+                        setRenaming(task.id)
+                      }}
+                    >
+                      {task.title}
+                    </span>
+                  )}
                   <span className="task-item__meta">
                     <span>{formatTimestamp(task.updatedAt)}</span>
                     <span title={task.cwd}>{shortenPath(task.cwd, 28)}</span>

@@ -28,6 +28,8 @@ describe('IPC 通道白名单（§5.4）', () => {
         'session:state',
         // M4 补充：pi get_session_stats / get_fork_messages / ConfigStore 持久化
         'session:stats',
+        // A23 补充：改会话显示名（活跃会话 RPC / 历史任务追加 session_info）
+        'session:setName',
         'session:forkPoints',
         'config:update',
         // M5 补充：审批扩展安装状态（只读）

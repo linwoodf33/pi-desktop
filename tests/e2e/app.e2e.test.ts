@@ -676,3 +676,36 @@ describe('E18 引用工作区文件（A22）', () => {
     }
   })
 })
+
+describe('E20 修改任务名称（A23）', () => {
+  it('双击标题进入编辑，Enter 保存后列表标题更新', async () => {
+    // 自带任务：不依赖其它用例的执行顺序（单独跑 -t 时也要成立）
+    await stubDirectoryPicker(workDir)
+    await page.click('[data-testid="new-task-button"]')
+    await page.waitForSelector('[data-testid="new-task-dialog"]', { timeout: 20_000 })
+    await page.click('[data-testid="new-task-pick-directory"]')
+    await expect
+      .poll(async () => page.inputValue('[data-testid="new-task-cwd"]'), { timeout: 10_000 })
+      .toBe(workDir)
+    await page.click('[data-testid="new-task-submit"]')
+
+    const item = page.locator('[data-testid="task-item"]').first()
+    await item.waitFor({ timeout: 30_000 })
+    const title = item.locator('.task-item__title')
+    await title.dblclick()
+
+    const input = page.locator('[data-testid="task-rename-input"]')
+    await input.waitFor({ timeout: 10_000 })
+    await input.fill('重命名后的任务')
+    await input.press('Enter')
+
+    // 改名会让该任务按 updatedAt 重排到最前，因此按**标题**断言，不依赖列表位置
+    await expect
+      .poll(
+        async () =>
+          page.locator('[data-testid="task-item"]').filter({ hasText: '重命名后的任务' }).count(),
+        { timeout: 20_000 }
+      )
+      .toBeGreaterThan(0)
+  })
+})

@@ -132,6 +132,8 @@ export interface SessionService {
   /** 会话 token/成本统计（pi `get_session_stats`；客户端不做估算） */
   stats(input: { sessionKey: string }): Promise<SessionStats>
   listModels(): Promise<ModelInfo[]>
+  /** A23：改会话显示名（活跃会话） */
+  setName(input: { sessionKey: string; name: string }): Promise<{ ok: true }>
   setModel(input: { sessionKey: string; model: string; thinkingLevel?: string }): Promise<{
     ok: true
   }>
@@ -945,6 +947,17 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
       return withEphemeralTransport(async (transport) =>
         toModelList(await queryTransport(transport, { type: 'get_available_models' }))
       )
+    },
+
+    /** A23：改会话显示名（活跃会话）→ RPC `set_session_name`，由 pi 自己写进 JSONL */
+    async setName(input) {
+      const session = requireSession(input.sessionKey)
+      const name = input.name.trim()
+      if (name.length === 0) throw new IpcFailure('VALIDATION', '会话名不能为空')
+      await withLock(session, async () => {
+        await sendCommand(session, { type: 'set_session_name', name })
+      })
+      return { ok: true }
     },
 
     async setModel(input) {

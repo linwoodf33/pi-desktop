@@ -104,6 +104,15 @@ export interface PiInvokeApi {
     state(input: { sessionKey: string }): Promise<Result<AgentState>>
     /** M4：pi `get_session_stats` 的客户端视图（token/成本，不在客户端估算） */
     stats(input: { sessionKey: string }): Promise<Result<SessionStats>>
+    /**
+     * A23：改会话显示名。活跃会话走 RPC；历史任务由主进程追加 `session_info` 记录
+     * （只 append，不改写既有会话内容）。
+     */
+    setName(input: {
+      sessionKey?: string
+      sessionFile?: string
+      name: string
+    }): Promise<Result<{ ok: true }>>
   }
   /**
    * 模型管理（A14）：直接管理 pi 的 `models.json` 与 `settings.json#defaultModel`。

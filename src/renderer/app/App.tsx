@@ -11,6 +11,7 @@ import { TaskList } from '../features/tasks/TaskList'
 import {
   abortRun,
   pickWorkspaceFile,
+  renameTask,
   continueConversation,
   forkTask,
   loadForkPoints,
@@ -143,6 +144,7 @@ export function App() {
 
       <main className={artifactsCollapsed ? 'layout layout--artifacts-collapsed' : 'layout'}>
         <TaskList
+          onRename={renameTask}
           tasks={tasks}
           selectedId={selectedId}
           loading={!loaded}
