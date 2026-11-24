@@ -350,7 +350,16 @@ export function createRouter(
        */
       const listed = await deps.sessionIndex.list({})
       const wanted = normalizeForCompare(realFile)
-      const known = listed.items.some((item) => normalizeForCompare(item.filePath) === wanted)
+      // 索引里的 filePath 可能是 **8.3 短名**（CI 的 `RUNNER~1`），而 realFile 是长名。
+      // 两边都 realpath 归一后再比较，否则真实环境会误判成 PATH_DENIED（本地路径无别名所以看不出来）。
+      let known = false
+      for (const item of listed.items) {
+        const realItem = await realpathNative(item.filePath).catch(() => item.filePath)
+        if (normalizeForCompare(realItem) === wanted) {
+          known = true
+          break
+        }
+      }
       if (!known) {
         throw new IpcFailure('PATH_DENIED', '只能修改本地会话索引里的会话文件', sessionFile)
       }
