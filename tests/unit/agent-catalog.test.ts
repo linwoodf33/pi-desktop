@@ -4,7 +4,11 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createAgentCatalog, parseFrontmatter } from '../../src/main/services/agent-catalog'
+import {
+  createAgentCatalog,
+  isSelectableAgent,
+  parseFrontmatter
+} from '../../src/main/services/agent-catalog'
 import type { PiLaunchSpec } from '../../src/main/transport/types'
 
 /**
@@ -217,5 +221,37 @@ describe('目录分组（A29：树状展示的依据）', () => {
     const byName = new Map(view.agents.map((item) => [item.name, item]))
     expect(byName.get('proj-agent')?.group).toEqual([])
     expect(byName.get('proj-child')?.group).toEqual(['sub'])
+  })
+})
+
+describe('只显示主 agent（A30，对齐 TUI /agent）', () => {
+  it('mode 缺省按 all 处理；all/primary 保留，subagent 排除', () => {
+    expect(isSelectableAgent({ name: 'a', scope: 'global', file: 'a.md', group: [] })).toBe(true)
+    expect(
+      isSelectableAgent({ name: 'b', scope: 'global', file: 'b.md', group: [], mode: 'all' })
+    ).toBe(true)
+    expect(
+      isSelectableAgent({ name: 'c', scope: 'global', file: 'c.md', group: [], mode: 'primary' })
+    ).toBe(true)
+    expect(
+      isSelectableAgent({ name: 'd', scope: 'global', file: 'd.md', group: [], mode: 'subagent' })
+    ).toBe(false)
+  })
+
+  it('扫描结果里不含 subagent 模式的 agent', async () => {
+    writeAgent(
+      join(agentDir, 'agents', 'main.md'),
+      `name: main
+mode: primary`
+    )
+    writeAgent(
+      join(agentDir, 'agents', 'sub.md'),
+      `name: sub
+mode: subagent`
+    )
+
+    const catalog = createAgentCatalog({ agentDir, launch: () => undefined })
+    const names = (await catalog.list()).agents.map((item) => item.name)
+    expect(names).toEqual(['main'])
   })
 })

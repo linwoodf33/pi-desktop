@@ -143,6 +143,21 @@ function readAgent(
   return summary
 }
 
+/**
+ * A30：筛选「可作为会话身份」的 agent —— 与 pi TUI 的 `/agent` 一致。
+ *
+ * pi-open-agents 的 `mode`：
+ * - `primary` 主 agent（可切为当前会话身份）
+ * - `all` 两者皆可（**缺省值**：不写 mode 的定义按 all 处理）
+ * - `subagent` 只能被子代理工具调用，**不出现在** `/agent` 里
+ *
+ * 所以这里排除 `subagent`；缺省/`all`/`primary` 都保留。
+ */
+export function isSelectableAgent(agent: AgentSummary): boolean {
+  const mode = (agent.mode ?? 'all').toLowerCase()
+  return mode !== 'subagent'
+}
+
 export function createAgentCatalog(options: AgentCatalogOptions = {}): AgentCatalog {
   const env = options.env ?? process.env
   const home = options.homeDir ?? homedir()
@@ -203,7 +218,10 @@ export function createAgentCatalog(options: AgentCatalogOptions = {}): AgentCata
         }
       }
     }
-    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
+    // A30：只暴露「可作为会话身份」的 agent（与 TUI `/agent` 的列表一致）
+    return [...byName.values()]
+      .filter((agent) => isSelectableAgent(agent))
+      .sort((a, b) => a.name.localeCompare(b.name))
   }
 
   return {

@@ -393,6 +393,8 @@ interface PiTransport {
 1. **`--agent` 不是 pi core 的参数**，而是 `pi-open-agents` 扩展注册的启动 flag。扩展没装时传它 → pi 直接 `Error: Unknown option: --agent` 起不来。因此客户端先跑一次 `pi --help` 探测（60s 缓存），**探测不到就不显示选择器**。
 2. **非法名字会被静默忽略**：`pi --agent nosuchagent` 照常启动并回落到默认模型，不报错。所以客户端用自己的扫描结果白名单校验名字（`agents:list` + `handler` 里的 `has()`），UI 不提供手打入口。
 
+**只显示主 agent（A30）**：与 pi TUI 的 `/agent` 一致 —— 只列 `mode: primary` / `all`（**缺省视为 all**），排除 `subagent`（那是给子代理工具调用的身份）。选择器里的树状分组仍按定义目录（`group: string[]`），因为 frontmatter 没有 parent 字段。
+
 **目录扫描**（只读，project 覆盖 global 同名）：`<agent-dir>/agents/**/*.md`、`<workspace>/.pi/agents/**/*.md`、`<workspace>/.agents/agents/**/*.md`；跳过 `.chain.md`（那是 workflow 链）。`name` 取 frontmatter，缺省用文件名。列表里带 `scope`（global/project）与 `description`，供选择器显示。
 
 **与「起始模式」的关系**：两者独立。agent 决定「谁来思考」（prompt/模型/工具集），起始模式决定「工具白名单」；同时选时参数都下发，冲突以 pi 的实际解析为准（例如 agent 自带 `tools` 时，`--exclude-tools` 仍在其之后生效）。

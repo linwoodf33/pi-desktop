@@ -1,5 +1,22 @@
 # 更新日志（Changelog）
 
+## v0.13.1（2026-11-24）
+
+agent 列表与 TUI `/agent` 对齐：只显示主 agent。
+
+### 变更
+
+- 选择器只列 **`mode: primary` / `all`**（**不写 mode 视为 `all`**），
+  **排除 `mode: subagent`** —— 与 pi TUI 的 `/agent` 行为一致（subagent 是给子代理工具调用的身份）。
+- 树状分组保留（按定义目录），只是成员集合变小了。
+
+### 测试
+
+unit 731（新增 A30：缺省/all/primary 保留、subagent 排除；扫描结果不含 subagent）、
+integration 51、e2e 48（夹具里加了一个 `mode: subagent` 的 agent，断言它不出现在选择器）。
+
+---
+
 ## v0.13.0（2026-11-24）
 
 新建任务的 agent 选择改成**树状**（按定义目录分组）。

@@ -44,10 +44,24 @@ beforeAll(async () => {
     `---
 name: child
 description: 子 agent
-mode: subagent
+mode: all
 ---
 
 你是子 agent。
+`,
+    'utf8'
+  )
+
+  // subagent 模式的 agent：与 TUI `/agent` 一致，不应出现在选择器里
+  await writeFile(
+    join(agentDir, 'agents', 'team', 'only-sub.md'),
+    `---
+name: only-sub
+description: 仅子代理
+mode: subagent
+---
+
+你是子代理。
 `,
     'utf8'
   )
