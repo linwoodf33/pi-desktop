@@ -72,7 +72,9 @@ export function NewTaskDialog({
   }, [cwd])
 
   const pick = async (): Promise<void> => {
-    const picked = await pickDirectory(cwd.length > 0 ? cwd : undefined)
+    // 已选任务 → 从该任务的工作区开始；否则交给主进程默认（用户主目录，不是进程启动目录）
+    const startAt = cwd.trim().length > 0 ? cwd.trim() : defaultCwd
+    const picked = await pickDirectory(startAt === undefined ? undefined : startAt)
     if (picked !== undefined) setCwd(picked)
   }
 

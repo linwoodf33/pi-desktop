@@ -28,8 +28,10 @@ import type { AppConfigView, BootState, PermissionStatus } from '../../shared/co
 
 import { IpcFailure } from '../../shared/contracts/result'
 
+import { homedir } from 'node:os'
+
 import type { AgentCatalog } from '../services/agent-catalog'
-import { isInsideRoot, toPosixRelative } from '../services/path-guard'
+import { isInsideRoot, normalizeForCompare, toPosixRelative } from '../services/path-guard'
 import { realpathNative } from '../services/realpath-native'
 import type { ModelConfigStore } from '../services/model-config-store'
 
@@ -133,8 +135,37 @@ export function createRouter(
   onError?: (channel: string, error: unknown) => void,
   timeouts: Partial<Record<InvokeChannel, number>> = DEFAULT_TIMEOUTS
 ): IpcRouter {
-  const defaultCwd = deps.defaultCwd ?? ((): string => process.cwd())
+  /**
+   * 默认工作目录 = **用户主目录**。
+   *
+   * 之前是 `process.cwd()`（主进程启动目录）：从快捷方式启动时它是安装目录，
+   * 从终端启动时是终端所在目录 —— 两个都不是用户想要的「默认工作区」，
+   * 而且会直接体现在新建任务弹层与原生目录对话框的初始位置上。
+   */
+  const defaultCwd = deps.defaultCwd ?? ((): string => homedir())
   const service = deps.sessionService
+
+  /**
+   * 「引用文件」用：把会话引用解析成工作区根。
+   * 只认主进程能核实的两类事实（活跃会话 cwd / 会话索引里的 cwd），不接受 renderer 直接给根。
+   */
+  async function resolveWorkspaceRootForPick(input: {
+    sessionKey?: string
+    sessionFile?: string
+  }): Promise<string | undefined> {
+    if (input.sessionKey !== undefined) {
+      const live = service.workspaceOf(input.sessionKey)
+      if (live !== undefined) return live
+    }
+    if (input.sessionFile !== undefined) {
+      // 历史任务：从会话索引（读 JSONL header）取该文件的 cwd
+      const listed = await deps.sessionIndex.list({})
+      const wanted = normalizeForCompare(input.sessionFile)
+      const match = listed.items.find((item) => normalizeForCompare(item.filePath) === wanted)
+      if (match !== undefined && match.cwd.length > 0) return match.cwd
+    }
+    return undefined
+  }
 
   const handlers: HandlerMap = {
     [IPC_INVOKE_CHANNELS.appGetBoot]: (): Promise<BootState> =>
@@ -174,10 +205,15 @@ export function createRouter(
      * 返回工作区相对路径（POSIX），消息里直接引用，模型用自己的 read 工具读取。
      */
     [IPC_INVOKE_CHANNELS.fsPickWorkspaceFile]: async (raw) => {
-      const input = raw as { sessionKey: string; defaultPath?: string }
-      const workspaceRoot = service.workspaceOf(input.sessionKey)
+      const input = raw as { sessionKey?: string; sessionFile?: string; defaultPath?: string }
+
+      // 工作区根必须来自主进程能核实的事实：
+      // - 活跃会话 → SessionService 的 cwd；
+      // - 历史（回放）任务 → 会话索引里该 JSONL 记录的 cwd。
+      // 都不能用时明确报错，**不要**退回到进程启动目录（那正是之前的 bug）。
+      const workspaceRoot = await resolveWorkspaceRootForPick(input)
       if (workspaceRoot === undefined) {
-        throw new IpcFailure('NOT_FOUND', '该会话没有活跃进程，无法确定工作区（先继续对话）')
+        throw new IpcFailure('NOT_FOUND', '无法确定该任务的工作区（会话缺少目录信息）')
       }
       const realRoot = await realpathNative(workspaceRoot).catch(() => workspaceRoot)
 
@@ -205,8 +241,10 @@ export function createRouter(
 
     [IPC_INVOKE_CHANNELS.fsPickDirectory]: (raw) => {
       const input = raw as FsPickDirectoryInput
+      // 没给默认目录时用「默认工作目录」（现在是用户主目录）：
+      // 原生对话框不给 defaultPath 会落在**进程启动目录**，那是快捷方式所在的安装目录
       return deps.fsBridge.pickDirectory({
-        ...(input.defaultPath === undefined ? {} : { defaultPath: input.defaultPath })
+        defaultPath: input.defaultPath ?? defaultCwd()
       })
     },
 

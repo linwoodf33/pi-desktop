@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
@@ -349,5 +349,18 @@ describe('A22：引用工作区文件', () => {
     })
     expect(result).toMatchObject({ ok: false })
     if (!result.ok) expect(result.error.code).toBe('NOT_FOUND')
+  })
+})
+
+describe('默认工作目录（用户反馈的 bug 回归）', () => {
+  it('app:getBoot 的 lastCwd 是用户主目录，不是进程启动目录', async () => {
+    const router = buildRouter()
+    const result = await router.dispatch(IPC_INVOKE_CHANNELS.appGetBoot, {})
+    expect(result).toMatchObject({ ok: true })
+    if (!result.ok) return
+    const lastCwd = (result.data as { lastCwd?: string }).lastCwd
+    expect(lastCwd).toBe(homedir())
+    // 明确不等于 process.cwd()（从快捷方式启动时那是安装目录）
+    expect(lastCwd).not.toBe(process.cwd())
   })
 })

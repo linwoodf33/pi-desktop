@@ -216,13 +216,23 @@ function refineSessionRef<
   }
 }
 
-/** A22：选择工作区文件：需要会话上下文（用于确定工作区根） */
+/**
+ * A22：选择工作区文件。
+ *
+ * 会话引用二选一：活跃会话用 `sessionKey`，历史（回放）任务用 `sessionFile`
+ * —— 后者让「选中已有任务后引用文件」也能正确定位到**该任务**的工作区，
+ * 而不是退回到进程启动目录。
+ */
 export const fsPickWorkspaceFileInputSchema = z
   .object({
-    sessionKey: sessionKeySchema,
+    sessionKey: sessionKeySchema.optional(),
+    sessionFile: z.string().min(1).max(2048).optional(),
     defaultPath: z.string().min(1).max(2048).optional()
   })
   .strict()
+  .refine((value) => value.sessionKey !== undefined || value.sessionFile !== undefined, {
+    message: '需要 sessionKey 或 sessionFile 以确定工作区'
+  })
 
 export const fsListArtifactsInputSchema = z
   .object({ ...sessionRefShape })

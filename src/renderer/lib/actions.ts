@@ -509,16 +509,25 @@ export async function pickWorkspaceFile(deps: ActionDeps = {}): Promise<string |
   if (api === undefined) return undefined
   const task = selectedTask()
   if (task === undefined) return undefined
-  const sessionKey = task.sessionKey
-  if (sessionKey === undefined) {
+  // 活跃会话用 sessionKey；历史（回放）任务只有会话文件 → 让主进程从 JSONL 的 cwd 定位工作区
+  const ref =
+    task.sessionKey !== undefined
+      ? { sessionKey: task.sessionKey }
+      : task.filePath !== undefined
+        ? { sessionFile: task.filePath }
+        : undefined
+  if (ref === undefined) {
     useRunStore.getState().pushBanner({
       level: 'warn',
-      message: '该任务没有活跃会话，无法选择文件（先继续对话）'
+      message: '该任务既没有活跃会话也没有会话文件，无法确定工作区'
     })
     return undefined
   }
 
-  const result = await api.fs.pickWorkspaceFile({ sessionKey })
+  const result = await api.fs.pickWorkspaceFile({
+    ...ref,
+    ...(task.cwd.length === 0 ? {} : { defaultPath: task.cwd })
+  })
   if (!result.ok) {
     reportError(result.error)
     return undefined

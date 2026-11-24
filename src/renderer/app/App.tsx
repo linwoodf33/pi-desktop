@@ -214,8 +214,9 @@ export function App() {
       ) : null}
 
       {dialogOpen ? (
+        // 只把**选中任务**的工作区带进弹层；目录对话框的默认位置由主进程兜底（用户主目录）
         <NewTaskDialog
-          {...(task?.cwd === undefined ? {} : { defaultCwd: task.cwd })}
+          {...(task?.cwd === undefined || task.cwd.length === 0 ? {} : { defaultCwd: task.cwd })}
           onCancel={() => {
             setDialogOpen(false)
           }}

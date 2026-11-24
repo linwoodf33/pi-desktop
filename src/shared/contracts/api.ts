@@ -179,7 +179,10 @@ export interface PiInvokeApi {
      * 取消返回 `canceled: true`（不是错误）。
      */
     pickWorkspaceFile(input: {
-      sessionKey: string
+      /** 活跃会话 */
+      sessionKey?: string
+      /** 历史（回放）任务：主进程从会话索引读该 JSONL 的 cwd 作为工作区根 */
+      sessionFile?: string
       defaultPath?: string
     }): Promise<Result<{ canceled: boolean; path?: string; relative?: string }>>
     /** 产物列表（会话 settled 后 / 手动刷新时调用；仅 git 与非 git 快照两种模式） */
