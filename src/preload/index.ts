@@ -53,7 +53,9 @@ const api: PiApi = {
     setName: (input) => invoke(IPC_INVOKE_CHANNELS.sessionSetName, input)
   },
   skills: {
-    list: (input) => invoke(IPC_INVOKE_CHANNELS.skillsList, input ?? {})
+    list: (input) => invoke(IPC_INVOKE_CHANNELS.skillsList, input ?? {}),
+    preview: (input) => invoke(IPC_INVOKE_CHANNELS.skillsPreview, input),
+    install: (input) => invoke(IPC_INVOKE_CHANNELS.skillsInstall, input)
   },
   agents: {
     list: (input) => invoke(IPC_INVOKE_CHANNELS.agentsList, input ?? {})

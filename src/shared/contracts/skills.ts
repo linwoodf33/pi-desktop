@@ -24,3 +24,34 @@ export const skillCatalogViewSchema = z.object({
 })
 
 export type SkillCatalogView = z.infer<typeof skillCatalogViewSchema>
+
+/** A32：从 URL 安装公开技能 */
+export const skillInstallInputSchema = z
+  .object({
+    url: z.string().min(1).max(2048),
+    scope: z.enum(['global', 'project']),
+    /** 覆盖同名技能（默认拒绝，避免悄悄替换用户自己的定义） */
+    overwrite: z.boolean().optional(),
+    /** 项目级安装需要会话引用（主进程据此确定工作区） */
+    sessionKey: z.string().min(1).max(128).optional(),
+    sessionFile: z.string().min(1).max(2048).optional()
+  })
+  .strict()
+
+export type SkillInstallInput = z.infer<typeof skillInstallInputSchema>
+
+export const skillInstallPreviewSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  sourceUrl: z.string(),
+  bytes: z.number()
+})
+
+export type SkillInstallPreview = z.infer<typeof skillInstallPreviewSchema>
+
+export const skillInstallResultSchema = skillInstallPreviewSchema.extend({
+  /** 落盘的 SKILL.md 绝对路径 */
+  path: z.string()
+})
+
+export type SkillInstallResult = z.infer<typeof skillInstallResultSchema>

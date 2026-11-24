@@ -9,6 +9,7 @@ import {
   upsertModelInputSchema,
   upsertProviderInputSchema
 } from './model-config'
+import { skillInstallInputSchema } from './skills'
 import { permissionPolicySchema, sessionToolModeSchema } from './types'
 import { THEME_IDS } from './theme'
 
@@ -330,6 +331,8 @@ export const invokeInputSchemas = {
   [IPC_INVOKE_CHANNELS.modelsRemoveModel]: removeModelInputSchema,
   [IPC_INVOKE_CHANNELS.agentsList]: agentsListInputSchema,
   [IPC_INVOKE_CHANNELS.skillsList]: agentsListInputSchema,
+  [IPC_INVOKE_CHANNELS.skillsPreview]: skillInstallInputSchema,
+  [IPC_INVOKE_CHANNELS.skillsInstall]: skillInstallInputSchema,
   [IPC_INVOKE_CHANNELS.configUpdate]: configUpdateInputSchema,
   [IPC_INVOKE_CHANNELS.permissionStatus]: emptyInputSchema,
   [IPC_INVOKE_CHANNELS.extuiRespond]: extuiRespondInputSchema,

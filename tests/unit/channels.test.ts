@@ -44,6 +44,9 @@ describe('IPC 通道白名单（§5.4）', () => {
         'agents:list',
         // A31 补充：技能清单（只读，扫描 SKILL.md）
         'skills:list',
+        // A32 补充：技能预览 / 安装（URL）
+        'skills:preview',
+        'skills:install',
         // A14 补充：模型管理（pi models.json / settings.json#defaultModel）
         'models:read',
         'models:setDefault',

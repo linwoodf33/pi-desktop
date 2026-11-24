@@ -43,6 +43,9 @@ export const IPC_INVOKE_CHANNELS = {
   agentsList: 'agents:list',
   /** A31：可用技能清单（只读；扫描 SKILL.md） */
   skillsList: 'skills:list',
+  /** A32：从 URL 预览/安装公开技能（预览不落盘） */
+  skillsPreview: 'skills:preview',
+  skillsInstall: 'skills:install',
   /** M4：偏好持久化（并行上限 / 空闲回收 / pi 路径 / 会话目录，§5.4 注） */
   configUpdate: 'config:update',
   /** M5：审批扩展的安装/协议状态（只读，不返回任何内容） */

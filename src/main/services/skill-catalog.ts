@@ -29,6 +29,8 @@ export interface SkillCatalogOptions {
 export interface SkillCatalog {
   /** `projectRoot` 由调用方给出（新建任务/当前任务的工作目录） */
   list: (projectRoot?: string) => SkillCatalogView
+  /** pi 配置目录（安装「全局技能」时的根：`<agentDir>/skills`） */
+  agentDir: () => string
 }
 
 /** 递归找 `SKILL.md`（只认这个名字；其他 md 是技能内部资料，不是技能定义） */
@@ -109,6 +111,7 @@ export function createSkillCatalog(options: SkillCatalogOptions = {}): SkillCata
   }
 
   return {
-    list: (projectRoot?: string) => ({ skills: scan(projectRoot) })
+    list: (projectRoot?: string) => ({ skills: scan(projectRoot) }),
+    agentDir: () => agentDir
   }
 }

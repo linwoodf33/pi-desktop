@@ -37,6 +37,7 @@ import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
 
 import type { AgentCatalog } from '../services/agent-catalog'
+import { installSkill, previewSkill } from '../services/skill-installer'
 import type { SkillCatalog } from '../services/skill-catalog'
 import { appendSessionName } from '../services/pi-session-name'
 import { listDirectoryContent } from '../services/workspace-listing'
@@ -131,6 +132,9 @@ const DEFAULT_TIMEOUTS: Partial<Record<InvokeChannel, number>> = {
   [IPC_INVOKE_CHANNELS.agentsList]: 20_000,
   // A31：扫本地技能目录（只读 readdir）
   [IPC_INVOKE_CHANNELS.skillsList]: 15_000,
+  // A32：下载技能（网络请求，给 20s；服务层自身有 15s 下载超时）
+  [IPC_INVOKE_CHANNELS.skillsPreview]: 20_000,
+  [IPC_INVOKE_CHANNELS.skillsInstall]: 20_000,
   // 选文件走原生对话框（用户可能停留很久），给足预算；取消不算失败
   [IPC_INVOKE_CHANNELS.fsPickWorkspaceFile]: 300_000,
   // A27：列个工作区目录（只读 readdir）
@@ -486,6 +490,56 @@ export function createRouter(
     [IPC_INVOKE_CHANNELS.skillsList]: (raw) => {
       const input = raw as { cwd?: string }
       return Promise.resolve(deps.skillCatalog.list(input.cwd))
+    },
+
+    /**
+     * A32：从 URL 预览公开技能（不落盘）。
+     * 安全约束全在服务层（https-only、禁内网、≤512KB、名字白名单），这里只负责取工作区。
+     */
+    [IPC_INVOKE_CHANNELS.skillsPreview]: async (raw) => {
+      const input = raw as {
+        url: string
+        scope: 'global' | 'project'
+        sessionKey?: string
+        sessionFile?: string
+      }
+      const projectRoot =
+        input.scope === 'project' ? await resolveWorkspaceRootForPick(input) : undefined
+      if (input.scope === 'project' && projectRoot === undefined) {
+        throw new IpcFailure('VALIDATION', '项目级安装需要当前任务的工作区')
+      }
+      return previewSkill({
+        url: input.url,
+        scope: input.scope,
+        agentDir: deps.skillCatalog.agentDir(),
+        ...(projectRoot === undefined ? {} : { projectRoot }),
+        // 测试用：e2e 通过本地 http 服务器验证安装链路（生产恒为 false）
+        allowLocalhost: process.env['PI_DESKTOP_ALLOW_LOCAL_SKILL_FETCH'] === '1'
+      })
+    },
+
+    /** A32：安装到全局或项目级技能目录。 */
+    [IPC_INVOKE_CHANNELS.skillsInstall]: async (raw) => {
+      const input = raw as {
+        url: string
+        scope: 'global' | 'project'
+        overwrite?: boolean
+        sessionKey?: string
+        sessionFile?: string
+      }
+      const projectRoot =
+        input.scope === 'project' ? await resolveWorkspaceRootForPick(input) : undefined
+      if (input.scope === 'project' && projectRoot === undefined) {
+        throw new IpcFailure('VALIDATION', '项目级安装需要当前任务的工作区')
+      }
+      return installSkill({
+        url: input.url,
+        scope: input.scope,
+        agentDir: deps.skillCatalog.agentDir(),
+        ...(projectRoot === undefined ? {} : { projectRoot }),
+        ...(input.overwrite === true ? { overwrite: true } : {}),
+        allowLocalhost: process.env['PI_DESKTOP_ALLOW_LOCAL_SKILL_FETCH'] === '1'
+      })
     },
 
     [IPC_INVOKE_CHANNELS.agentsList]: (raw) => {

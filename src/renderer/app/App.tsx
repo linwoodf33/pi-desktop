@@ -128,6 +128,16 @@ export function App() {
     <div className="app">
       <header className="app__bar">
         <span className="app__brand">pi-desktop</span>
+        <button
+          type="button"
+          className="btn btn--ghost app__bar-action"
+          data-testid="open-diagnostics"
+          onClick={() => {
+            setDiagnosticsOpen(true)
+          }}
+        >
+          诊断
+        </button>
         <span className="app__bar-note">
           本地工作台 · v{bridge.phase === 'ok' ? bridge.boot.appVersion : '…'}
         </span>
@@ -140,16 +150,6 @@ export function App() {
           }}
         >
           技能
-        </button>
-        <button
-          type="button"
-          className="btn btn--ghost app__bar-action"
-          data-testid="open-diagnostics"
-          onClick={() => {
-            setDiagnosticsOpen(true)
-          }}
-        >
-          诊断
         </button>
         <button
           type="button"
@@ -244,6 +244,14 @@ export function App() {
       {skillsOpen ? (
         <SkillsPanel
           {...(task?.cwd === undefined || task.cwd.length === 0 ? {} : { cwd: task.cwd })}
+          {...(task === undefined
+            ? {}
+            : {
+                target: {
+                  ...(task.sessionKey === undefined ? {} : { sessionKey: task.sessionKey }),
+                  ...(task.filePath === undefined ? {} : { sessionFile: task.filePath })
+                }
+              })}
           onClose={() => {
             setSkillsOpen(false)
           }}

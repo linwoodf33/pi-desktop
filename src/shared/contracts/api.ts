@@ -1,6 +1,11 @@
 import type { EventChannel } from '../ipc-channels'
 import type { AgentCatalogView } from './agents'
-import type { SkillCatalogView } from './skills'
+import type {
+  SkillCatalogView,
+  SkillInstallInput,
+  SkillInstallPreview,
+  SkillInstallResult
+} from './skills'
 import type {
   ModelEntryInput,
   ModelConfigView,
@@ -130,6 +135,10 @@ export interface PiInvokeApi {
   skills: {
     /** A31：可用技能清单（只读）。带 `cwd` 时一并扫描项目级 `.pi/skills`。 */
     list(input?: { cwd?: string }): Promise<Result<SkillCatalogView>>
+    /** A32：先下载并解析（不落盘），让用户确认名称/描述 */
+    preview(input: SkillInstallInput): Promise<Result<SkillInstallPreview>>
+    /** A32：安装到全局或项目级技能目录（默认不覆盖同名技能） */
+    install(input: SkillInstallInput): Promise<Result<SkillInstallResult>>
   }
   agents: {
     /**
