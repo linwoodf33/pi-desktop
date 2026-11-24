@@ -1,5 +1,29 @@
 # 更新日志（Changelog）
 
+## v0.10.1（2026-11-24）
+
+修掉装包后暴露的三处问题（都在「本地安装包」上才看得见）。
+
+### 修复
+
+- **「引用文件」只弹目录选择器**：入口层 `src/main/index.ts` 的 `showOpenDialog` 把
+  `properties` **硬编码**成了 `['openDirectory','createDirectory']`，调用方传的属性被整个丢掉。
+  改为透传 `options.properties`。这也是为什么单元测试（直接测 fs-bridge）一直绿、而实际安装包不对。
+- **顶栏版本显示 `v0.0.0`**：`appVersion` 只在 handler 里定义了默认值 `'0.0.0'`，**没在 main 注入**
+  `app.getVersion()`。已接线。
+- **诊断面板「复制全部」没反应**：打包后 renderer 在 `file://` 下没有 `navigator.clipboard`
+  安全上下文，调用静默失败。新增 `app:copyText` 通道，由主进程 `clipboard.writeText` 执行；
+  复制失败会在面板里给出错误提示。
+
+### 测试
+
+- 新增 E2E **E22**：直接捕获主进程传给原生对话框的 `properties`，断言「引用文件」→ `openFile`、
+  「引用文件夹」→ `openDirectory` —— 专治「入口层覆盖调用方参数」这类回归。
+- unit 720（通道白名单加入 `app:copyText`）、integration 51、e2e 50
+  （`virtual-scroll` 有一条已知时序偶发，重跑即过）。
+
+---
+
 ## v0.10.0（2026-11-24）
 
 版本号可见 + 诊断面板（反馈提速）。

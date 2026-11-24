@@ -40,6 +40,7 @@ export function DiagnosticsPanel({ onClose }: DiagnosticsPanelProps): React.JSX.
   const [data, setData] = useState<Diagnostics | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     // 不在 effect 体内同步 setState（会触发级联渲染的 lint 规则）：
@@ -101,15 +102,32 @@ export function DiagnosticsPanel({ onClose }: DiagnosticsPanelProps): React.JSX.
                   </div>
                 ))}
               </dl>
+              {copyError === undefined ? null : (
+                <p className="field__error" data-testid="diagnostics-copy-error">
+                  {copyError}
+                </p>
+              )}
               <div className="settings__actions">
                 <button
                   type="button"
                   className="btn btn--primary"
                   data-testid="diagnostics-copy"
                   onClick={() => {
-                    void navigator.clipboard.writeText(asText(data)).then(() => {
-                      setCopied(true)
-                      window.setTimeout(() => setCopied(false), 1500)
+                    // 必须走主进程：打包后 renderer 在 file:// 下没有 `navigator.clipboard`
+                    // 安全上下文，直接调用会静默失败（用户反馈「点复制没反应」）。
+                    const api = getApi()
+                    if (api === undefined) {
+                      setCopyError('IPC 不可用，无法复制')
+                      return
+                    }
+                    void api.app.copyText({ text: asText(data) }).then((result) => {
+                      if (result.ok) {
+                        setCopied(true)
+                        setCopyError(undefined)
+                        window.setTimeout(() => setCopied(false), 1500)
+                      } else {
+                        setCopyError(result.error.message)
+                      }
                     })
                   }}
                 >

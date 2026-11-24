@@ -89,6 +89,8 @@ export interface RouterDeps {
   agentCatalog: AgentCatalog
   /** A25：客户端版本（`app.getVersion()`，由 main 注入；测试可覆盖） */
   appVersion?: () => string
+  /** A26：写系统剪贴板（file:// 下 renderer 的 navigator.clipboard 不可用） */
+  writeClipboard?: (text: string) => void
 }
 
 /** 短命令的通道级超时预算（§7 约束 13；比 pi 侧单命令 60s 略宽，pi 侧先超时） */
@@ -185,6 +187,21 @@ export function createRouter(
         lastCwd: defaultCwd(),
         appVersion: appVersion()
       }),
+
+    /**
+     * A26：写系统剪贴板。
+     *
+     * 为什么必须在主进程：打包后 renderer 跑在 `file://` 下，`navigator.clipboard`
+     * 受安全上下文限制（非 https/localhost）会直接拒绝，表现为「点复制没反应」。
+     */
+    [IPC_INVOKE_CHANNELS.appCopyText]: (raw) => {
+      const input = raw as { text: string }
+      if (deps.writeClipboard === undefined) {
+        throw new IpcFailure('NOT_IMPLEMENTED', '剪贴板未接线（主进程未注入 writeClipboard）')
+      }
+      deps.writeClipboard(input.text)
+      return Promise.resolve({ ok: true } as const)
+    },
 
     /**
      * A25：诊断信息（只读、脱敏）。用户反馈问题时一眼看到版本与目录，

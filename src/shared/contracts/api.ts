@@ -54,6 +54,8 @@ export interface PiInvokeApi {
     getBoot(): Promise<Result<BootState>>
     /** A25：诊断信息（版本 / 目录 / pi 状态；不含密钥） */
     diagnostics(): Promise<Result<Diagnostics>>
+    /** A26：写系统剪贴板（主进程执行；`file://` 下 renderer 的 navigator.clipboard 不可用） */
+    copyText(input: { text: string }): Promise<Result<{ ok: true }>>
   }
   pi: {
     locate(input?: { path?: string }): Promise<Result<PiSelfCheckStatus>>

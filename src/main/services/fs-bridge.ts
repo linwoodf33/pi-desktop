@@ -14,12 +14,16 @@ export interface PickDirectoryResult {
   path: string
 }
 
+/** 原生对话框允许的属性子集（与 Electron 的 `OpenDialogOptions['properties']` 兼容） */
+export type DialogProperty =
+  'openFile' | 'openDirectory' | 'multiSelections' | 'showHiddenFiles' | 'createDirectory'
+
 export interface FsBridgeDeps {
   /** 原生目录对话框（测试注入；生产用 electron dialog） */
   showOpenDialog: (options: {
     title: string
     defaultPath?: string
-    properties: readonly string[]
+    properties: readonly DialogProperty[]
   }) => Promise<{ canceled: boolean; filePaths: string[] }>
 }
 

@@ -306,6 +306,7 @@ export const artifactOpenInputSchema = z
 export const invokeInputSchemas = {
   [IPC_INVOKE_CHANNELS.appGetBoot]: emptyInputSchema,
   [IPC_INVOKE_CHANNELS.appDiagnostics]: emptyInputSchema,
+  [IPC_INVOKE_CHANNELS.appCopyText]: z.object({ text: z.string().min(1).max(20_000) }).strict(),
   [IPC_INVOKE_CHANNELS.piLocate]: piLocateInputSchema,
   [IPC_INVOKE_CHANNELS.sessionList]: sessionListInputSchema,
   [IPC_INVOKE_CHANNELS.sessionHistory]: sessionHistoryInputSchema,

@@ -17,6 +17,8 @@ describe('IPC 通道白名单（§5.4）', () => {
         'app:getBoot',
         // A25 补充：诊断信息（版本/目录/pi 状态；不含密钥）
         'app:diagnostics',
+        // A26 补充：写系统剪贴板（file:// 下 renderer 的 navigator.clipboard 不可用）
+        'app:copyText',
         'pi:locate',
         'session:list',
         // M3 补充：§5.4 缺「选中历史会话只回放 JSONL」的通道（§6.1 第 4 步）

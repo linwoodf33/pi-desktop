@@ -32,7 +32,8 @@ function on<T>(channel: EventChannel, cb: (payload: T) => void): Unsubscribe {
 const api: PiApi = {
   app: {
     getBoot: () => invoke(IPC_INVOKE_CHANNELS.appGetBoot, {}),
-    diagnostics: () => invoke(IPC_INVOKE_CHANNELS.appDiagnostics, {})
+    diagnostics: () => invoke(IPC_INVOKE_CHANNELS.appDiagnostics, {}),
+    copyText: (input) => invoke(IPC_INVOKE_CHANNELS.appCopyText, input)
   },
   pi: {
     locate: (input) => invoke(IPC_INVOKE_CHANNELS.piLocate, input ?? {})

@@ -746,3 +746,59 @@ describe('E21 版本号与诊断面板（A25）', () => {
       .toBe(0)
   })
 })
+
+describe('E22 引用文件/文件夹：原生对话框属性（A26 回归）', () => {
+  it('「引用文件」传 openFile、「引用文件夹」传 openDirectory（不再被入口层覆盖）', async () => {
+    // 自带任务：边界校验需要活跃会话
+    await stubDirectoryPicker(workDir)
+    await page.click('[data-testid="new-task-button"]')
+    await page.waitForSelector('[data-testid="new-task-dialog"]', { timeout: 20_000 })
+    await page.click('[data-testid="new-task-pick-directory"]')
+    await expect
+      .poll(async () => page.inputValue('[data-testid="new-task-cwd"]'), { timeout: 10_000 })
+      .toBe(workDir)
+    await page.click('[data-testid="new-task-submit"]')
+    await page.waitForSelector('[data-testid="task-item"]', { timeout: 30_000 })
+
+    // 记录主进程真正传给原生对话框的 options（取消即可，不关心选中结果）
+    await app.evaluate(({ dialog }) => {
+      type Scope = { __lastDialogOptions: { properties: string[] } | undefined }
+      const scope = globalThis as unknown as Scope
+      scope.__lastDialogOptions = undefined
+      // Electron 的 showOpenDialog 有两个重载（带/不带 BrowserWindow），
+      // 这里显式标注为「只接收 options」的形态，避免类型退化成 BaseWindow 联合。
+      dialog.showOpenDialog = (options: Electron.OpenDialogOptions) => {
+        scope.__lastDialogOptions = { properties: [...(options.properties ?? [])] }
+        return Promise.resolve({ canceled: true, filePaths: [] })
+      }
+    })
+
+    await page.click('[data-testid="pick-file-button"]')
+    await expect
+      .poll(
+        async () =>
+          app.evaluate(() => {
+            const scope = globalThis as unknown as {
+              __lastDialogOptions: { properties: string[] } | undefined
+            }
+            return (scope.__lastDialogOptions?.properties ?? []).join(',')
+          }),
+        { timeout: 20_000 }
+      )
+      .toBe('openFile')
+
+    await page.click('[data-testid="pick-folder-button"]')
+    await expect
+      .poll(
+        async () =>
+          app.evaluate(() => {
+            const scope = globalThis as unknown as {
+              __lastDialogOptions: { properties: string[] } | undefined
+            }
+            return (scope.__lastDialogOptions?.properties ?? []).join(',')
+          }),
+        { timeout: 20_000 }
+      )
+      .toBe('openDirectory')
+  })
+})

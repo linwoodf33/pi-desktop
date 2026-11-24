@@ -9,6 +9,8 @@ export const IPC_INVOKE_CHANNELS = {
   appGetBoot: 'app:getBoot',
   /** A25：诊断信息（只读、脱敏；不含任何密钥） */
   appDiagnostics: 'app:diagnostics',
+  /** A26：写系统剪贴板（主进程执行；file:// 下 renderer 的 navigator.clipboard 不可用） */
+  appCopyText: 'app:copyText',
   piLocate: 'pi:locate',
   sessionList: 'session:list',
   /** M3 补充：只读回放会话 JSONL（§5.4 注；不启动子进程，§6.1 第 4 步） */

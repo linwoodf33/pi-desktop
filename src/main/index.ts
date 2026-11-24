@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -107,7 +107,9 @@ function bootstrappedWindow(): void {
       const result = await dialog.showOpenDialog({
         title: options.title,
         ...(options.defaultPath === undefined ? {} : { defaultPath: options.defaultPath }),
-        properties: ['openDirectory', 'createDirectory']
+        // **必须透传调用方的 properties**：之前这里硬编码成目录选择器，
+        // 导致「引用文件」永远只弹目录（用户反馈的就是这个）。
+        properties: [...options.properties]
       })
       return { canceled: result.canceled, filePaths: result.filePaths }
     }
@@ -145,6 +147,12 @@ function bootstrappedWindow(): void {
       configStore,
       modelConfigStore,
       agentCatalog,
+      // 顶栏版本号：Electron 的 app.getVersion() 读的是打包时写入的版本资源
+      appVersion: () => app.getVersion(),
+      // 剪贴板：渲染进程在 file:// 下拿不到 navigator.clipboard，必须由主进程写
+      writeClipboard: (text) => {
+        clipboard.writeText(text)
+      },
       sessionIndex,
       piLocator,
       sessionService,
