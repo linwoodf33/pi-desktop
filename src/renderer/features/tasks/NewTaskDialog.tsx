@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import {
   SESSION_TOOL_MODES,
@@ -49,6 +49,28 @@ export function NewTaskDialog({
   /** A18：可用 agent（`null` = 还没探测完；`supportsAgentFlag=false` 时不显示选择器） */
   const [agentCatalog, setAgentCatalog] = useState<AgentCatalogView | undefined>(undefined)
   const [agent, setAgent] = useState('')
+
+  /**
+   * A29：按目录把 agent 组织成树。
+   *
+   * pi 的 frontmatter 没有 parent 字段，唯一的层级信息是**定义文件所在目录**
+   * （`agents/intranet/*.md` 属于 intranet 组），所以这里按 `group` 分段分组：
+   * 根目录的 agent 直接列在最上面，其余每组一个 `<optgroup>`，条目按深度缩进。
+   */
+  const agentTree = useMemo(() => {
+    const agents = agentCatalog?.agents ?? []
+    const root = agents.filter((item) => item.group.length === 0)
+    const grouped = new Map<string, typeof agents>()
+    for (const item of agents) {
+      if (item.group.length === 0) continue
+      const key = item.group.join('/')
+      const bucket = grouped.get(key)
+      if (bucket === undefined) grouped.set(key, [item])
+      else bucket.push(item)
+    }
+    const groups = [...grouped.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+    return { root, groups }
+  }, [agentCatalog])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | undefined>()
 
@@ -222,11 +244,25 @@ export function NewTaskDialog({
                 }}
               >
                 <option value="">默认（不加 --agent）</option>
-                {agentCatalog.agents.map((item) => (
+                {agentTree.root.map((item) => (
                   <option key={item.name} value={item.name} title={item.description}>
                     {item.name}
+                    {item.mode === 'primary' ? '（主）' : ''}
                     {item.scope === 'project' ? '（项目）' : ''}
                   </option>
+                ))}
+                {agentTree.groups.map(([label, items]) => (
+                  <optgroup key={label} label={label}>
+                    {items.map((item) => (
+                      <option key={item.name} value={item.name} title={item.description}>
+                        {'　'.repeat(item.group.length)}
+                        {'└ '}
+                        {item.name}
+                        {item.mode === 'primary' ? '（主）' : ''}
+                        {item.scope === 'project' ? '（项目）' : ''}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
               <span className="field__hint">

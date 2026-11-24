@@ -1,5 +1,29 @@
 # 更新日志（Changelog）
 
+## v0.13.0（2026-11-24）
+
+新建任务的 agent 选择改成**树状**（按定义目录分组）。
+
+### 变更
+
+- agent 下拉现在是树：根目录的 agent 直接列出，子目录（如 `agents/intranet/`、`agents/team/`）
+  渲染成 `<optgroup label="目录名">`，条目按深度缩进并带 `└` 前缀。
+- 选项后缀标出 `（主）`（frontmatter `mode: primary`）与 `（项目）`（项目级定义），
+  一眼能看出「谁是主 agent、谁是子 agent、来自哪一层」。
+
+### 为什么按目录分组
+
+pi / pi-open-agents 的 frontmatter **没有 parent 字段**，唯一的层级信息就是
+定义文件所在目录。所以父子关系由目录结构推导：`agents/intranet/architect.md`
+属于 `intranet` 组，`group: ['intranet']`。契约里新增 `group: string[]`（根为 `[]`）。
+
+### 测试
+
+unit 729（目录分组：根 / 一层 / 两层、项目级独立分段）、integration 51、
+e2e 48（agent 选择器：`optgroup label=team`、子项文本含 `└`）。
+
+---
+
 ## v0.12.0（2026-11-24）
 
 引用选择器排版修正 + 多行粘贴折叠。

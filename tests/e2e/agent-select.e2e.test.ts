@@ -37,6 +37,21 @@ beforeAll(async () => {
   await mkdir(sessionDir, { recursive: true })
   argvFile = join(tempRoot, 'mock-argv.json')
 
+  // 嵌套目录的 agent：用于验证树状分组（optgroup）
+  await mkdir(join(agentDir, 'agents', 'team'), { recursive: true })
+  await writeFile(
+    join(agentDir, 'agents', 'team', 'child.md'),
+    `---
+name: child
+description: 子 agent
+mode: subagent
+---
+
+你是子 agent。
+`,
+    'utf8'
+  )
+
   // 一个用户级 agent（pi 格式：frontmatter + 正文）
   await writeFile(
     join(agentDir, 'agents', 'scout.md'),
@@ -83,7 +98,20 @@ describe('新建任务：agent 选择', () => {
     const options = await select
       .locator('option')
       .evaluateAll((nodes) => nodes.map((node) => (node as HTMLOptionElement).value))
-    expect(options).toEqual(['', 'scout'])
+    // 根目录的 scout + 子目录 team/child 都列出
+    expect(options).toEqual(['', 'scout', 'child'])
+
+    // A29：子目录成组（optgroup label = 'team'），条目带树形缩进
+    const groupLabels = await select
+      .locator('optgroup')
+      .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('label')))
+    expect(groupLabels).toEqual(['team'])
+    const childText = await select
+      .locator('option')
+      .filter({ hasText: 'child' })
+      .first()
+      .textContent()
+    expect(childText).toContain('└')
   })
 
   it('选中 scout 建会话后，子进程收到 --agent scout', async () => {

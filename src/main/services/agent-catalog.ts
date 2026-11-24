@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, type Dirent } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, join, relative, sep } from 'node:path'
 
 import type { AgentCatalogView, AgentSummary } from '../../shared/contracts/agents'
 
@@ -108,7 +108,22 @@ function collectMarkdown(root: string): string[] {
   return out
 }
 
-function readAgent(file: string, scope: 'global' | 'project'): AgentSummary | undefined {
+/**
+ * 计算目录分组：`relative(scanRoot, file)` 去掉文件名后的分段。
+ * 例：`agents/intranet/architect.md`（root=`agents`）→ `['intranet']`。
+ */
+function groupOf(root: string, file: string): string[] {
+  const rel = relative(root, file).split(sep).join('/')
+  const segments = rel.split('/')
+  segments.pop() // 去掉文件名
+  return segments.filter((segment) => segment.length > 0)
+}
+
+function readAgent(
+  file: string,
+  scope: 'global' | 'project',
+  root: string
+): AgentSummary | undefined {
   let text: string
   try {
     text = readFileSync(file, 'utf8')
@@ -118,7 +133,7 @@ function readAgent(file: string, scope: 'global' | 'project'): AgentSummary | un
   const fields = parseFrontmatter(text)
   const name = fields['name'] ?? basename(file, '.md')
   if (name.trim().length === 0) return undefined
-  const summary: AgentSummary = { name, scope, file }
+  const summary: AgentSummary = { name, scope, file, group: groupOf(root, file) }
   const description = fields['description']
   if (description !== undefined) summary.description = description
   const mode = fields['mode']
@@ -171,8 +186,9 @@ export function createAgentCatalog(options: AgentCatalogOptions = {}): AgentCata
   function scan(explicitProjectRoot?: string): AgentSummary[] {
     const byName = new Map<string, AgentSummary>()
     // global 先入，project 同名覆盖
-    for (const file of collectMarkdown(join(agentDir, 'agents'))) {
-      const agent = readAgent(file, 'global')
+    const globalRoot = join(agentDir, 'agents')
+    for (const file of collectMarkdown(globalRoot)) {
+      const agent = readAgent(file, 'global', globalRoot)
       if (agent !== undefined) byName.set(agent.name, agent)
     }
     const projectRoot = explicitProjectRoot ?? options.projectRoot?.()
@@ -182,7 +198,7 @@ export function createAgentCatalog(options: AgentCatalogOptions = {}): AgentCata
         join(projectRoot, '.agents', 'agents')
       ]) {
         for (const file of collectMarkdown(root)) {
-          const agent = readAgent(file, 'project')
+          const agent = readAgent(file, 'project', root)
           if (agent !== undefined) byName.set(agent.name, agent)
         }
       }

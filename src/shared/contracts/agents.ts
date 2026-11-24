@@ -21,6 +21,14 @@ export const agentSummarySchema = z.object({
   mode: z.string().optional(),
   model: z.string().optional(),
   scope: z.enum(['global', 'project']),
+  /**
+   * 目录分组（A29）：agent 定义所在子目录的分段，如 `['intranet']`；根目录为 `[]`。
+   *
+   * 为什么用它表达「父子」：pi / pi-open-agents 的 frontmatter **没有 parent 字段**，
+   * 唯一的层级信息就是文件所在目录（`agents/intranet/architect.md` 属于 intranet 组）。
+   * 选择器据此渲染成树。
+   */
+  group: z.array(z.string()),
   /** 定义文件绝对路径（诊断用；不返回正文） */
   file: z.string()
 })

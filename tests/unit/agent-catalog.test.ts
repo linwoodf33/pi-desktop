@@ -193,3 +193,29 @@ describe('has：名字校验（pi 对未知 agent 会静默忽略）', () => {
     expect(catalog.has(view, 'nosuchagent')).toBe(false)
   })
 })
+
+describe('目录分组（A29：树状展示的依据）', () => {
+  it('根目录 agent 的 group 为空；子目录 agent 的 group 是目录分段', async () => {
+    writeAgent(join(agentDir, 'agents', 'root-agent.md'), 'name: root-agent')
+    writeAgent(join(agentDir, 'agents', 'team', 'child-agent.md'), 'name: child-agent')
+    writeAgent(join(agentDir, 'agents', 'team', 'deep', 'grand.md'), 'name: grand')
+
+    const catalog = createAgentCatalog({ agentDir, launch: () => undefined })
+    const view = await catalog.list()
+    const byName = new Map(view.agents.map((item) => [item.name, item]))
+    expect(byName.get('root-agent')?.group).toEqual([])
+    expect(byName.get('child-agent')?.group).toEqual(['team'])
+    expect(byName.get('grand')?.group).toEqual(['team', 'deep'])
+  })
+
+  it('项目级 agent 也按项目 agents 目录分段（不与全局混层级）', async () => {
+    writeAgent(join(projectDir, '.pi', 'agents', 'proj.md'), 'name: proj-agent')
+    writeAgent(join(projectDir, '.pi', 'agents', 'sub', 'proj-child.md'), 'name: proj-child')
+
+    const catalog = createAgentCatalog({ agentDir, launch: () => undefined })
+    const view = await catalog.list(projectDir)
+    const byName = new Map(view.agents.map((item) => [item.name, item]))
+    expect(byName.get('proj-agent')?.group).toEqual([])
+    expect(byName.get('proj-child')?.group).toEqual(['sub'])
+  })
+})
