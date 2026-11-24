@@ -37,6 +37,7 @@ import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
 
 import type { AgentCatalog } from '../services/agent-catalog'
+import type { SkillCatalog } from '../services/skill-catalog'
 import { appendSessionName } from '../services/pi-session-name'
 import { listDirectoryContent } from '../services/workspace-listing'
 import {
@@ -94,6 +95,8 @@ export interface RouterDeps {
   modelConfigStore: ModelConfigStore
   /** A18：agent 目录（只读；同时回报 pi 是否支持 `--agent`） */
   agentCatalog: AgentCatalog
+  /** A31：技能清单（只读；扫描 SKILL.md） */
+  skillCatalog: SkillCatalog
   /** A25：客户端版本（`app.getVersion()`，由 main 注入；测试可覆盖） */
   appVersion?: () => string
   /** A26：写系统剪贴板（file:// 下 renderer 的 navigator.clipboard 不可用） */
@@ -126,6 +129,8 @@ const DEFAULT_TIMEOUTS: Partial<Record<InvokeChannel, number>> = {
   [IPC_INVOKE_CHANNELS.modelsRemoveModel]: 10_000,
   // agent 目录：扫本地目录 + 一次 `pi --help` 能力探测（有 60s 缓存）
   [IPC_INVOKE_CHANNELS.agentsList]: 20_000,
+  // A31：扫本地技能目录（只读 readdir）
+  [IPC_INVOKE_CHANNELS.skillsList]: 15_000,
   // 选文件走原生对话框（用户可能停留很久），给足预算；取消不算失败
   [IPC_INVOKE_CHANNELS.fsPickWorkspaceFile]: 300_000,
   // A27：列个工作区目录（只读 readdir）
@@ -477,6 +482,12 @@ export function createRouter(
      * 入参已由 router 的 zod schema 校验过；服务层再做一次（纵深防御）。
      */
     /** A18：可用 agent 目录（只读）。`supportsAgentFlag=false` 时 UI 不显示选择器。 */
+    /** A31：可用技能清单（只读）。 */
+    [IPC_INVOKE_CHANNELS.skillsList]: (raw) => {
+      const input = raw as { cwd?: string }
+      return Promise.resolve(deps.skillCatalog.list(input.cwd))
+    },
+
     [IPC_INVOKE_CHANNELS.agentsList]: (raw) => {
       const input = raw as { cwd?: string }
       return deps.agentCatalog.list(input.cwd)

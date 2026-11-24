@@ -5,6 +5,7 @@ import { Artifacts } from '../features/artifacts/Artifacts'
 import { ApprovalHost } from '../features/chat/ApprovalHost'
 import { Conversation } from '../features/chat/Conversation'
 import { DiagnosticsPanel } from '../features/diagnostics/DiagnosticsPanel'
+import { SkillsPanel } from '../features/skills/SkillsPanel'
 import { ModelManager } from '../features/models/ModelManager'
 import { SettingsPanel } from '../features/settings/SettingsPanel'
 import { NewTaskDialog } from '../features/tasks/NewTaskDialog'
@@ -93,6 +94,8 @@ export function App() {
   const [modelsOpen, setModelsOpen] = useState(false)
   /** A25：诊断面板 */
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
+  /** A31：技能面板 */
+  const [skillsOpen, setSkillsOpen] = useState(false)
 
   useEffect(() => {
     const api = getApi()
@@ -128,6 +131,16 @@ export function App() {
         <span className="app__bar-note">
           本地工作台 · v{bridge.phase === 'ok' ? bridge.boot.appVersion : '…'}
         </span>
+        <button
+          type="button"
+          className="btn btn--ghost app__bar-action"
+          data-testid="open-skills"
+          onClick={() => {
+            setSkillsOpen(true)
+          }}
+        >
+          技能
+        </button>
         <button
           type="button"
           className="btn btn--ghost app__bar-action"
@@ -227,6 +240,15 @@ export function App() {
           </details>
         )}
       </footer>
+
+      {skillsOpen ? (
+        <SkillsPanel
+          {...(task?.cwd === undefined || task.cwd.length === 0 ? {} : { cwd: task.cwd })}
+          onClose={() => {
+            setSkillsOpen(false)
+          }}
+        />
+      ) : null}
 
       {diagnosticsOpen ? (
         <DiagnosticsPanel

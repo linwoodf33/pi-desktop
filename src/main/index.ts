@@ -8,6 +8,7 @@ import { IpcFailure } from '../shared/contracts/result'
 
 import { createRouter } from './ipc/handlers'
 import { createAgentCatalog } from './services/agent-catalog'
+import { createSkillCatalog } from './services/skill-catalog'
 import { createModelConfigStore } from './services/model-config-store'
 import { createArtifactsService } from './services/artifacts'
 import { createAuditLog } from './services/audit-log'
@@ -137,6 +138,8 @@ function bootstrappedWindow(): void {
 
   // A18：agent 目录。`--agent` 是否可用由 `pi --help` 探测（60s 缓存），
   // 未定位到 pi 时退回「不支持」，UI 就不显示 agent 选择器。
+  const skillCatalog = createSkillCatalog()
+
   const agentCatalog = createAgentCatalog({
     launch: () => piLocator.launch(),
     runCapture: defaultRunCapture
@@ -147,6 +150,7 @@ function bootstrappedWindow(): void {
       configStore,
       modelConfigStore,
       agentCatalog,
+      skillCatalog,
       // 顶栏版本号：Electron 的 app.getVersion() 读的是打包时写入的版本资源
       appVersion: () => app.getVersion(),
       // 剪贴板：渲染进程在 file:// 下拿不到 navigator.clipboard，必须由主进程写

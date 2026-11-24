@@ -845,6 +845,55 @@ kbd {
   background: var(--bg-panel);
 }
 
+/* 技能面板（A31）：分组列表 */
+.skills__group {
+  margin-top: 12px;
+}
+
+.skills__group h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.skills__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  max-height: min(46vh, 380px);
+  overflow-y: auto;
+}
+
+.skills__item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--bg-panel);
+}
+
+.skills__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.skills__meta {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.skills__desc {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
 /* 引用选择器（A27）：工具栏 + 可滚动列表 + 行悬停 */
 .picker__bar {
   display: flex;

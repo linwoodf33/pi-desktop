@@ -10,6 +10,7 @@ import { createArtifactsService } from '../../src/main/services/artifacts'
 import { createAuditLog } from '../../src/main/services/audit-log'
 import { createConfigStore } from '../../src/main/services/config-store'
 import { createAgentCatalog } from '../../src/main/services/agent-catalog'
+import { createSkillCatalog } from '../../src/main/services/skill-catalog'
 import { createModelConfigStore } from '../../src/main/services/model-config-store'
 import { createFsBridge, type FsBridge } from '../../src/main/services/fs-bridge'
 import { createPiLocator } from '../../src/main/services/pi-locator'
@@ -73,6 +74,8 @@ function buildRouter(
       modelConfigStore: createModelConfigStore({ agentDir: 'C:/nonexistent-pi-agent' }),
       // A18：agent 目录（默认不调用；无 pi 启动规格 → supportsAgentFlag=false）
       agentCatalog: createAgentCatalog({}),
+      // A31：技能清单（只读；默认不调用）
+      skillCatalog: createSkillCatalog({}),
       artifacts: createArtifactsService({
         resolver: createWorkspaceResolver({
           liveCwd: (sessionKey) => sessionService.workspaceOf(sessionKey),

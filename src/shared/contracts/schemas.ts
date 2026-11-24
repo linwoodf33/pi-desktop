@@ -329,6 +329,7 @@ export const invokeInputSchemas = {
   [IPC_INVOKE_CHANNELS.modelsUpsertModel]: upsertModelInputSchema,
   [IPC_INVOKE_CHANNELS.modelsRemoveModel]: removeModelInputSchema,
   [IPC_INVOKE_CHANNELS.agentsList]: agentsListInputSchema,
+  [IPC_INVOKE_CHANNELS.skillsList]: agentsListInputSchema,
   [IPC_INVOKE_CHANNELS.configUpdate]: configUpdateInputSchema,
   [IPC_INVOKE_CHANNELS.permissionStatus]: emptyInputSchema,
   [IPC_INVOKE_CHANNELS.extuiRespond]: extuiRespondInputSchema,

@@ -680,3 +680,30 @@ describe('E18 引用工作区文件/文件夹（A27 应用内选择器）', () =
       .toBe('sub')
   })
 })
+
+describe('E23 技能面板（A31）', () => {
+  it('顶栏「技能」可打开面板；有技能则列出，无技能则给出放置提示', async () => {
+    await page.click('[data-testid="open-skills"]')
+    await page.waitForSelector('[data-testid="skills-panel"]', { timeout: 20_000 })
+
+    // 不能有读取错误
+    expect(await page.locator('[data-testid="skills-error"]').count()).toBe(0)
+
+    // 环境相关：本机有技能 → 列表；CI 无技能目录 → 空态提示。两者都算正常。
+    await expect
+      .poll(
+        async () => {
+          const items = await page.locator('[data-testid="skill-item"]').count()
+          const empty = await page.locator('[data-testid="skills-empty"]').count()
+          return items > 0 || empty > 0
+        },
+        { timeout: 20_000 }
+      )
+      .toBe(true)
+
+    await page.click('[data-testid="skills-close"]')
+    await expect
+      .poll(async () => page.locator('[data-testid="skills-panel"]').count(), { timeout: 10_000 })
+      .toBe(0)
+  })
+})

@@ -1,5 +1,6 @@
 import type { EventChannel } from '../ipc-channels'
 import type { AgentCatalogView } from './agents'
+import type { SkillCatalogView } from './skills'
 import type {
   ModelEntryInput,
   ModelConfigView,
@@ -126,6 +127,10 @@ export interface PiInvokeApi {
    * 与上面的 `model`（会话切换当前模型）不同：这里改的是**磁盘上的配置**，
    * 影响之后启动的会话，不影响已经在跑的会话。
    */
+  skills: {
+    /** A31：可用技能清单（只读）。带 `cwd` 时一并扫描项目级 `.pi/skills`。 */
+    list(input?: { cwd?: string }): Promise<Result<SkillCatalogView>>
+  }
   agents: {
     /**
      * 可用 agent 目录（只读）。`supportsAgentFlag=false` 表示 pi 没注册 `--agent`
