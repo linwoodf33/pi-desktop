@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -14,7 +14,7 @@ import { createModelConfigStore } from '../../src/main/services/model-config-sto
 import { createFsBridge, type FsBridge } from '../../src/main/services/fs-bridge'
 import { createPiLocator } from '../../src/main/services/pi-locator'
 import { createSessionHistory } from '../../src/main/services/session-history'
-import { createSessionIndex } from '../../src/main/services/session-index'
+import { createSessionIndex, type SessionIndex } from '../../src/main/services/session-index'
 import type { SessionService } from '../../src/main/services/session-service'
 import { createWorkspaceResolver } from '../../src/main/services/workspace-resolver'
 import { IPC_INVOKE_CHANNELS, type InvokeChannel } from '../../src/shared/ipc-channels'
@@ -48,14 +48,17 @@ function stubSessionService(overrides: Partial<SessionService> = {}): SessionSer
 function buildRouter(
   overrides: Partial<SessionService> = {},
   timeouts?: Partial<Record<InvokeChannel, number>>,
-  fsBridgeOverride?: FsBridge
+  fsBridgeOverride?: FsBridge,
+  sessionIndexOverride?: SessionIndex
 ): IpcRouter {
   const sessionService = stubSessionService(overrides)
   return createRouter(
     {
       configStore: createConfigStore(),
       // 用不存在的会话目录：保持列表为空，避免依赖开发者本机会话
-      sessionIndex: createSessionIndex({ sessionDir: () => 'C:/nonexistent-pi-sessions' }),
+      sessionIndex:
+        sessionIndexOverride ??
+        createSessionIndex({ sessionDir: () => 'C:/nonexistent-pi-sessions' }),
       piLocator: createPiLocator(),
       sessionService,
       // M3 新增通道：目录对话框与历史回放（默认不应被调用，需要时在用例里覆盖）
@@ -363,5 +366,58 @@ describe('默认工作目录（用户反馈的 bug 回归）', () => {
     expect(lastCwd).toBe(homedir())
     // 明确不等于 process.cwd()（从快捷方式启动时那是安装目录）
     expect(lastCwd).not.toBe(process.cwd())
+  })
+})
+
+describe('A23：改会话名（历史任务，追加 session_info）', () => {
+  it('索引里的会话文件可以改名，且原内容不变', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pi-rename-'))
+    const cwdKey = join(dir, '--work--')
+    mkdirSync(cwdKey, { recursive: true })
+    const file = join(cwdKey, 's.jsonl')
+    const original =
+      '{"type":"session","version":3,"id":"aaaa1111","cwd":"/work"}' + String.fromCharCode(10)
+    writeFileSync(file, original, 'utf8')
+
+    try {
+      const index = createSessionIndex({ sessionDir: () => dir })
+      const router = buildRouter({}, undefined, undefined, index)
+      const result = await router.dispatch(IPC_INVOKE_CHANNELS.sessionSetName, {
+        sessionFile: file,
+        name: '新名字'
+      })
+      expect(result).toMatchObject({ ok: true })
+
+      const after = readFileSync(file, 'utf8')
+      expect(after.startsWith(original)).toBe(true)
+      expect(after).toContain('"name":"新名字"')
+
+      // 索引立刻读到新名字（session_info 优先于首条用户消息）
+      const listed = await index.list({})
+      expect(listed.items[0]?.title).toBe('新名字')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('索引之外的 .jsonl 被拒（PATH_DENIED）', async () => {
+    const outer = mkdtempSync(join(tmpdir(), 'pi-outside-'))
+    const file = join(outer, 'x.jsonl')
+    writeFileSync(
+      file,
+      '{"type":"session","version":3,"id":"a","cwd":"/w"}' + String.fromCharCode(10),
+      'utf8'
+    )
+    try {
+      const router = buildRouter()
+      const result = await router.dispatch(IPC_INVOKE_CHANNELS.sessionSetName, {
+        sessionFile: file,
+        name: 'x'
+      })
+      expect(result).toMatchObject({ ok: false })
+      if (!result.ok) expect(result.error.code).toBe('PATH_DENIED')
+    } finally {
+      rmSync(outer, { recursive: true, force: true })
+    }
   })
 })

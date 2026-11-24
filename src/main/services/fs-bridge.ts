@@ -53,9 +53,10 @@ export function createFsBridge(deps: FsBridgeDeps): FsBridge {
 
     async pickFile(input) {
       const result = await deps.showOpenDialog({
-        title: '引用工作区文件',
+        title: '引用工作区文件或文件夹',
         ...(input.defaultPath === undefined ? {} : { defaultPath: input.defaultPath }),
-        properties: ['openFile']
+        // 同时允许选文件与文件夹（Windows/Linux 上两者可共存）；只选文件夹时插入该目录的相对路径
+        properties: ['openFile', 'openDirectory']
       })
       const picked = result.filePaths[0]
       if (result.canceled || picked === undefined || picked.length === 0) {

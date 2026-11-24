@@ -340,14 +340,19 @@ export function createRouter(
       if (sessionFile === undefined) {
         throw new IpcFailure('VALIDATION', '需要 sessionKey 或 sessionFile')
       }
-      const sessionRoot = await realpathNative(deps.sessionIndex.root()).catch(() =>
-        deps.sessionIndex.root()
-      )
       const realFile = await realpathNative(sessionFile).catch(() => {
         throw new IpcFailure('NOT_FOUND', '会话文件不存在', sessionFile)
       })
-      if (!isInsideRoot(sessionRoot, realFile)) {
-        throw new IpcFailure('PATH_DENIED', '只能修改会话根内的会话文件', sessionFile)
+      /**
+       * 授权依据用「**是不是我们索引里列出的会话文件**」，而不是比对根目录字符串：
+       * 会话目录可以由 `PI_CODING_AGENT_SESSION_DIR` 配置改变，根字符串比对很容易在
+       * 真实环境里误判（用户报的「改名无法保存」就是这个方向）。索引是我们自己的事实来源。
+       */
+      const listed = await deps.sessionIndex.list({})
+      const wanted = normalizeForCompare(realFile)
+      const known = listed.items.some((item) => normalizeForCompare(item.filePath) === wanted)
+      if (!known) {
+        throw new IpcFailure('PATH_DENIED', '只能修改本地会话索引里的会话文件', sessionFile)
       }
       appendSessionName({ sessionFile: realFile, name: input.name })
       return { ok: true }

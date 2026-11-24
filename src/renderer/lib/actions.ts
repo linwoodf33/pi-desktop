@@ -528,7 +528,14 @@ export async function renameTask(
     return false
   }
 
-  const result = await api.session.setName({ ...ref, name: trimmed })
+  let result = await api.session.setName({ ...ref, name: trimmed })
+  /**
+   * 兜底：任务被标成 live 但子进程已被回收时，`sessionKey` 路径会报 SESSION_NOT_FOUND。
+   * 此时改用会话文件路径（主进程会以「索引里的会话文件」为授权依据）重试一次。
+   */
+  if (!result.ok && result.error.code === 'SESSION_NOT_FOUND' && task.filePath !== undefined) {
+    result = await api.session.setName({ sessionFile: task.filePath, name: trimmed })
+  }
   if (!result.ok) {
     reportError(result.error)
     return false

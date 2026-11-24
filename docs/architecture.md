@@ -432,7 +432,7 @@ interface PiTransport {
 | 活跃会话         | RPC `set_session_name`，pi 自己落盘                         | 与 TUI 里 `/name` 完全一致                                            |
 | 历史（回放）任务 | **追加**一条 `session_info`（`id/parentId/timestamp/name`） | 进程已不在；只 append、不改旧行 —— 最坏情况是多一行记录，不会损坏会话 |
 
-安全与边界：历史路径要求文件是 `.jsonl` 且**在会话根内**（主进程 `realpath` 后判前缀），否则「改名字」就变成任意文件追加。`SessionIndex` 已经在读 `session_info.name`（优先于首条用户消息），所以改完刷新列表即生效，不需要额外状态。
+安全与边界：历史路径要求文件是 `.jsonl` 且**在本地会话索引里**（我们用「索引里列出的文件」作授权依据，而不是比对会话根字符串 —— 会话目录可被 `PI_CODING_AGENT_SESSION_DIR` 改变，根字符串比对在真实环境里会误判，这正是「改名无法保存」的成因）。renderer 侧还有一条兜底：任务被标成 live 但子进程已回收（`SESSION_NOT_FOUND`）时，自动改用会话文件路径重试一次。`SessionIndex` 已经在读 `session_info.name`（优先于首条用户消息），所以改完刷新列表即生效，不需要额外状态。
 
 UI：任务标题**双击**进入编辑，`Enter` 保存、`Esc` 取消；失败保持编辑态并报错。刻意**不在失焦时关闭** —— 双击的第二下会立刻让输入框失焦，否则「刚出现就被关掉」。
 
@@ -451,6 +451,7 @@ UI：任务标题**双击**进入编辑，`Enter` 保存、`Esc` 取消；失败
 
 **A22 引用工作区文件**：输入框的「引用文件」按钮选一个文件，把**工作区相对路径**插进消息。
 
+- 对话框**同时允许选文件与文件夹**（`openFile` + `openDirectory`）；选到文件夹时插入该目录的相对路径。
 - 为什么不是 `@path`：pi 的 `@file` **只在 CLI 解析**，`docs/cli.md` 明确写着「RPC mode rejects `@file` arguments」。所以客户端不能假装 `@` 语法能附文件；插入相对路径、让模型用自己的 `read` 工具去读，是 RPC 集成下唯一真实可行的引用方式。
 - 边界由主进程判定：用户可以在原生对话框里导航到工作区外，renderer 无权决定「这算不算本任务的文件」。主进程用会话的 `workspaceOf(sessionKey)` 取根，`realpath` 两侧归一后判前缀，越界直接 `VALIDATION`（与 §5.4 路径校验同一套规则）。
 - 取消不是错误：返回 `canceled: true`，UI 静默忽略（不弹红条）。
