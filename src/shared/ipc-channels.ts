@@ -50,6 +50,8 @@ export const IPC_INVOKE_CHANNELS = {
   fsPickDirectory: 'fs:pickDirectory',
   /** A22：选择工作区内的单个文件（返回工作区相对路径，供消息里引用） */
   fsPickWorkspaceFile: 'fs:pickWorkspaceFile',
+  /** A27：列出工作区目录内容（应用内引用选择器） */
+  fsListWorkspaceDir: 'fs:listWorkspaceDir',
   fsListArtifacts: 'fs:listArtifacts',
   fsReadText: 'fs:readText',
   fsDiff: 'fs:diff',

@@ -15,6 +15,7 @@ import type {
   BootState,
   DiagnosticEvent,
   Diagnostics,
+  DirListing,
   ExtUiEvent,
   ModelInfo,
   PermissionStatus,
@@ -192,6 +193,12 @@ export interface PiInvokeApi {
      * 所以这里只把相对路径插进消息，让模型用自己的 read 工具去读。
      * 取消返回 `canceled: true`（不是错误）。
      */
+    /** A27：列出工作区目录（应用内引用选择器；与 pickWorkspaceFile 二选一的入口） */
+    listWorkspaceDir(input: {
+      sessionKey?: string
+      sessionFile?: string
+      path?: string
+    }): Promise<Result<DirListing>>
     pickWorkspaceFile(input: {
       /** 活跃会话 */
       sessionKey?: string

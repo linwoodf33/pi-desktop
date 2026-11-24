@@ -460,7 +460,7 @@ UI：任务标题**双击**进入编辑，`Enter` 保存、`Esc` 取消；失败
 
 **A22 引用工作区文件**：输入框的「引用文件」按钮选一个文件，把**工作区相对路径**插进消息。
 
-- **文件与文件夹分成两个动作**（「引用文件」/「引用文件夹」）。原因是 Electron 的平台限制（其类型文档原文）：`On Windows and Linux an open dialog can not be both a file selector and a directory selector, so if you set properties to ['openFile','openDirectory'] on these platforms, a directory selector will be shown.` —— v0.9.2 想「一个按钮两用」，结果在 Windows 上只剩目录选择器。现在按 `kind` 二选一：`['openFile']` / `['openDirectory']`。
+- **文件与文件夹统一在应用内选择器里**（A27）。Electron 的平台限制（其类型文档原文）：`On Windows and Linux an open dialog can not be both a file selector and a directory selector, so if you set properties to ['openFile','openDirectory'] on these platforms, a directory selector will be shown.` —— 原生对话框做不到「一个入口两用」，所以改用自绘列表（`fs:listWorkspaceDir`）：文件夹与文件并列，点文件夹进入、点文件插入，顶部可「引用此文件夹」。边界仍由主进程 path-guard 收敛，符号链接不跟随，单目录 >500 条显式 `truncated`。
 - 为什么不是 `@path`：pi 的 `@file` **只在 CLI 解析**，`docs/cli.md` 明确写着「RPC mode rejects `@file` arguments」。所以客户端不能假装 `@` 语法能附文件；插入相对路径、让模型用自己的 `read` 工具去读，是 RPC 集成下唯一真实可行的引用方式。
 - 边界由主进程判定：用户可以在原生对话框里导航到工作区外，renderer 无权决定「这算不算本任务的文件」。主进程用会话的 `workspaceOf(sessionKey)` 取根，`realpath` 两侧归一后判前缀，越界直接 `VALIDATION`（与 §5.4 路径校验同一套规则）。
 - 取消不是错误：返回 `canceled: true`，UI 静默忽略（不弹红条）。

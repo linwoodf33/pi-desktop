@@ -11,7 +11,6 @@ import { NewTaskDialog } from '../features/tasks/NewTaskDialog'
 import { TaskList } from '../features/tasks/TaskList'
 import {
   abortRun,
-  pickWorkspaceFile,
   renameTask,
   continueConversation,
   forkTask,
@@ -188,7 +187,14 @@ export function App() {
           onAbort={() => {
             void abortRun()
           }}
-          onPickFile={(kind) => pickWorkspaceFile(kind)}
+          {...(task === undefined
+            ? {}
+            : {
+                referenceTarget: {
+                  ...(task.sessionKey === undefined ? {} : { sessionKey: task.sessionKey }),
+                  ...(task.filePath === undefined ? {} : { sessionFile: task.filePath })
+                }
+              })}
           onNewTask={openDialog}
           onLocate={() => {
             useRunStore.getState().setLocating(true)

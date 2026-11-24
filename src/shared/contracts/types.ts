@@ -119,6 +119,25 @@ export const diagnosticsSchema = z.object({
 
 export type Diagnostics = z.infer<typeof diagnosticsSchema>
 
+/**
+ * A27：工作区目录列举（应用内「引用文件/文件夹」选择器）。
+ *
+ * 为什么自己画选择器：Windows 上原生对话框不能同时选文件与文件夹
+ * （`['openFile','openDirectory']` 只会弹目录选择器），所以「一个按钮两用」
+ * 只能由应用内列表实现。
+ */
+export const dirListingSchema = z.object({
+  /** 当前目录的工作区相对路径（POSIX；根为 ''） */
+  relative: z.string(),
+  entries: z.array(z.object({ name: z.string(), kind: z.enum(['file', 'directory']) })),
+  /** 条目被上限截断（大目录不静默截断） */
+  truncated: z.boolean(),
+  /** 父目录的相对路径；已在根时为 undefined */
+  parentRelative: z.string().optional()
+})
+
+export type DirListing = z.infer<typeof dirListingSchema>
+
 /** 会话摘要（来自 session JSONL 只读索引，§5.2 SessionIndex） */
 export const sessionSummarySchema = z.object({
   id: z.string(),

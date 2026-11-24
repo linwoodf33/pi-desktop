@@ -79,6 +79,7 @@ const api: PiApi = {
   fs: {
     pickDirectory: (input) => invoke(IPC_INVOKE_CHANNELS.fsPickDirectory, input ?? {}),
     pickWorkspaceFile: (input) => invoke(IPC_INVOKE_CHANNELS.fsPickWorkspaceFile, input),
+    listWorkspaceDir: (input) => invoke(IPC_INVOKE_CHANNELS.fsListWorkspaceDir, input),
     listArtifacts: (input) => invoke(IPC_INVOKE_CHANNELS.fsListArtifacts, input),
     readText: (input) => invoke(IPC_INVOKE_CHANNELS.fsReadText, input),
     diff: (input) => invoke(IPC_INVOKE_CHANNELS.fsDiff, input)

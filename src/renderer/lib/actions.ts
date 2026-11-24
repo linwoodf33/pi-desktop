@@ -552,49 +552,6 @@ export async function renameTask(
 }
 
 /**
- * A22：选一个工作区文件，返回**工作区相对路径**（取消/失败返回 undefined）。
- *
- * 为什么不插入 `@path`：pi 的 `@file` 只在 CLI 解析，RPC 模式明确拒绝
- * （docs/cli.md#rpc-mode-rejects-file-arguments）。所以这里只把相对路径插进消息，
- * 让模型用自己的 read 工具去读 —— 这是 RPC 集成下唯一真实可行的引用方式。
- */
-export async function pickWorkspaceFile(
-  kind: 'file' | 'directory' = 'file',
-  deps: ActionDeps = {}
-): Promise<string | undefined> {
-  const api = resolveApi(deps)
-  if (api === undefined) return undefined
-  const task = selectedTask()
-  if (task === undefined) return undefined
-  // 活跃会话用 sessionKey；历史（回放）任务只有会话文件 → 让主进程从 JSONL 的 cwd 定位工作区
-  const ref =
-    task.sessionKey !== undefined
-      ? { sessionKey: task.sessionKey }
-      : task.filePath !== undefined
-        ? { sessionFile: task.filePath }
-        : undefined
-  if (ref === undefined) {
-    useRunStore.getState().pushBanner({
-      level: 'warn',
-      message: '该任务既没有活跃会话也没有会话文件，无法确定工作区'
-    })
-    return undefined
-  }
-
-  const result = await api.fs.pickWorkspaceFile({
-    ...ref,
-    kind,
-    ...(task.cwd.length === 0 ? {} : { defaultPath: task.cwd })
-  })
-  if (!result.ok) {
-    reportError(result.error)
-    return undefined
-  }
-  if (result.data.canceled) return undefined
-  return result.data.relative
-}
-
-/**
  * 停止（E4）：点击即置灰 + 提示「已中止」，随后等 `session:abort` 收尾回 idle。
  * pi 的 abort 会等会话 idle 后才响应（docs/rpc-commands.md#abort），
  * 因此 UI 反馈不能依赖响应到达。

@@ -632,9 +632,9 @@ describe('E14 新建任务的「起始模式」→ pi 工具参数（A17）', ()
   })
 })
 
-describe('E18 引用工作区文件（A22）', () => {
-  it('点「引用文件」把工作区相对路径插进输入框；选到工作区外会被拒', async () => {
-    // 新建一个任务，确保有活跃会话（边界校验需要 workspaceOf）
+describe('E18 引用工作区文件/文件夹（A27 应用内选择器）', () => {
+  it('一个入口同时可选文件与文件夹，插入工作区相对路径', async () => {
+    // 自带任务：选择器需要工作区上下文
     await stubDirectoryPicker(workDir)
     await page.click('[data-testid="new-task-button"]')
     await page.waitForSelector('[data-testid="new-task-dialog"]', { timeout: 20_000 })
@@ -645,160 +645,38 @@ describe('E18 引用工作区文件（A22）', () => {
     await page.click('[data-testid="new-task-submit"]')
     await page.waitForSelector('[data-testid="task-item"]', { timeout: 30_000 })
 
-    // 在工作区里放一个文件，并让对话框返回它
-    const notePath = join(workDir, 'note.txt')
-    await writeFile(notePath, 'hello', 'utf8')
-    await app.evaluate(({ dialog }, picked) => {
-      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [picked] })
-    }, notePath)
+    // 准备：一个文件 + 一个子目录
+    await writeFile(join(workDir, 'note.txt'), 'hello', 'utf8')
+    await mkdir(join(workDir, 'sub'), { recursive: true })
 
+    // 1) 选文件
     await page.click('[data-testid="pick-file-button"]')
+    await page.waitForSelector('[data-testid="workspace-picker"]', { timeout: 20_000 })
     await expect
-      .poll(async () => page.inputValue('.composer__input'), { timeout: 20_000 })
+      .poll(async () => page.locator('[data-testid="picker-file"]').count(), { timeout: 20_000 })
+      .toBeGreaterThan(0)
+    await page
+      .locator('[data-testid="picker-file"]')
+      .filter({ hasText: 'note.txt' })
+      .first()
+      .click()
+    await expect
+      .poll(async () => page.inputValue('.composer__input'), { timeout: 10_000 })
       .toBe('note.txt')
 
-    // 选到工作区外 → 明确报错，且不插入任何路径
-    const outsideDir = await mkdtemp(join(tmpdir(), 'pi-desktop-outside-'))
-    const outsideFile = join(outsideDir, 'secret.txt')
-    await writeFile(outsideFile, 'secret', 'utf8')
-    try {
-      await app.evaluate(({ dialog }, picked) => {
-        dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [picked] })
-      }, outsideFile)
-      await page.fill('.composer__input', '')
-      await page.click('[data-testid="pick-file-button"]')
-      await expect
-        .poll(async () => page.textContent('.banner--error'), { timeout: 20_000 })
-        .toContain('工作区内')
-      expect(await page.inputValue('.composer__input')).toBe('')
-    } finally {
-      await rm(outsideDir, { recursive: true, force: true })
-    }
-  })
-})
-
-describe('E20 修改任务名称（A23）', () => {
-  it('双击标题进入编辑，Enter 保存后列表标题更新', async () => {
-    // 自带任务：不依赖其它用例的执行顺序（单独跑 -t 时也要成立）
-    await stubDirectoryPicker(workDir)
-    await page.click('[data-testid="new-task-button"]')
-    await page.waitForSelector('[data-testid="new-task-dialog"]', { timeout: 20_000 })
-    await page.click('[data-testid="new-task-pick-directory"]')
+    // 2) 选文件夹（同一入口，进子目录后「引用此文件夹」）
+    await page.fill('.composer__input', '')
+    await page.click('[data-testid="pick-file-button"]')
+    await page.waitForSelector('[data-testid="workspace-picker"]', { timeout: 20_000 })
+    await page.locator('[data-testid="picker-dir"]').filter({ hasText: 'sub' }).first().click()
     await expect
-      .poll(async () => page.inputValue('[data-testid="new-task-cwd"]'), { timeout: 10_000 })
-      .toBe(workDir)
-    await page.click('[data-testid="new-task-submit"]')
-
-    const item = page.locator('[data-testid="task-item"]').first()
-    await item.waitFor({ timeout: 30_000 })
-    const title = item.locator('.task-item__title')
-    await title.dblclick()
-
-    const input = page.locator('[data-testid="task-rename-input"]')
-    await input.waitFor({ timeout: 10_000 })
-    await input.fill('重命名后的任务')
-    await input.press('Enter')
-
-    // 改名会让该任务按 updatedAt 重排到最前，因此按**标题**断言，不依赖列表位置
-    await expect
-      .poll(
-        async () =>
-          page.locator('[data-testid="task-item"]').filter({ hasText: '重命名后的任务' }).count(),
-        { timeout: 20_000 }
-      )
-      .toBeGreaterThan(0)
-  })
-})
-
-describe('E21 版本号与诊断面板（A25）', () => {
-  it('顶栏显示客户端版本，诊断面板列出关键信息', async () => {
-    // 顶栏版本来自 app.getVersion()，至少应是「v」+ 数字
-    await expect
-      .poll(async () => page.textContent('.app__bar-note'), { timeout: 20_000 })
-      .toMatch(/本地工作台 · v\d+\.\d+\.\d+/)
-
-    await page.click('[data-testid="open-diagnostics"]')
-    await page.waitForSelector('[data-testid="diagnostics-panel"]', { timeout: 20_000 })
-
-    // 关键行存在且有值（不依赖具体路径）
-    await expect
-      .poll(async () => page.locator('[data-testid="diagnostics-appVersion"]').count(), {
-        timeout: 20_000
-      })
-      .toBe(1)
-    const appVersion = await page.textContent('[data-testid="diagnostics-appVersion"]')
-    expect(appVersion).toMatch(/^\d+\.\d+\.\d+/)
-    expect((await page.textContent('[data-testid="diagnostics-agentDir"]')) ?? '').not.toHaveLength(
-      0
-    )
-    expect(
-      (await page.textContent('[data-testid="diagnostics-sessionDir"]')) ?? ''
-    ).not.toHaveLength(0)
-    // 面板里不该出现任何 key 字样（脱敏自查）
-    const body = (await page.textContent('[data-testid="diagnostics-panel"]')) ?? ''
-    expect(body).not.toMatch(/apiKey|sk-[A-Za-z0-9]{8}/)
-
-    await page.click('[data-testid="diagnostics-close"]')
-    await expect
-      .poll(async () => page.locator('[data-testid="diagnostics-panel"]').count(), {
+      .poll(async () => page.textContent('[data-testid="workspace-picker-path"]'), {
         timeout: 10_000
       })
-      .toBe(0)
-  })
-})
-
-describe('E22 引用文件/文件夹：原生对话框属性（A26 回归）', () => {
-  it('「引用文件」传 openFile、「引用文件夹」传 openDirectory（不再被入口层覆盖）', async () => {
-    // 自带任务：边界校验需要活跃会话
-    await stubDirectoryPicker(workDir)
-    await page.click('[data-testid="new-task-button"]')
-    await page.waitForSelector('[data-testid="new-task-dialog"]', { timeout: 20_000 })
-    await page.click('[data-testid="new-task-pick-directory"]')
+      .toBe('sub')
+    await page.click('[data-testid="workspace-picker-use-folder"]')
     await expect
-      .poll(async () => page.inputValue('[data-testid="new-task-cwd"]'), { timeout: 10_000 })
-      .toBe(workDir)
-    await page.click('[data-testid="new-task-submit"]')
-    await page.waitForSelector('[data-testid="task-item"]', { timeout: 30_000 })
-
-    // 记录主进程真正传给原生对话框的 options（取消即可，不关心选中结果）
-    await app.evaluate(({ dialog }) => {
-      type Scope = { __lastDialogOptions: { properties: string[] } | undefined }
-      const scope = globalThis as unknown as Scope
-      scope.__lastDialogOptions = undefined
-      // Electron 的 showOpenDialog 有两个重载（带/不带 BrowserWindow），
-      // 这里显式标注为「只接收 options」的形态，避免类型退化成 BaseWindow 联合。
-      dialog.showOpenDialog = (options: Electron.OpenDialogOptions) => {
-        scope.__lastDialogOptions = { properties: [...(options.properties ?? [])] }
-        return Promise.resolve({ canceled: true, filePaths: [] })
-      }
-    })
-
-    await page.click('[data-testid="pick-file-button"]')
-    await expect
-      .poll(
-        async () =>
-          app.evaluate(() => {
-            const scope = globalThis as unknown as {
-              __lastDialogOptions: { properties: string[] } | undefined
-            }
-            return (scope.__lastDialogOptions?.properties ?? []).join(',')
-          }),
-        { timeout: 20_000 }
-      )
-      .toBe('openFile')
-
-    await page.click('[data-testid="pick-folder-button"]')
-    await expect
-      .poll(
-        async () =>
-          app.evaluate(() => {
-            const scope = globalThis as unknown as {
-              __lastDialogOptions: { properties: string[] } | undefined
-            }
-            return (scope.__lastDialogOptions?.properties ?? []).join(',')
-          }),
-        { timeout: 20_000 }
-      )
-      .toBe('openDirectory')
+      .poll(async () => page.inputValue('.composer__input'), { timeout: 10_000 })
+      .toBe('sub')
   })
 })

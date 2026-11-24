@@ -33,11 +33,18 @@ import type {
 
 import { IpcFailure } from '../../shared/contracts/result'
 
+import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
 
 import type { AgentCatalog } from '../services/agent-catalog'
 import { appendSessionName } from '../services/pi-session-name'
-import { isInsideRoot, normalizeForCompare, toPosixRelative } from '../services/path-guard'
+import { listDirectoryContent } from '../services/workspace-listing'
+import {
+  isInsideRoot,
+  normalizeForCompare,
+  resolveWorkspaceTarget,
+  toPosixRelative
+} from '../services/path-guard'
 import { realpathNative } from '../services/realpath-native'
 import type { ModelConfigStore } from '../services/model-config-store'
 
@@ -120,7 +127,9 @@ const DEFAULT_TIMEOUTS: Partial<Record<InvokeChannel, number>> = {
   // agent 目录：扫本地目录 + 一次 `pi --help` 能力探测（有 60s 缓存）
   [IPC_INVOKE_CHANNELS.agentsList]: 20_000,
   // 选文件走原生对话框（用户可能停留很久），给足预算；取消不算失败
-  [IPC_INVOKE_CHANNELS.fsPickWorkspaceFile]: 300_000
+  [IPC_INVOKE_CHANNELS.fsPickWorkspaceFile]: 300_000,
+  // A27：列个工作区目录（只读 readdir）
+  [IPC_INVOKE_CHANNELS.fsListWorkspaceDir]: 15_000
 }
 
 type SessionListInput = z.infer<typeof sessionListInputSchema>
@@ -255,6 +264,30 @@ export function createRouter(
         ...(input.maxRecords === undefined ? {} : { maxRecords: input.maxRecords }),
         ...(input.allowMissing === undefined ? {} : { allowMissing: input.allowMissing })
       })
+    },
+
+    /**
+     * A27：列出工作区目录内容（应用内「引用文件/文件夹」选择器）。
+     *
+     * 一个按钮同时支持选文件与文件夹 —— Windows 上原生对话框做不到，
+     * 所以由应用内列表实现；`path` 一律交给 path-guard 收敛，边界只有这一处。
+     */
+    [IPC_INVOKE_CHANNELS.fsListWorkspaceDir]: async (raw) => {
+      const input = raw as { sessionKey?: string; sessionFile?: string; path?: string }
+      const root = await resolveWorkspaceRootForPick(input)
+      if (root === undefined) {
+        throw new IpcFailure('NOT_FOUND', '无法确定该任务的工作区（会话缺少目录信息）')
+      }
+      const realRoot = await realpathNative(root).catch(() => root)
+      const target = await resolveWorkspaceTarget({
+        root: realRoot,
+        raw: input.path === undefined || input.path.length === 0 ? '.' : input.path
+      })
+      const stats = statSync(target.realPath)
+      if (!stats.isDirectory()) {
+        throw new IpcFailure('VALIDATION', '该路径不是目录', target.relative)
+      }
+      return listDirectoryContent({ absoluteDir: target.realPath, relative: target.relative })
     },
 
     /**

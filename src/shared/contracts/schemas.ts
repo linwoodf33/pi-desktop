@@ -334,6 +334,17 @@ export const invokeInputSchemas = {
   [IPC_INVOKE_CHANNELS.extuiRespond]: extuiRespondInputSchema,
   [IPC_INVOKE_CHANNELS.fsPickDirectory]: fsPickDirectoryInputSchema,
   [IPC_INVOKE_CHANNELS.fsPickWorkspaceFile]: fsPickWorkspaceFileInputSchema,
+  [IPC_INVOKE_CHANNELS.fsListWorkspaceDir]: z
+    .object({
+      sessionKey: sessionKeySchema.optional(),
+      sessionFile: z.string().min(1).max(2048).optional(),
+      /** 工作区相对路径；省略 = 工作区根 */
+      path: z.string().max(2048).optional()
+    })
+    .strict()
+    .refine((value) => value.sessionKey !== undefined || value.sessionFile !== undefined, {
+      message: '需要 sessionKey 或 sessionFile 以确定工作区'
+    }),
   [IPC_INVOKE_CHANNELS.fsListArtifacts]: fsListArtifactsInputSchema,
   [IPC_INVOKE_CHANNELS.fsReadText]: fsReadTextInputSchema,
   [IPC_INVOKE_CHANNELS.fsDiff]: fsDiffInputSchema,

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { WorkspacePicker } from '../reference/WorkspacePicker'
 import { phaseLabel } from '../../lib/format'
 import {
   MAX_IMAGES_PER_MESSAGE,
@@ -26,8 +27,11 @@ export interface ComposerProps {
   /** `images` 是 data URL 数组（A19：粘贴截图） */
   onSend: (text: string, images: string[]) => void
   onAbort: () => void
-  /** A22/A24：选工作区文件或文件夹（返回相对路径；取消返回 undefined） */
-  onPickFile?: (kind: 'file' | 'directory') => Promise<string | undefined>
+  /**
+   * A27：会话引用（活跃会话 sessionKey / 历史任务 sessionFile）。
+   * 有它才显示「引用」按钮 —— 选择器需要工作区上下文。
+   */
+  referenceTarget?: { sessionKey?: string; sessionFile?: string }
 }
 
 export function Composer({
@@ -37,7 +41,7 @@ export function Composer({
   disabled,
   onSend,
   onAbort,
-  onPickFile
+  referenceTarget
 }: ComposerProps) {
   const [input, setInput] = useState('')
   /** 已粘贴、待发送的图片（A19） */
@@ -45,6 +49,8 @@ export function Composer({
   const [pasteError, setPasteError] = useState<string | undefined>(undefined)
   /** 拖拽悬停中（用于高亮投放区）；只在真的含图片时亮起 */
   const [dragging, setDragging] = useState(false)
+  /** A27：应用内引用选择器（一个入口同时选文件与文件夹） */
+  const [pickerOpen, setPickerOpen] = useState(false)
   // 只有图片、没有文字也应允许发送（截图直接问「这是什么」）
   const canSend = !disabled && !aborting && (input.trim().length > 0 || images.length > 0)
   const canAbort = !disabled && !aborting && phase !== 'idle'
@@ -177,6 +183,19 @@ export function Composer({
         </div>
       ) : null}
 
+      {pickerOpen && referenceTarget !== undefined ? (
+        <WorkspacePicker
+          target={referenceTarget}
+          onPick={(relative) => {
+            insertPath(relative)
+            setPickerOpen(false)
+          }}
+          onClose={() => {
+            setPickerOpen(false)
+          }}
+        />
+      ) : null}
+
       <div className="composer__actions">
         <span className="composer__state" data-testid="composer-state">
           {/* E4：点击停止就立即提示「已中止」，不依赖 abort 响应到达 */}
@@ -186,27 +205,13 @@ export function Composer({
           type="button"
           className="btn btn--ghost"
           data-testid="pick-file-button"
-          disabled={disabled || onPickFile === undefined}
-          title="插入工作区文件的相对路径（模型会用自己的 read 工具去读）"
+          disabled={disabled || referenceTarget === undefined}
+          title="插入工作区文件或文件夹的相对路径（模型会用自己的 read 工具去读）"
           onClick={() => {
-            if (onPickFile === undefined) return
-            void onPickFile('file').then(insertPath)
+            setPickerOpen(true)
           }}
         >
-          引用文件
-        </button>
-        <button
-          type="button"
-          className="btn btn--ghost"
-          data-testid="pick-folder-button"
-          disabled={disabled || onPickFile === undefined}
-          title="插入工作区文件夹的相对路径（Windows 上原生对话框只能二选一，所以文件/文件夹分开）"
-          onClick={() => {
-            if (onPickFile === undefined) return
-            void onPickFile('directory').then(insertPath)
-          }}
-        >
-          引用文件夹
+          引用
         </button>
         <button
           type="button"

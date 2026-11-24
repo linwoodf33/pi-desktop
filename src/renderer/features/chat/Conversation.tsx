@@ -45,8 +45,8 @@ export interface ConversationProps {
   /** `images` 是 data URL 数组（A19：粘贴截图） */
   onSend: (text: string, images: string[]) => void
   onAbort: () => void
-  /** A22/A24：选工作区文件或文件夹（Windows 上原生对话框只能二选一） */
-  onPickFile?: (kind: 'file' | 'directory') => Promise<string | undefined>
+  /** A27：引用选择器需要的会话引用 */
+  referenceTarget?: { sessionKey?: string; sessionFile?: string }
   onNewTask: () => void
   onLocate: () => void
   /** 历史任务：启动 pi 进程继续对话 */
@@ -72,7 +72,7 @@ export function Conversation({
   forking,
   onSend,
   onAbort,
-  onPickFile,
+  referenceTarget,
   onNewTask,
   onLocate,
   onContinue,
@@ -198,7 +198,7 @@ export function Conversation({
         disabled={task === undefined}
         onSend={onSend}
         onAbort={onAbort}
-        {...(onPickFile === undefined ? {} : { onPickFile })}
+        {...(referenceTarget === undefined ? {} : { referenceTarget })}
       />
     </section>
   )

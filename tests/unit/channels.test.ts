@@ -53,6 +53,8 @@ describe('IPC 通道白名单（§5.4）', () => {
         'fs:pickDirectory',
         // A22 补充：引用工作区文件（返回工作区相对路径）
         'fs:pickWorkspaceFile',
+        // A27 补充：列出工作区目录（应用内引用选择器）
+        'fs:listWorkspaceDir',
         'fs:listArtifacts',
         'fs:readText',
         'fs:diff',
