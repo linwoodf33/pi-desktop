@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { expandPastes, planPaste, pruneBlocks, type PasteBlock } from '../../lib/paste'
 import { WorkspacePicker } from '../reference/WorkspacePicker'
 import { phaseLabel } from '../../lib/format'
 import {
@@ -51,17 +52,22 @@ export function Composer({
   const [dragging, setDragging] = useState(false)
   /** A27：应用内引用选择器（一个入口同时选文件与文件夹） */
   const [pickerOpen, setPickerOpen] = useState(false)
+  /** A28：多行粘贴折叠成的块（发送时展开） */
+  const [pasteBlocks, setPasteBlocks] = useState<PasteBlock[]>([])
   // 只有图片、没有文字也应允许发送（截图直接问「这是什么」）
   const canSend = !disabled && !aborting && (input.trim().length > 0 || images.length > 0)
   const canAbort = !disabled && !aborting && phase !== 'idle'
 
   const submit = (): void => {
-    const text = input.trim()
+    const raw = input.trim()
     if (!canSend) return
-    if (text.length === 0 && images.length === 0) return
+    if (raw.length === 0 && images.length === 0) return
+    // A28：把仍留在输入框里的占位符展开回原文再发
+    const text = expandPastes(raw, pasteBlocks)
     const payload = images.map((image) => image.dataUrl)
     setInput('')
     setImages([])
+    setPasteBlocks([])
     setPasteError(undefined)
     onSend(text, payload)
   }
@@ -83,10 +89,25 @@ export function Composer({
   /** Ctrl+V：从剪贴板取图片（截图工具通常给 `image/png`）；纯文本粘贴走默认行为 */
   const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>): void => {
     if (disabled) return
+
     const hasImage = Array.from(event.clipboardData.items).some(
       (item) => item.kind === 'file' && item.type.startsWith('image/')
     )
-    if (!hasImage) return
+
+    // A28：纯文本的多行粘贴 → 折叠成 `[paste #1-20 lines]`
+    if (!hasImage) {
+      const pasted = event.clipboardData.getData('text/plain')
+      const plan = planPaste(pasted, pasteBlocks.length + 1)
+      if (!plan.compacted || plan.block === undefined) return
+      event.preventDefault()
+      const target = event.currentTarget
+      const start = target.selectionStart
+      const end = target.selectionEnd
+      setInput((current) => `${current.slice(0, start)}${plan.insertText}${current.slice(end)}`)
+      setPasteBlocks((current) => [...current, plan.block as PasteBlock])
+      return
+    }
+
     // 有图片时阻止默认：否则某些平台会把图片当文件名插进 textarea
     event.preventDefault()
     void readClipboardImages(event.nativeEvent, images.length).then(appendImages)
@@ -132,7 +153,10 @@ export function Composer({
         value={input}
         disabled={disabled}
         onChange={(event) => {
-          setInput(event.target.value)
+          const value = event.target.value
+          setInput(value)
+          // 占位符被删掉后就不该再展开（否则「删了却还在发」）
+          setPasteBlocks((current) => pruneBlocks(value, current))
         }}
         onPaste={handlePaste}
         onKeyDown={(event) => {

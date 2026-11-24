@@ -247,3 +247,47 @@ describe('对话里的图片缩略图与查看器（A21）', () => {
       .toBe(0)
   })
 })
+
+describe('多行粘贴折叠（A28）', () => {
+  it('20 行文本折叠成占位符，发送时展开为完整原文', async () => {
+    const lines = Array.from({ length: 20 }, (_, index) => `第 ${index + 1} 行 PASTEMARK`)
+    const payload = lines.join(String.fromCharCode(10))
+
+    await page.evaluate((text) => {
+      const data = new DataTransfer()
+      data.setData('text/plain', text)
+      const input = document.querySelector('.composer__input')
+      if (!(input instanceof HTMLTextAreaElement)) throw new Error('找不到输入框')
+      input.focus()
+      input.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true })
+      )
+    }, payload)
+
+    // 输入框里是占位符，不是 20 行原文
+    await expect
+      .poll(async () => page.inputValue('.composer__input'), { timeout: 20_000 })
+      .toContain('[paste #1-20 lines]')
+
+    await page.click('[data-testid="send-button"]')
+
+    // 上游收到的是**展开后的完整原文**
+    await expect
+      .poll(
+        async () => {
+          const raw = await readFile(promptFile, 'utf8').catch(() => '')
+          const last = raw
+            .split('\n')
+            .filter((line) => line.length > 0)
+            .at(-1)
+          if (last === undefined) return 'none'
+          const record = JSON.parse(last) as { text: string }
+          const ok =
+            record.text.includes('第 1 行 PASTEMARK') && record.text.includes('第 20 行 PASTEMARK')
+          return ok ? 'expanded' : `bad:${record.text.slice(0, 40)}`
+        },
+        { timeout: 30_000 }
+      )
+      .toBe('expanded')
+  })
+})
