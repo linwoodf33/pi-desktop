@@ -35,9 +35,12 @@ describe('appendSessionName', () => {
       expect(record).toMatchObject({
         type: 'session_info',
         name: '重构 认证',
-        timestamp: '2026-11-24T00:00:00.000Z'
+        timestamp: '2026-11-24T00:00:00.000Z',
+        // 接上最后一条记录的 id：与 pi 的 RPC set_session_name 写出的形状完全一致
+        parentId: 'a'
       })
-      expect(typeof record['id']).toBe('string')
+      // pi 用 8 位十六进制 id
+      expect(record['id']).toMatch(/^[0-9a-f]{8}$/)
 
       const after = readFileSync(file, 'utf8')
       expect(after.startsWith(original)).toBe(true)

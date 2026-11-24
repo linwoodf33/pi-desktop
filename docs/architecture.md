@@ -419,6 +419,12 @@ interface PiTransport {
 
 #### 修改任务名称（A23，v0.9）
 
+**两条路径落盘效果等价（实测）**：拷一份 2200 行的会话，跑 `pi --mode rpc --session <copy>` + `set_session_name`，结果只多**一行** `session_info`，形状为
+`{"type":"session_info","id":"<8位十六进制>","parentId":"<最后一条记录的 id>","timestamp":"...","name":"..."}`。
+也就是说 RPC 路径**并没有**额外的副作用 —— 它写的就是这条记录。因此历史任务不需要为了「统一」而额外起一个 pi 进程：直接追加同形记录即可，落盘结果一致、且零启动开销、不会把任务临时变成「活跃」。
+
+为了让两者**逐字节同形**，追加路径也接 `parentId = 最后一条记录的 id`、`id` 用 8 位十六进制（早期实现写的是 `parentId: null` + 12 位，属于实现偏差，已修）。
+
 **pi 的会话名不是文件头字段**，而是会话 JSONL 里的一条 `session_info` 记录（`docs/session-format.md`；由 `/name`、`--name` 或扩展 `setSessionName()` 写入）。因此两条路径：
 
 | 场景             | 做法                                                        | 为什么                                                                |

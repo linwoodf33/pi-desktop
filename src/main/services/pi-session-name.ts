@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, statSync } from 'node:fs'
+import { appendFileSync, existsSync, openSync, readSync, closeSync, statSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 
 import { IpcFailure } from '../../shared/contracts/result'
@@ -30,9 +30,51 @@ export interface AppendSessionNameResult {
   record: Record<string, unknown>
 }
 
-/** `session_info` 的 id：pi 用短随机 id，这里保持同风格（12 位十六进制足够本地唯一） */
+/**
+ * `session_info` 的 id：pi 用 **8 位十六进制**（实测 `{"id":"acd34421"}`），这里对齐。
+ */
 function newEntryId(): string {
-  return randomBytes(6).toString('hex')
+  return randomBytes(4).toString('hex')
+}
+
+/**
+ * 读取文件最后一条记录的 `id`，作为 `session_info.parentId`。
+ *
+ * 为什么不能写 `null`：实测 pi 的 RPC `set_session_name` 写出来的是
+ * `parentId = <最后一条记录的 id>`。想做到「与 /name 完全一致」，就必须接上这条链。
+ * 只读尾部 8KB，避免为大文件整读。
+ */
+function lastEntryId(sessionFile: string): string | null {
+  const TAIL_BYTES = 8 * 1024
+  const size = statSync(sessionFile).size
+  const start = Math.max(0, size - TAIL_BYTES)
+  const fd = openSync(sessionFile, 'r')
+  try {
+    const buffer = Buffer.alloc(size - start)
+    readSync(fd, buffer, 0, buffer.length, start)
+    const lines = buffer
+      .toString('utf8')
+      .split(String.fromCharCode(10))
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+    // 从后往前找第一条能解析且带 id 的记录（尾部可能正好切在半个 JSON 上）
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const raw = lines[index]
+      if (raw === undefined) continue
+      try {
+        const parsed: unknown = JSON.parse(raw)
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+          const id = (parsed as Record<string, unknown>)['id']
+          if (typeof id === 'string' && id.length > 0) return id
+        }
+      } catch {
+        continue
+      }
+    }
+    return null
+  } finally {
+    closeSync(fd)
+  }
 }
 
 export function appendSessionName(options: AppendSessionNameOptions): AppendSessionNameResult {
@@ -53,7 +95,7 @@ export function appendSessionName(options: AppendSessionNameOptions): AppendSess
   const record: Record<string, unknown> = {
     type: 'session_info',
     id: newEntryId(),
-    parentId: null,
+    parentId: lastEntryId(sessionFile),
     timestamp: now.toISOString(),
     name
   }
