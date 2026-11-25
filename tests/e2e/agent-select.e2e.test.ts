@@ -109,9 +109,13 @@ describe('新建任务：agent 选择', () => {
     const select = page.locator('[data-testid="new-task-agent"]')
     await expect.poll(async () => select.count(), { timeout: 30_000 }).toBe(1)
 
-    const options = await select
-      .locator('option')
-      .evaluateAll((nodes) => nodes.map((node) => (node as HTMLOptionElement).value))
+    // A33 之后选择器「常驻」：出现时可能还没加载完（只剩默认项），必须等选项真正到位
+    const readOptions = async (): Promise<string[]> =>
+      select
+        .locator('option')
+        .evaluateAll((nodes) => nodes.map((node) => (node as HTMLOptionElement).value))
+    await expect.poll(async () => (await readOptions()).length, { timeout: 30_000 }).toBe(3)
+    const options = await readOptions()
     // 根目录的 scout + 子目录 team/child 都列出
     expect(options).toEqual(['', 'scout', 'child'])
 
@@ -148,5 +152,56 @@ describe('新建任务：agent 选择', () => {
         { timeout: 30_000 }
       )
       .toContain('--agent scout')
+  })
+})
+
+describe('A33：不支持 --agent 时选择器仍在（不静默消失）', () => {
+  it('mock 的 --help 不含 --agent → select 存在、disabled、hint 说明原因', async () => {
+    // 单独起一个实例：MOCK_PI_HELP_HAS_AGENT=0 让能力探测返回「不支持」
+    const tempRoot2 = await mkdtemp(join(tmpdir(), 'pi-desktop-e2e-agent-unsupported-'))
+    const agentDir2 = join(tempRoot2, 'agent')
+    const workDir2 = join(tempRoot2, 'workspace')
+    const sessionDir2 = join(tempRoot2, 'sessions')
+    await mkdir(join(agentDir2, 'agents'), { recursive: true })
+    await mkdir(workDir2, { recursive: true })
+    await mkdir(sessionDir2, { recursive: true })
+    await writeFile(
+      join(agentDir2, 'agents', 'scout.md'),
+      `---\nname: scout\nmode: primary\n---\n\n正文\n`,
+      'utf8'
+    )
+    const wrapper2 = join(tempRoot2, 'mock-pi.cmd')
+    await writeFile(wrapper2, `@echo off\r\nnode "${MOCK_PI}" %*\r\n`, 'utf8')
+
+    const app2 = await electron.launch({
+      args: ['.', `--user-data-dir=${join(tempRoot2, 'userdata')}`],
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        PI_DESKTOP_PI_COMMAND: wrapper2,
+        PI_CODING_AGENT_SESSION_DIR: sessionDir2,
+        PI_CODING_AGENT_DIR: agentDir2,
+        MOCK_PI_HELP_HAS_AGENT: '0'
+      }
+    })
+    try {
+      const page2 = await app2.firstWindow()
+      await page2.waitForSelector('[data-testid="bridge-status"]', { timeout: 60_000 })
+      await page2.click('[data-testid="new-task-button"]')
+      await page2.waitForSelector('[data-testid="new-task-dialog"]', { timeout: 20_000 })
+
+      // 关键：选择器**仍然存在**（以前这里会整块不渲染）
+      const select = page2.locator('[data-testid="new-task-agent"]')
+      await expect.poll(async () => select.count(), { timeout: 30_000 }).toBe(1)
+      expect(await select.isDisabled()).toBe(true)
+
+      // 并且给出可操作的原因
+      const hint = (await page2.textContent('[data-testid="new-task-agent-hint"]')) ?? ''
+      expect(hint.length).toBeGreaterThan(0)
+      expect(hint).toMatch(/--agent|pi-open-agents|未注册/)
+    } finally {
+      await app2.close().catch(() => {})
+      await rm(tempRoot2, { recursive: true, force: true }).catch(() => {})
+    }
   })
 })

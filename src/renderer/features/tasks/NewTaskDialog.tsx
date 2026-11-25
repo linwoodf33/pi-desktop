@@ -10,6 +10,7 @@ import type { AgentCatalogView } from '../../../shared/contracts/agents'
 import { createTask, loadModels } from '../../lib/actions'
 import { getApi } from '../../lib/client'
 import { shortenPath } from '../../lib/format'
+import { useAppStore } from '../../stores/appStore'
 import { useSessionStore } from '../../stores/sessionStore'
 
 /**
@@ -41,6 +42,10 @@ export function NewTaskDialog({
   pickDirectory
 }: NewTaskDialogProps) {
   const models = useSessionStore((state) => state.models)
+  /** pi 自检状态（A33：变化时重新探测 agent 能力） */
+  const piState = useAppStore((state) =>
+    state.bridge.phase === 'ok' ? state.bridge.boot.piStatus.state : 'unknown'
+  )
   const [cwd, setCwd] = useState(defaultCwd ?? '')
   const [model, setModel] = useState('')
   const [thinkingLevel, setThinkingLevel] = useState('off')
@@ -71,6 +76,23 @@ export function NewTaskDialog({
     const groups = [...grouped.entries()].sort((a, b) => a[0].localeCompare(b[0]))
     return { root, groups }
   }, [agentCatalog])
+
+  /**
+   * A33：不可用时**不隐藏整个控件**，而是禁用 + 说明原因。
+   * 之前探测失败（例如 pi 尚未自检完成、或未装 pi-open-agents）会直接不渲染，
+   * 用户看到的就是「agent 选择没了」。
+   */
+  const agentSupported = agentCatalog?.supportsAgentFlag === true
+  const agentCount = agentCatalog?.agents.length ?? 0
+  const agentDisabled = agentCatalog === undefined || !agentSupported || agentCount === 0
+  const agentHint =
+    agentCatalog === undefined
+      ? '正在检测 pi 是否支持 --agent…'
+      : !agentSupported
+        ? (agentCatalog.note ?? '当前 pi 未注册 --agent（需要安装 pi-open-agents 扩展）')
+        : agentCount === 0
+          ? '未发现主 agent（mode: primary/all）：放到 ~/.pi/agent/agents/ 或项目 .pi/agents/'
+          : '只列主 agent（与 TUI /agent 一致）；以它的 system prompt / 模型 / 工具开始会话'
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | undefined>()
 
@@ -80,6 +102,8 @@ export function NewTaskDialog({
 
   // A18：列 agent 目录。带上已选工作目录，才能扫到项目级 `.pi/agents`。
   // 支持与否由主进程探测 `pi --help`（`--agent` 是扩展 flag，未装扩展时传它会启动失败）。
+  // A33：依赖 pi 自检状态 —— 应用刚启动时 pi 可能还没定位完，那时探测必然失败；
+  // 自检状态变化后重新扫一次，避免「打开快了就永远看不到 agent 选择」。
   useEffect(() => {
     const api = getApi()
     if (api === undefined) return
@@ -91,7 +115,7 @@ export function NewTaskDialog({
     return () => {
       live = false
     }
-  }, [cwd])
+  }, [cwd, piState])
 
   const pick = async (): Promise<void> => {
     // 已选任务 → 从该任务的工作区开始；否则交给主进程默认（用户主目录，不是进程启动目录）
@@ -231,47 +255,43 @@ export function NewTaskDialog({
             />
           </label>
 
-          {agentCatalog?.supportsAgentFlag === true ? (
-            <label className="field">
-              <span className="field__label">Agent（会话身份）</span>
-              <select
-                className="field__input"
-                data-testid="new-task-agent"
-                value={agent}
-                disabled={agentCatalog.agents.length === 0}
-                onChange={(event) => {
-                  setAgent(event.target.value)
-                }}
-              >
-                <option value="">默认（不加 --agent）</option>
-                {agentTree.root.map((item) => (
-                  <option key={item.name} value={item.name} title={item.description}>
-                    {item.name}
-                    {item.mode === 'primary' ? '（主）' : ''}
-                    {item.scope === 'project' ? '（项目）' : ''}
-                  </option>
-                ))}
-                {agentTree.groups.map(([label, items]) => (
-                  <optgroup key={label} label={label}>
-                    {items.map((item) => (
-                      <option key={item.name} value={item.name} title={item.description}>
-                        {'　'.repeat(item.group.length)}
-                        {'└ '}
-                        {item.name}
-                        {item.mode === 'primary' ? '（主）' : ''}
-                        {item.scope === 'project' ? '（项目）' : ''}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-              <span className="field__hint">
-                {agentCatalog.agents.length === 0
-                  ? '未发现 agent 定义：放到 ~/.pi/agent/agents/ 或项目 .pi/agents/'
-                  : '以该 agent 的 system prompt / 模型 / 工具开始这个会话；pi 对未知名字会静默忽略，所以这里只列扫描到的定义'}
-              </span>
-            </label>
-          ) : null}
+          <label className="field">
+            <span className="field__label">Agent（会话身份）</span>
+            <select
+              className="field__input"
+              data-testid="new-task-agent"
+              value={agent}
+              disabled={agentDisabled}
+              onChange={(event) => {
+                setAgent(event.target.value)
+              }}
+            >
+              <option value="">默认（不加 --agent）</option>
+              {agentTree.root.map((item) => (
+                <option key={item.name} value={item.name} title={item.description}>
+                  {item.name}
+                  {item.mode === 'primary' ? '（主）' : ''}
+                  {item.scope === 'project' ? '（项目）' : ''}
+                </option>
+              ))}
+              {agentTree.groups.map(([label, items]) => (
+                <optgroup key={label} label={label}>
+                  {items.map((item) => (
+                    <option key={item.name} value={item.name} title={item.description}>
+                      {'　'.repeat(item.group.length)}
+                      {'└ '}
+                      {item.name}
+                      {item.mode === 'primary' ? '（主）' : ''}
+                      {item.scope === 'project' ? '（项目）' : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <span className="field__hint" data-testid="new-task-agent-hint">
+              {agentHint}
+            </span>
+          </label>
 
           <label className="field">
             <span className="field__label">起始模式</span>
