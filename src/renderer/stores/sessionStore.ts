@@ -39,6 +39,11 @@ export interface TaskItem {
   model?: string
   /** 当前推理档位（docs/rpc-commands.md#set_thinking_level） */
   thinkingLevel?: string
+  /**
+   * A38：当前生效的 agent（会话里 `open-agents-state` 条目的名字）。
+   * `undefined` = 未知/未设置（UI 显示「默认」），没有 agent 概念的历史任务也是它。
+   */
+  agent?: string
 }
 
 export interface SessionStoreState {
@@ -63,7 +68,12 @@ export interface SessionStoreState {
   setHistoryTasks: (summaries: SessionSummary[]) => void
   setLoaded: (loaded: boolean) => void
   select: (taskId: string) => void
-  addLiveTask: (input: { sessionKey: string; cwd: string; title?: string }) => string
+  addLiveTask: (input: {
+    sessionKey: string
+    cwd: string
+    title?: string
+    agent?: string
+  }) => string
   attachSessionKey: (taskId: string, sessionKey: string) => void
   setFilePatch: (taskId: string, filePath: string) => void
   ensureChat: (taskId: string) => void
@@ -83,6 +93,14 @@ export interface SessionStoreState {
   resetChat: (taskId: string) => void
   /** 记录当前模型 / 推理档位（切换成功或 session:state 回来后同步） */
   setTaskModel: (taskId: string, model: string | undefined, thinkingLevel?: string) => void
+  /**
+   * A38：写入 / 清除任务当前 agent。
+   *
+   * 三态是刻意的：`string` 更新；`null` = 文件里明确清除（删除字段，回落到默认）；
+   * `undefined` = 读不到（未知），**保持现值**——把「没读到」当成「没有」会误清掉
+   * 刚刚由 `session:create` 入参填好的名字。
+   */
+  setTaskAgent: (taskId: string, agent: string | null | undefined) => void
   /** 写入会话统计（token/成本） */
   setStats: (taskId: string, stats: SessionStats) => void
   setModels: (models: ModelInfo[]) => void
@@ -159,14 +177,15 @@ export const useSessionStore = create<SessionStoreState>()((set, get) => ({
     set({ selectedId: taskId })
   },
 
-  addLiveTask: ({ sessionKey, cwd, title }) => {
+  addLiveTask: ({ sessionKey, cwd, title, agent }) => {
     const id = liveTaskId(sessionKey)
     const task: TaskItem = {
       id,
       title: title ?? '新任务',
       cwd,
       sessionKey,
-      kind: 'live'
+      kind: 'live',
+      ...(agent === undefined || agent.length === 0 ? {} : { agent })
     }
     set((state) => ({
       tasks: mergeTasks(
@@ -265,6 +284,21 @@ export const useSessionStore = create<SessionStoreState>()((set, get) => ({
     set((state) => ({ chats: { ...state.chats, [taskId]: initialChatState } }))
   },
 
+  setTaskAgent: (taskId, agent) => {
+    // 未知（undefined）不动：读不到文件时保持现值，避免把已有名字抹掉
+    if (agent === undefined) return
+    set((state) => ({
+      tasks: state.tasks.map((item) => {
+        if (item.id !== taskId) return item
+        if (agent === null) {
+          const next = { ...item }
+          delete next.agent
+          return next
+        }
+        return { ...item, agent }
+      })
+    }))
+  },
   setTaskModel: (taskId, model, thinkingLevel) => {
     set((state) => ({
       tasks: state.tasks.map((task) =>
@@ -309,10 +343,18 @@ export const useSessionStore = create<SessionStoreState>()((set, get) => ({
       if (task?.sessionKey !== undefined) delete bySessionKey[task.sessionKey]
       const chats = { ...state.chats }
       delete chats[taskId]
+      // 任务没了，按 taskId 存的统计/截断标记也必须一起清：否则并行开关任务
+      // 久了会留下一堆永远读不到的孤儿键。
+      const stats = { ...state.stats }
+      delete stats[taskId]
+      const truncated = { ...state.truncated }
+      delete truncated[taskId]
       return {
         tasks: state.tasks.filter((item) => item.id !== taskId),
         bySessionKey,
         chats,
+        stats,
+        truncated,
         ...(state.selectedId === taskId ? { selectedId: undefined } : {})
       }
     })

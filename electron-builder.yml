@@ -6,6 +6,9 @@ directories:
 files:
   - out/**
   - package.json
+  # A35：审批扩展的源随包分发，安装包内的应用才能自己安装/更新扩展
+  # （扩展最终装到 `<agent-dir>/extensions/pi-desktop-permission`，不在 asar 里运行）
+  - src/extensions/**
   # A11 产物合规：不把 sourcemap / TypeScript 声明文件 / 纯类型包打进安装包。
   # 上游依赖（react-markdown 生态）自带的 *.map 与 *.d.ts 对运行时零作用，
   # 留在 asar 里既增加体积又让「产物无 *.map」的验收无法自证。

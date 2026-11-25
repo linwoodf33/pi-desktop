@@ -12,6 +12,12 @@ export const IPC_INVOKE_CHANNELS = {
   /** A26：写系统剪贴板（主进程执行；file:// 下 renderer 的 navigator.clipboard 不可用） */
   appCopyText: 'app:copyText',
   piLocate: 'pi:locate',
+  /** A34：只读检测远端最新版（失败不报错，返回 unknown） */
+  piUpdateCheck: 'pi:updateCheck',
+  /** A34：执行 `pi update`（真正修改本机安装） */
+  piUpdateApply: 'pi:updateApply',
+  /** A34：取消进行中的更新任务 */
+  piUpdateCancel: 'pi:updateCancel',
   sessionList: 'session:list',
   /** M3 补充：只读回放会话 JSONL（§5.4 注；不启动子进程，§6.1 第 4 步） */
   sessionHistory: 'session:history',
@@ -46,6 +52,14 @@ export const IPC_INVOKE_CHANNELS = {
   /** A32：从 URL 预览/安装公开技能（预览不落盘） */
   skillsPreview: 'skills:preview',
   skillsInstall: 'skills:install',
+  /** A37：读 settings.json + package.json 的只读插件清单 */
+  pkgList: 'pkg:list',
+  /** A37：npm 源查 registry 元数据（失败不阻断安装） */
+  pkgPreview: 'pkg:preview',
+  /** A37：`pi install <source>`（会执行第三方代码） */
+  pkgInstall: 'pkg:install',
+  /** A37：取消进行中的安装（幂等） */
+  pkgInstallCancel: 'pkg:installCancel',
   /** M4：偏好持久化（并行上限 / 空闲回收 / pi 路径 / 会话目录，§5.4 注） */
   configUpdate: 'config:update',
   /** M5：审批扩展的安装/协议状态（只读，不返回任何内容） */
@@ -75,7 +89,11 @@ export const IPC_EVENT_CHANNELS = {
   record: 'evt:record',
   extui: 'evt:extui',
   status: 'evt:status',
-  diagnostic: 'evt:diagnostic'
+  diagnostic: 'evt:diagnostic',
+  /** A34：更新过程逐行输出/状态迁移 */
+  piUpdate: 'evt:piUpdate',
+  /** A37：插件安装过程逐行输出/状态迁移 */
+  pkgInstall: 'evt:pkgInstall'
 } as const
 
 export type EventChannel = (typeof IPC_EVENT_CHANNELS)[keyof typeof IPC_EVENT_CHANNELS]

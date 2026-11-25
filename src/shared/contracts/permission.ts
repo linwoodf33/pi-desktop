@@ -26,6 +26,15 @@ export const PERMISSION_STATUS_KEY = PERMISSION_EXTENSION_NAME
 export const PERMISSION_DEFAULT_TIMEOUT_MS = 120_000
 
 /**
+ * 无 UI 会话的审批策略（与 `extensions/permission/protocol.ts` 同名同值，由 wire 测试钉死）。
+ *
+ * 默认 `deny`：没有审批界面时拒绝，避免「审批」退化成静默自动执行。
+ */
+export type NoUiPolicy = 'deny' | 'allow'
+export const NO_UI_POLICIES: readonly NoUiPolicy[] = ['deny', 'allow']
+export const DEFAULT_NO_UI_POLICY: NoUiPolicy = 'deny'
+
+/**
  * 高危工具默认清单（§Q4：bash / powershell / write / edit / 删除类走 shell 被前者覆盖）。
  *
  * **单一来源**：客户端侧（设置页默认值、ConfigStore）只认这一个常量。
@@ -81,6 +90,8 @@ export interface PermissionHandshake {
   tools: string[]
   timeoutMs: number
   compatible: boolean
+  /** 扩展侧实际生效的无 UI 策略（老扩展不带该字段，按 `deny` 解读） */
+  noUi?: NoUiPolicy
 }
 
 export type ExtUiClassification =
@@ -254,7 +265,10 @@ export function parseHandshake(
       typeof raw['timeoutMs'] === 'number' && Number.isFinite(raw['timeoutMs'])
         ? Math.round(raw['timeoutMs'])
         : PERMISSION_DEFAULT_TIMEOUT_MS,
-    compatible: raw['compatible'] !== false
+    compatible: raw['compatible'] !== false,
+    // noUi 缺省或非法都归 deny，但**不**因此返回 undefined：
+    // 否则会把同一份握手里的 enabled/tools 信息一起丢掉，得不偿失。
+    noUi: raw['noUi'] === 'allow' ? 'allow' : DEFAULT_NO_UI_POLICY
   }
 }
 

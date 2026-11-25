@@ -20,6 +20,7 @@ import {
   clientApprovalTimeoutMs,
   optionForChoice,
   parseApprovalTitle,
+  parseHandshake,
   toExtensionUiResponse,
   CLIENT_APPROVAL_LEAD_MS
 } from '../../src/shared/contracts/permission'
@@ -279,5 +280,67 @@ describe('策略解析 fail-closed', () => {
   it('工具名统一小写去重', () => {
     const policy = parsePolicy(JSON.stringify({ tools: ['Bash', 'bash', ' Write '] }))
     expect(policy.tools).toEqual(['bash', 'write'])
+  })
+})
+
+describe('握手里的无 UI 策略（noUi，A35）', () => {
+  function handshakeEvent(statusText: string): ExtUiEvent {
+    return {
+      sessionKey: 's1',
+      request: {
+        type: 'extension_ui_request',
+        id: 'hs-no-ui',
+        method: 'setStatus',
+        statusKey: PERMISSION_STATUS_KEY,
+        statusText
+      }
+    }
+  }
+
+  it('新扩展握手带 noUi:allow → 解析仍是 allow，且不影响兼容性', () => {
+    const statusText = encodeHandshake(
+      buildHandshake(parsePolicy(JSON.stringify({ noUi: 'allow' })))
+    )
+    expect(parseHandshake(statusText)?.noUi).toBe('allow')
+
+    const result = classifyExtUi(handshakeEvent(statusText))
+    expect(result.kind).toBe('handshake')
+    if (result.kind !== 'handshake') throw new Error('unreachable')
+    expect(result.handshake.noUi).toBe('allow')
+    expect(result.compatible).toBe(true)
+  })
+
+  it('老扩展握手不含 noUi → 按 deny 解读，且不因此判为不兼容', () => {
+    const statusText = JSON.stringify({
+      ext: 'pi-desktop-permission',
+      version: '1.0.0',
+      protocol: PERMISSION_PROTOCOL_VERSION,
+      enabled: true,
+      tools: ['bash'],
+      timeoutMs: 120_000,
+      compatible: true
+    })
+    expect(parseHandshake(statusText)?.noUi).toBe('deny')
+
+    const result = classifyExtUi(handshakeEvent(statusText))
+    expect(result.kind).toBe('handshake')
+    if (result.kind !== 'handshake') throw new Error('unreachable')
+    expect(result.compatible).toBe(true)
+  })
+
+  it('noUi 取值非法 → 归 deny，但握手本身仍可解析（不返回 undefined）', () => {
+    const statusText = JSON.stringify({
+      ext: 'pi-desktop-permission',
+      version: '1.0.0',
+      protocol: PERMISSION_PROTOCOL_VERSION,
+      enabled: true,
+      tools: ['bash'],
+      timeoutMs: 120_000,
+      compatible: true,
+      noUi: 'garbage'
+    })
+    const parsed = parseHandshake(statusText)
+    expect(parsed).toBeDefined()
+    expect(parsed?.noUi).toBe('deny')
   })
 })

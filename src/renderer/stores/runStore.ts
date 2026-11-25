@@ -31,12 +31,19 @@ export interface RunStoreState {
   switching: Record<string, true>
   /** 分叉在途（禁用重复提交，M4） */
   forking: Record<string, true>
+  /**
+   * A36：结束会话在途（`session:dispose` 未返回）。
+   * 必须在 await **之前**置位：`exited` 事件可能先于 IPC 响应到达，届时要靠它区分
+   * 「用户主动结束」与 A6 的「子进程意外退出」。
+   */
+  ending: Record<string, true>
   /** `pi:locate` 自检在途（A12 引导按钮的 loading） */
   locating: boolean
 
   setLocating: (locating: boolean) => void
   setSwitching: (taskId: string, value: boolean) => void
   setForking: (taskId: string, value: boolean) => void
+  setEnding: (taskId: string, value: boolean) => void
   setPhase: (taskId: string, phase: RunPhase) => void
   setStatus: (sessionKey: string, status: RunStatus) => void
   /** 由 `evt:status` 推导 phase（tool_running 不会被粗粒度状态覆盖） */
@@ -88,6 +95,7 @@ export const useRunStore = create<RunStoreState>()((set, get) => ({
   aborted: {},
   switching: {},
   forking: {},
+  ending: {},
   locating: false,
 
   setLocating: (locating) => {
@@ -107,6 +115,14 @@ export const useRunStore = create<RunStoreState>()((set, get) => ({
       if (value) forking[taskId] = true
       else delete forking[taskId]
       return { forking }
+    })
+  },
+  setEnding: (taskId, value) => {
+    set((state) => {
+      const ending = { ...state.ending }
+      if (value) ending[taskId] = true
+      else delete ending[taskId]
+      return { ending }
     })
   },
   setPhase: (taskId, phase) => {

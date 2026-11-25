@@ -49,7 +49,13 @@ export const ERROR_CODES = [
    */
   'REQUEST_NOT_FOUND',
   /** 审批扩展不可用或协议不兼容（M5：不静默放行，显式报错） */
-  'PERMISSION_UNAVAILABLE'
+  'PERMISSION_UNAVAILABLE',
+  /** 已有 pi 更新任务在跑（A34 单飞锁：不排队，直接拒绝） */
+  'PI_UPDATE_BUSY',
+  /** 该 pi 安装不支持自更新（A34：需用户手动执行返回的 manualCommand） */
+  'PI_UPDATE_UNAVAILABLE',
+  /** 已有插件安装任务在跑（A37 单飞锁：不排队，直接拒绝） */
+  'PKG_INSTALL_BUSY'
 ] as const
 
 export type ErrorCode = (typeof ERROR_CODES)[number]

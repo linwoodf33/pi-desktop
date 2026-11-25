@@ -72,6 +72,10 @@ export function SettingsPanel({ config, piStatus }: SettingsPanelProps) {
   const [theme, setTheme] = useState<AppConfigView['theme']>(config.theme)
   const [permEnabled, setPermEnabled] = useState(config.permission.enabled)
   const [permTools, setPermTools] = useState<string[]>(config.permission.tools)
+  // A35：无界面会话（子 Agent / 后台任务）的审批策略，默认 'deny'（fail-closed）
+  const [permNoUi, setPermNoUi] = useState<AppConfigView['permission']['noUi']>(
+    config.permission.noUi
+  )
   const [permStatus, setPermStatus] = useState<PermissionStatus | undefined>(undefined)
   const [saving, setSaving] = useState(false)
   const [checking, setChecking] = useState(false)
@@ -89,6 +93,7 @@ export function SettingsPanel({ config, piStatus }: SettingsPanelProps) {
     setTheme(config.theme)
     setPermEnabled(config.permission.enabled)
     setPermTools(config.permission.tools)
+    setPermNoUi(config.permission.noUi)
   }
 
   // 安装状态是只读探测：只在挂载时拉一次（失败不打扰用户，状态位留空）
@@ -99,6 +104,10 @@ export function SettingsPanel({ config, piStatus }: SettingsPanelProps) {
       if (result.ok) setPermStatus(result.data)
     })
   }, [])
+
+  // 扩展落后时 noUi 开关不生效（策略由扩展侧解释，旧扩展不认这个字段）
+  const noUiOutdated =
+    permNoUi === 'allow' && permStatus?.installed === true && permStatus.upToDate === false
 
   const runCheck = async (): Promise<void> => {
     setChecking(true)
@@ -124,6 +133,7 @@ export function SettingsPanel({ config, piStatus }: SettingsPanelProps) {
         permission: {
           enabled: permEnabled,
           tools: permTools,
+          noUi: permNoUi,
           timeoutMs: config.permission.timeoutMs
         }
       })
@@ -294,6 +304,28 @@ export function SettingsPanel({ config, piStatus }: SettingsPanelProps) {
                 </label>
               ))}
             </div>
+            <label className="field__row" htmlFor="permission-no-ui-allow">
+              <input
+                id="permission-no-ui-allow"
+                data-testid="settings-permission-no-ui-allow"
+                type="checkbox"
+                checked={permNoUi === 'allow'}
+                onChange={(event) => {
+                  setPermNoUi(event.target.checked ? 'allow' : 'deny')
+                }}
+              />
+              <span>无界面会话自动放行（子 Agent / 后台任务）</span>
+            </label>
+            <p className="settings__note" data-testid="settings-permission-no-ui-note">
+              {
+                '开启后，由本客户端派生的子 Agent 在 bash / powershell / write / edit 前不再询问你，等同于把这些工具的权限交给模型。关闭时子 Agent 的写入会被拒绝（默认行为）。'
+              }
+            </p>
+            {noUiOutdated ? (
+              <p className="settings__note" data-testid="settings-permission-no-ui-outdated">
+                扩展版本落后，该开关需重装扩展后生效
+              </p>
+            ) : null}
             <span className="settings__note">
               审批策略在下次启动会话时随环境下发给扩展；已运行的会话保持原策略
             </span>

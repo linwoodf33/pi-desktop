@@ -1,5 +1,93 @@
 # 更新日志（Changelog）
 
+## v0.16.0（未发布）
+
+pi 新版本检测与更新（A34）。
+
+### 功能
+
+顶栏新增「更新」按钮：检测到新版时显示「有新版」+ 圆点，点开是更新面板 —— 显示当前 / 最新版本、
+检查时间、结论来源（实时查询还是上次缓存）；一键执行 `pi update`，过程逐行回显、可取消，
+失败时给出**可复制的手动命令**。
+
+### 为什么「检测」与「更新」必须分开
+
+`pi update` **没有 dry-run**：只要远端有新版，它就直接开始下载安装 —— 想只问一句「有没有新版」它也照装。
+所以检测由客户端自己请求 `https://pi.dev/api/latest-version`（pi 官方消费的同一契约，只读），
+执行仍然只调 `pi update`，**不自己拼 `npm i -g`**（拼错 target/prefix 会把全局环境装歪，
+而这正是用户最不想被客户端动的地方）。
+
+### 安全 / 稳定性约束
+
+- 检测只走 https；`PI_DESKTOP_UPDATE_CHECK_URL` 只在 host 为 `127.0.0.1` / `localhost` 时允许 http（测试用）。
+- 响应体 8KB / 5s 上限；重定向最多 1 跳，且**每跳重新校验**（防 https 跳内网）。
+- 执行 argv 只有 `['update']` / `['update', '--force']`，`shell: false`（renderer 无法注入参数）。
+- 更新前必须**零活跃会话**（Windows 会挪动安装目录）；更新中禁用新建 / 恢复会话。
+- 单飞锁：同一时刻只允许一个更新任务，第二次调用**拒绝而不排队**。
+- `--force` 需内联二次确认（「已最新」时重装是修复手段，不是默认路径）。
+- 日志在主进程**脱敏后**才推送（剥 ANSI、抹掉 token），单行 ≤2000、只留尾部 32KB。
+- 更新中退出应用会二次确认，并先结束更新进程（SIGTERM → 2s → SIGKILL）。
+
+### 结论口径
+
+更新后一律用 `pi --version` 复验：`after === target` 才是 `updated`；进程已退出 / 待生效为 `pendingRestart`
+（提示 PATH 里可能有多份 pi 或需重启终端）；命令非 0 退出为 `failed`。
+
+**不做自动回滚**：回滚要先知道用户原本的安装方式与版本，猜错的代价比「手动重装」更大 —— 只给可复制的命令。
+
+### 明确不做
+
+- 静默 / 自动更新（升级会替换可执行文件，必须由用户按下）。
+- pi-desktop 自身更新（未引入 `electron-updater`）。
+- 扩展与模型目录更新（`--extensions` / `--models` 会改用户 `settings.json`，另立项）。
+
+### A36：结束会话按钮
+
+任务列表的每个 **live** 任务右侧新增「结束」按钮（历史任务没有可结束的进程，不显示）：
+
+- 内联二次确认（`Esc` 也可取消，监听挂在整行上——焦点停在「结束」按钮时同样生效），
+  文案明示「会中断正在运行的回合；已写入的历史保留」，运行中加强为「未落盘的最后一条记录可能丢失」。
+- 成功后有 `filePath` → 任务降级为历史（可回放 / 可「继续对话」）；首条消息前结束（无会话文件）
+  → 直接移除空任务，避免留下点了就报错的僵尸。
+- `SESSION_NOT_FOUND`（已被回收/已结束）按「目标已达成」处理，不弹红色错误。
+- 结束在途时按钮显示「结束中…」并禁用；连点只发一次 `session:dispose`。
+- 用户主动结束不触发 A6 的「子进程意外退出」提示（靠 `runStore.ending` 区分）。
+- 未新增 IPC 通道（复用已有 `session:dispose`）。
+
+### A37：插件面板
+
+顶栏「技能」之后新增「插件」按钮（`open-plugins`）：
+
+- **清单**：读 `<agentDir>/settings.json#packages` + 每个受管目录的 `package.json`，显示名称/版本/说明/来源/安装位置；
+  settings 缺失或损坏、目录缺失、`package.json` 缺 `description` 都会降级展示，不会让面板空白。
+  清单**只代表登记事实**，不代表本次会话已成功加载。
+- **从 URL/npm/git 安装**：`pi install <source>`（argv 恒为 `['install', source]`、`shell:false`），
+  逐行回显、10 分钟超时、可取消。只接受 `npm:` / `git:<github|gitlab|codeberg|bitbucket>/owner/repo` /
+  `https://<同域名>/owner/repo`；**拒绝** `ssh://`、`git@`、本地路径与任何含 shell 元字符/空白的 source。
+- **预览**：仅 npm 源查 `registry.npmjs.org` 元数据（只读、8s、1MB、逐跳校验 host）；预览失败**不阻断**安装。
+- **二次确认**：安装前必须确认，文案明示「会执行第三方代码，npm 可能跑 postinstall」。
+- **复验**：exit 0 后重新读 `settings.json` 确认登记出现，再读 `package.json` 取版本；不一致按失败处理。
+- 与「更新 pi」互斥；不新增 pi 侧能力（不做卸载/启用禁用/项目级安装）。
+
+### A38：输入区显示当前 agent
+
+输入框下方（与「空闲/运行中」状态同一行）显示 **agent：<名字>**，没有 agent 时显示「默认」。
+
+- 事实来源：pi 的 `get_state` 与 RPC 事件**都不携带 agent**，agent 只写在会话 JSONL 的自定义条目里
+  （`customType: open-agents-state` / `active_agent`）。主进程在 `session:state` 时读文件尾部
+  （256KB、锁外、fail-soft），历史任务复用 `session:history` 已解析的 entries（零额外 IO）。
+- 三态语义：`string` 更新；`null`（文件里显式清除）→ 回到「默认」；`undefined`（读不到/无标记）
+  → **保持现值**，避免把刚由新建入参填好的名字抹掉。
+- 刷新时机：新建/继续/分叉/每轮结束（既有的 `syncTaskState` 路径），不引入文件监听或轮询。
+- 不新增 IPC 通道；`session:list` 不读 JSONL（避免首屏 N 次 IO），历史任务的 agent 在选中时取。
+
+### 测试
+
+unit 745→853（A34 检测/执行/取消 36 条 + A35 无 UI 策略 + A36 结束会话 9 条 + A37 清单/安装器 43 条）、
+integration 51→67、e2e 50→71（E34-1..5、A36 的 7 条含 Esc 取消、A37 插件面板 6 条、A38 agent 显示 3 条）。
+
+---
+
 ## v0.15.1（2026-11-24）
 
 修「新建任务里 agent 选择消失」。

@@ -1,6 +1,15 @@
 import type { EventChannel } from '../ipc-channels'
 import type { AgentCatalogView } from './agents'
 import type {
+  PkgCatalogView,
+  PkgInstallEvent,
+  PkgInstallInput,
+  PkgInstallResult,
+  PkgListInput,
+  PkgPreview,
+  PkgPreviewInput
+} from './packages'
+import type {
   SkillCatalogView,
   SkillInstallInput,
   SkillInstallPreview,
@@ -13,6 +22,12 @@ import type {
   UpsertProviderInput
 } from './model-config'
 import type { ConfigUpdateInput, ExtUiResponseInputDto } from './schemas'
+import type {
+  PiUpdateApplyInput,
+  PiUpdateApplyResult,
+  PiUpdateCheckResult,
+  PiUpdateEvent
+} from './update'
 import type { Result } from './result'
 import type {
   AgentState,
@@ -66,6 +81,22 @@ export interface PiInvokeApi {
   }
   pi: {
     locate(input?: { path?: string }): Promise<Result<PiSelfCheckStatus>>
+    /**
+     * A34：只读检测 pi 是否有新版。
+     *
+     * 网络/解析失败也返回 `state: 'unknown'`（不进错误分支）：检测不到不该打断 UI，
+     * 也不该被误读成「有新版」。真正的安装结果只认 `updateApply` 的 `afterVersion`。
+     */
+    updateCheck(): Promise<Result<PiUpdateCheckResult>>
+    /**
+     * A34：真正执行更新（`pi update` 没有 dry-run，调用即可能开始下载安装）。
+     *
+     * 一次只允许一个任务：进行中返回 `PI_UPDATE_BUSY`；pi 不支持自更新时
+     * 结果带 `manualCommand`，需原样交回用户手动执行。
+     */
+    updateApply(input: PiUpdateApplyInput): Promise<Result<PiUpdateApplyResult>>
+    /** A34：取消进行中的更新任务（入参为空：任务唯一，由主进程 job gate 保证） */
+    updateCancel(): Promise<Result<{ ok: true }>>
   }
   session: {
     list(input?: { cwd?: string; cursor?: string }): Promise<Result<SessionListOutput>>
@@ -139,6 +170,22 @@ export interface PiInvokeApi {
     preview(input: SkillInstallInput): Promise<Result<SkillInstallPreview>>
     /** A32：安装到全局或项目级技能目录（默认不覆盖同名技能） */
     install(input: SkillInstallInput): Promise<Result<SkillInstallResult>>
+  }
+  /**
+   * 插件（pi package）管理（A37）。
+   *
+   * `list` 是**只读清单**（settings.json 登记 + 受管目录的 package.json），
+   * 不代表当前会话已加载成功；`install` 会真正执行第三方代码（npm 可能跑 postinstall）。
+   */
+  pkg: {
+    /** A37：插件清单（只读）。带会话引用时一并读项目级 settings.json。 */
+    list(input?: PkgListInput): Promise<Result<PkgCatalogView>>
+    /** A37：npm 源预览 registry 元数据（失败不阻断安装，错误内联在 `error` 里） */
+    preview(input: PkgPreviewInput): Promise<Result<PkgPreview>>
+    /** A37：`pi install <source>`（单飞；进行中返回 `PKG_INSTALL_BUSY`） */
+    install(input: PkgInstallInput): Promise<Result<PkgInstallResult>>
+    /** A37：取消进行中的安装（幂等：没有任务也返回 `ok: true`） */
+    installCancel(): Promise<Result<{ ok: true }>>
   }
   agents: {
     /**
@@ -242,6 +289,10 @@ export interface PiEventsApi {
   onExtUi(cb: (event: ExtUiEvent) => void): Unsubscribe
   onStatus(cb: (event: StatusEvent) => void): Unsubscribe
   onDiagnostic(cb: (event: DiagnosticEvent) => void): Unsubscribe
+  /** A34：pi 更新过程事件（`started` / `log` / `done` / `failed` / `canceled`） */
+  onPiUpdate(cb: (event: PiUpdateEvent) => void): Unsubscribe
+  /** A37：插件安装过程事件（与 A34 同构的五个阶段） */
+  onPkgInstall(cb: (event: PkgInstallEvent) => void): Unsubscribe
 }
 
 export type PiApi = PiInvokeApi & { events: PiEventsApi }

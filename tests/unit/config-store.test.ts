@@ -80,7 +80,7 @@ describe('持久化与迁移', () => {
         maxActiveSessions: 3,
         idleRecycleMinutes: 30,
         theme: 'system',
-        permission: { enabled: true, tools: ['bash'], timeoutMs: 120_000 }
+        permission: { enabled: true, tools: ['bash'], timeoutMs: 120_000, noUi: 'deny' }
       }
     )
     expect(migrated.config.piCommand).toBe('C:/old/pi.cmd')
@@ -98,7 +98,7 @@ describe('持久化与迁移', () => {
         maxActiveSessions: 3,
         idleRecycleMinutes: 30,
         theme: 'system' as const,
-        permission: { enabled: true, tools: ['bash'], timeoutMs: 120_000 }
+        permission: { enabled: true, tools: ['bash'], timeoutMs: 120_000, noUi: 'deny' }
       }
     )
     expect(migrated.config.theme).toBe('pi-dark')
@@ -114,7 +114,7 @@ describe('持久化与迁移', () => {
         maxActiveSessions: 3,
         idleRecycleMinutes: 30,
         theme: 'system' as const,
-        permission: { enabled: true, tools: ['bash'], timeoutMs: 120_000 }
+        permission: { enabled: true, tools: ['bash'], timeoutMs: 120_000, noUi: 'deny' }
       }
     )
     expect(migrated.config.maxActiveSessions).toBe(3)

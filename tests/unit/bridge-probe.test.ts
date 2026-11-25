@@ -16,7 +16,8 @@ const bootState: BootState = {
     permission: {
       enabled: true,
       tools: ['bash', 'powershell', 'write', 'edit'],
-      timeoutMs: 120_000
+      timeoutMs: 120_000,
+      noUi: 'deny'
     }
   },
   piStatus: { state: 'unknown', message: 'M1 未实现' }

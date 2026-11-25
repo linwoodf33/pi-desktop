@@ -98,6 +98,8 @@ export async function selectTask(taskId: string, deps: ActionDeps = {}): Promise
   }
   const chat = useSessionStore.getState().replay(taskId, history.data.records)
   if (history.data.truncated) useSessionStore.getState().markTruncated(taskId)
+  // A38：历史任务没有活会话，agent 只能来自回放时读到的文件
+  useSessionStore.getState().setTaskAgent(taskId, history.data.agent)
   useRunStore.getState().setPhase(taskId, chat.phase)
 }
 
@@ -171,7 +173,9 @@ export async function createTask(
   const taskId = useSessionStore.getState().addLiveTask({
     sessionKey,
     cwd: input.cwd,
-    ...(title === undefined || title.length === 0 ? {} : { title })
+    ...(title === undefined || title.length === 0 ? {} : { title }),
+    // A38：先用入参占位（会话文件里的 marker 可能还没落盘），随后 syncTaskState 纠正
+    ...(input.agent === undefined || input.agent.length === 0 ? {} : { agent: input.agent })
   })
   useRunStore.getState().setPhase(taskId, 'idle')
   useRunStore.getState().clearBanners()
@@ -211,6 +215,8 @@ export async function syncTaskState(taskId: string, deps: ActionDeps = {}): Prom
       ? undefined
       : `${state.data.model.provider}/${state.data.model.id}`
   useSessionStore.getState().setTaskModel(taskId, model, state.data.thinkingLevel)
+  // A38：agent 由主进程读会话文件顺带返回（unknown 时保持现值）
+  useSessionStore.getState().setTaskAgent(taskId, state.data.agent)
   if (state.data.sessionFile !== undefined) {
     useSessionStore.getState().setFilePatch(taskId, state.data.sessionFile)
   }
@@ -370,7 +376,9 @@ export async function forkTask(entryId: string, deps: ActionDeps = {}): Promise<
     const forkedId = useSessionStore.getState().addLiveTask({
       sessionKey: result.data.sessionKey,
       cwd: task.cwd,
-      title: `${task.title}（分叉）`
+      title: `${task.title}（分叉）`,
+      // A38：同进程分叉一般延续原 agent；随后 syncTaskState 会由新会话文件纠正
+      ...(task.agent === undefined ? {} : { agent: task.agent })
     })
     run.setPhase(forkedId, 'idle')
     await syncTaskState(forkedId, deps)
@@ -574,6 +582,81 @@ export async function abortRun(deps: ActionDeps = {}): Promise<void> {
   } finally {
     run.setAborting(task.id, false)
     run.setPhase(task.id, 'idle')
+  }
+}
+
+/** A36：结束某个会话（释放子进程），成功后任务降级为历史（或移除未落盘的空会话） */
+export async function endTask(taskId: string, deps: ActionDeps = {}): Promise<boolean> {
+  const api = resolveApi(deps)
+  if (api === undefined) return false
+
+  const task = useSessionStore.getState().tasks.find((item) => item.id === taskId)
+  if (task === undefined) return false
+
+  const run = useRunStore.getState()
+  const sessionKey = task.sessionKey
+  if (sessionKey === undefined) {
+    // 已经没有进程可释放：不发 IPC，避免把「历史任务」误报成结束失败
+    run.pushBanner({ level: 'warn', message: '该任务没有运行中的会话：已经结束' })
+    return false
+  }
+  if (run.ending[taskId] === true) return false
+
+  // 为什么 ending 必须在 await 之前设置：`session:dispose` 会触发 `evt:status=exited`，
+  // 该事件可能比 IPC 响应先到；届时 `client.ts` 靠这个标记才不按 A6「意外退出」语义
+  // 立刻降级并弹「继续对话」提示（用户主动结束不该看到那一套）。
+  run.setEnding(taskId, true)
+  let endedWithoutHistory = false
+  try {
+    const result = await api.session.dispose({ sessionKey })
+    const notFound = !result.ok && result.error.code === 'SESSION_NOT_FOUND'
+    if (!result.ok && !notFound) {
+      // 真失败：store 不动（任务仍是 live，可重试），只给错误条
+      reportError(result.error)
+      return false
+    }
+
+    // 必须重新读 task：`filePath` 可能在上面的 exited 事件里才回填
+    const latest = useSessionStore.getState().tasks.find((item) => item.id === taskId)
+    if (latest === undefined) return false
+    if (latest.filePath === undefined) {
+      // 首条消息前就结束 = 没有历史可回放，留着只会是一条空任务
+      useSessionStore.getState().removeTask(taskId)
+      endedWithoutHistory = true
+      const after = useSessionStore.getState()
+      const first = after.tasks[0]
+      if (after.selectedId === undefined && first !== undefined) {
+        await selectTask(first.id, deps)
+      }
+    } else {
+      // 幂等：exited 分支在意外退出路径上也可能已经降级过
+      useSessionStore.getState().detachSession(taskId)
+    }
+
+    run.setPhase(taskId, 'idle')
+    run.clearAborted(taskId)
+
+    if (notFound) {
+      run.pushBanner({
+        level: 'warn',
+        message: '会话已不存在（可能已被回收或已结束）：已转为历史任务'
+      })
+    } else if (endedWithoutHistory) {
+      run.pushBanner({ level: 'info', message: '已结束会话（首条消息前结束，没有历史需要保留）' })
+    } else {
+      run.pushBanner({
+        level: 'info',
+        message: '已结束会话：历史已保留，点该任务可回放，或「继续对话」重新启动'
+      })
+    }
+    return true
+  } finally {
+    run.setEnding(taskId, false)
+    // 任务仍存在且停在 settling（exited 事件把它压到这里）→ 恢复可操作
+    const still = useSessionStore.getState().tasks.find((item) => item.id === taskId)
+    if (still !== undefined && (useRunStore.getState().phases[taskId] ?? 'idle') === 'settling') {
+      useRunStore.getState().setPhase(taskId, 'idle')
+    }
   }
 }
 

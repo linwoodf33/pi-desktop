@@ -203,6 +203,7 @@ describe('策略下发（环境变量）', () => {
       enabled: true,
       tools: ['bash', 'write'],
       timeoutMs: 120_000,
+      noUi: 'deny',
       protocolVersion: 1
     })
   })
@@ -213,8 +214,26 @@ describe('策略下发（环境变量）', () => {
       enabled: false,
       tools: [],
       timeoutMs: 60_000,
+      noUi: 'deny',
       protocolVersion: 1
     })
+  })
+
+  it('A35：noUi 缺省按 deny 下发，显式 allow 如实下发', () => {
+    const fallback = buildPermissionPolicyEnv({
+      enabled: true,
+      tools: ['write'],
+      timeoutMs: 60_000
+    })
+    expect(JSON.parse(fallback['PI_DESKTOP_PERMISSION'] ?? '{}')['noUi']).toBe('deny')
+
+    const allowed = buildPermissionPolicyEnv({
+      enabled: true,
+      tools: ['write'],
+      timeoutMs: 60_000,
+      noUi: 'allow'
+    })
+    expect(JSON.parse(allowed['PI_DESKTOP_PERMISSION'] ?? '{}')['noUi']).toBe('allow')
   })
 })
 

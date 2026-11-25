@@ -22,7 +22,12 @@ export const permissionPolicySchema = z
         ...new Set(tools.map((tool) => tool.trim().toLowerCase()).filter((tool) => tool.length > 0))
       ]),
     /** 审批时钟（§6.3 唯一时钟，由扩展侧权威判定；这里随策略下发） */
-    timeoutMs: z.number().int().min(5_000).max(600_000)
+    timeoutMs: z.number().int().min(5_000).max(600_000),
+    /**
+     * 无 UI（print/json 模式、客户端未连接）会话的审批策略，默认 `deny`（fail-closed）。
+     * 带 zod default，故老配置文件缺该字段时补默认值即可，无需新增迁移。
+     */
+    noUi: z.enum(['deny', 'allow']).default('deny')
   })
   .strict()
 export type PermissionPolicy = z.infer<typeof permissionPolicySchema>
@@ -175,6 +180,11 @@ export interface SessionHistoryRecord {
 
 export interface SessionHistoryOutput {
   records: SessionHistoryRecord[]
+  /**
+   * A38：只读回放时顺带提取的当前 agent（历史任务没有活会话，只能从文件读）。
+   * 与 `agentStateSchema.agent` 同语义：缺省=未知，`null`=显式清除。
+   */
+  agent?: string | null
   /** 因超过回放上限（字节或条数）只回放了尾部，必须显式提示（§7 约束 14） */
   truncated: boolean
   /** 回放的消息条目数（诊断/测试用） */
@@ -431,6 +441,11 @@ export const agentStateSchema = z.object({
   sessionName: z.string().optional(),
   model: modelInfoSchema.optional(),
   thinkingLevel: z.string().optional(),
+  /**
+   * A38：当前生效的 agent（来自会话 JSONL 的 `open-agents-state` / `active_agent` 条目）。
+   * 缺省 = 未知（读不到/没标记，调用方保持现值）；`null` = 显式清除（回落到默认 agent）。
+   */
+  agent: z.string().nullable().optional(),
   isStreaming: z.boolean(),
   isCompacting: z.boolean(),
   steeringMode: z.string().optional(),

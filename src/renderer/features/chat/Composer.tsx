@@ -33,6 +33,11 @@ export interface ComposerProps {
    * 有它才显示「引用」按钮 —— 选择器需要工作区上下文。
    */
   referenceTarget?: { sessionKey?: string; sessionFile?: string }
+  /**
+   * A38：当前会话生效的 agent（来自会话文件的 `open-agents-state` 条目）。
+   * 没有时显示「默认」—— pi 本来就有默认 agent，隐藏反而让「加载中/未知/真没有」不可区分。
+   */
+  agent?: string
 }
 
 export function Composer({
@@ -42,7 +47,8 @@ export function Composer({
   disabled,
   onSend,
   onAbort,
-  referenceTarget
+  referenceTarget,
+  agent
 }: ComposerProps) {
   const [input, setInput] = useState('')
   /** 已粘贴、待发送的图片（A19） */
@@ -221,10 +227,23 @@ export function Composer({
       ) : null}
 
       <div className="composer__actions">
-        <span className="composer__state" data-testid="composer-state">
-          {/* E4：点击停止就立即提示「已中止」，不依赖 abort 响应到达 */}
-          {aborted ? '已中止' : aborting ? '正在中止…' : phaseLabel(phase)}
-        </span>
+        {/*
+          A38：agent 与状态同组放左侧（靠 `.composer__meta` 的 margin-right:auto 顶开），
+          右侧留给「引用 / 停止 / 发送」，避免两个 auto 边距把状态文字挤到中间。
+        */}
+        <div className="composer__meta">
+          <span
+            className="composer__agent"
+            data-testid="composer-agent"
+            title={`当前 agent：${agent ?? '默认'}`}
+          >
+            agent：{agent ?? '默认'}
+          </span>
+          <span className="composer__state" data-testid="composer-state">
+            {/* E4：点击停止就立即提示「已中止」，不依赖 abort 响应到达 */}
+            {aborted ? '已中止' : aborting ? '正在中止…' : phaseLabel(phase)}
+          </span>
+        </div>
         <button
           type="button"
           className="btn btn--ghost"

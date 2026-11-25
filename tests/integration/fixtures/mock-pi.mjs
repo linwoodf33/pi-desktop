@@ -29,7 +29,8 @@
  * 事件先于 response 发出（真实 pi 的 abort 会等会话 idle 后才响应）。空闲时 abort 只回 response。
  */
 
-import { appendFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
 const SESSION_ID = 'mock-session-0001'
 /** A23：会话显示名（`set_session_name` 后回显到 get_state.sessionName） */
@@ -73,6 +74,27 @@ if (process.env['MOCK_PI_ARGV_FILE'] !== undefined) {
 }
 
 /**
+ * A34：pi 的「当前版本」来源。
+ *
+ * `MOCK_PI_VERSION_FILE` 存在时**优先读文件**，否则回落到 `MOCK_PI_VERSION`（默认 1.5.2）。
+ * 为什么要这个文件：`pi update` 只有真的把新版本装上，后续 `pi --version` 才会变；
+ * 用文件承载版本，才能让「更新后版本变了」成为真实可观测的事实（而不是测试自己假装）。
+ */
+const CURRENT_VERSION_FILE = process.env['MOCK_PI_VERSION_FILE']
+
+function currentVersion() {
+  if (CURRENT_VERSION_FILE !== undefined) {
+    try {
+      const fromFile = readFileSync(CURRENT_VERSION_FILE, 'utf8').trim()
+      if (fromFile.length > 0) return fromFile
+    } catch {
+      /* 文件还没落盘：回落到 env */
+    }
+  }
+  return process.env['MOCK_PI_VERSION'] ?? '1.5.2'
+}
+
+/**
  * A6（强杀子进程）测试夹具：把自身 pid 落盘，测试据此 `process.kill(pid,'SIGKILL')`。
  * 为什么不用「按命令行匹配 pid」：测试进程/排查工具自身的命令行也会命中标记，容易误杀。
  * 只在 `--mode rpc` 的**长驻**进程里写：`pi --version` 自检的短命进程不能覆盖它。
@@ -106,16 +128,209 @@ if (argv.includes('--help') || argv.includes('-h')) {
 
 // E2E：pi 自检第一步是 `pi --version`（docs/cli.md），mock 也要能应答
 if (argv.includes('--version') || argv.includes('-v')) {
-  process.stdout.write(`${process.env['MOCK_PI_VERSION'] ?? '1.5.2'}
+  process.stdout.write(`${currentVersion()}
 `)
   process.exit(0)
 }
+
+/**
+ * A34：`pi update` 子命令回放（仅测试用；**不进入 RPC 主循环**）。
+ *
+ * 真实 `pi update` 没有 dry-run（见 src/main/services/pi-update.ts 头注释），所以这里
+ * 只按 `MOCK_PI_UPDATE_MODE` 回放四种真实输出形态：
+ * - `in-sync`（默认）：`pi is already up to date (v<当前版本>)`，exit 0，不动任何文件；
+ * - `available`：两行 Updating/Updated，并把目标版本写进 `MOCK_PI_VERSION_FILE`，exit 0；
+ * - `fail`：stderr 一条 npm EACCES，exit 1；
+ * - `no-self`：不支持自更新的两行输出（含 `PI_SELF_UPDATE_COMMAND` 指引），exit 1。
+ * `--force`（即 `pi update --force`）：`in-sync` 下先打 `Forcing reinstall of pi`，再按
+ * `available` 处理（对应真实 pi 的「强制重装」语义）。
+ */
+const UPDATE_TO = process.env['MOCK_PI_UPDATE_TO'] ?? '1.6.0'
+
+/** 装「新版本」：唯一能被后续 `pi --version` 观测到的证据就是版本文件 */
+function installUpdateVersion(fromVersion) {
+  process.stdout.write(`Updating pi from ${fromVersion} to ${UPDATE_TO}
+`)
+  if (CURRENT_VERSION_FILE !== undefined) {
+    try {
+      writeFileSync(CURRENT_VERSION_FILE, UPDATE_TO, 'utf8')
+    } catch {
+      /* 夹具落盘失败不影响输出形态 */
+    }
+  }
+  process.stdout.write(`Updated pi from ${fromVersion} to ${UPDATE_TO}
+`)
+  process.exit(0)
+}
+
+if (argv[0] === 'update') {
+  const mode = process.env['MOCK_PI_UPDATE_MODE'] ?? 'in-sync'
+  const beforeVersion = currentVersion()
+  const forced = argv.includes('--force')
+
+  if (mode === 'fail') {
+    process.stderr.write(`npm ERR! code EACCES: permission denied, open '/usr/lib/node_modules/pi'
+`)
+    process.exit(1)
+  }
+  if (mode === 'no-self') {
+    process.stdout.write(`pi cannot self-update this installation.
+Set PI_SELF_UPDATE_COMMAND to customize how pi is updated.
+`)
+    process.exit(1)
+  }
+  if (mode === 'in-sync' && forced) {
+    process.stdout.write(`Forcing reinstall of pi
+`)
+    installUpdateVersion(beforeVersion)
+  }
+  if (mode === 'available') {
+    installUpdateVersion(beforeVersion)
+  }
+  if (mode !== 'in-sync') {
+    process.stderr.write(`mock-pi: 未知的 MOCK_PI_UPDATE_MODE=${mode}
+`)
+    process.exit(2)
+  }
+  process.stdout.write(`pi is already up to date (v${beforeVersion})
+`)
+  process.exit(0)
+}
+
+/** A37：`pi install <source>` 子命令回放（仅测试用；**不进入 RPC 主循环**）。
+ *
+ * `MOCK_PI_INSTALL_MODE`：
+ * - `ok`（默认）：两行输出，并把「装上了」写成磁盘事实：
+ *   ① `<MOCK_PI_AGENT_DIR>/settings.json#packages` 追加该 source；
+ *   ② npm 源再写 `<agentDir>/npm/node_modules/<pkg>/package.json`（版本 9.9.9）；
+ * - `fail`：stderr 一条 npm EACCES，exit 1；
+ * - `slow`：打 `Installing` 后等 `MOCK_PI_INSTALL_DELAY_MS`（默认 3000）再按 ok 收尾（测取消）；
+ * - `noop`：两行输出但 exit 0 **不写** settings（测「exit 0 但登记没出现」）。
+ * 收到的 argv 落 `MOCK_PI_INSTALL_ARGV_FILE`，用于断言恰好是 `['install', source]`。
+ */
+if (argv[0] === 'install') {
+  const source = argv[1] ?? ''
+  const agentDir = process.env['MOCK_PI_AGENT_DIR']
+  const mode = process.env['MOCK_PI_INSTALL_MODE'] ?? 'ok'
+
+  if (process.env['MOCK_PI_INSTALL_ARGV_FILE'] !== undefined) {
+    try {
+      writeFileSync(process.env['MOCK_PI_INSTALL_ARGV_FILE'], JSON.stringify(argv), 'utf8')
+    } catch {
+      /* 夹具落盘失败不影响输出形态 */
+    }
+  }
+
+  /** 把「真的装上了」写成磁盘事实（settings 登记 + npm 包清单） */
+  function writeInstalledEvidence() {
+    if (agentDir === undefined || agentDir.length === 0) return
+
+    const settingsPath = join(agentDir, 'settings.json')
+    let settings = {}
+    try {
+      const text = readFileSync(settingsPath, 'utf8')
+      if (text.trim().length > 0) settings = JSON.parse(text)
+    } catch {
+      /* 不存在 / 损坏：重建一个最小 settings */
+    }
+    if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) settings = {}
+    const packages = Array.isArray(settings.packages) ? settings.packages : []
+    if (!packages.includes(source)) packages.push(source)
+    settings.packages = packages
+    try {
+      mkdirSync(agentDir, { recursive: true })
+      writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
+    } catch {
+      /* 夹具落盘失败不影响输出形态 */
+    }
+
+    if (!source.startsWith('npm:')) return
+    const spec = source.slice('npm:'.length)
+    const at = spec.lastIndexOf('@')
+    const name = at > 0 ? spec.slice(0, at) : spec
+    const segments = name.split('/').filter((segment) => segment.length > 0)
+    if (segments.length === 0) return
+    try {
+      const pkgDir = join(agentDir, 'npm', 'node_modules', ...segments)
+      mkdirSync(pkgDir, { recursive: true })
+      const manifest = { name, version: '9.9.9', description: 'mock package' }
+      writeFileSync(join(pkgDir, 'package.json'), JSON.stringify(manifest, null, 2), 'utf8')
+    } catch {
+      /* 同上 */
+    }
+  }
+
+  if (mode === 'fail') {
+    process.stderr.write(`npm ERR! code EACCES: permission denied, open '${source}'\n`)
+    process.exit(1)
+  }
+  if (mode === 'noop') {
+    process.stdout.write(`Installing ${source}\n`)
+    process.stdout.write(`Installed ${source}\n`)
+    process.exit(0)
+  }
+  if (mode === 'slow') {
+    process.stdout.write(`Installing ${source}
+`)
+    const rawDelay = Number(process.env['MOCK_PI_INSTALL_DELAY_MS'] ?? '3000')
+    const delayMs = Number.isFinite(rawDelay) && rawDelay >= 0 ? rawDelay : 3000
+    // 必须真的等：只 setTimeout 不 await 会继续往下走，落到 RPC 校验分支直接 exit(2)，
+    // 客户端就会立刻看到进程退出（取消用例永远测不到「进行中」）。
+    await new Promise((resolve) => {
+      setTimeout(resolve, delayMs)
+    })
+    process.stdout.write(`Installed ${source}\n`)
+    process.exit(0)
+  }
+  if (mode === 'ok') {
+    process.stdout.write(`Installing ${source}\n`)
+    writeInstalledEvidence()
+    process.stdout.write(`Installed ${source}\n`)
+    process.exit(0)
+  } else {
+    process.stderr.write(`mock-pi: 未知的 MOCK_PI_INSTALL_MODE=${mode}\n`)
+    process.exit(2)
+  }
+}
+
 if (!argv.includes('--mode') || !argv.includes('rpc')) {
   process.stderr.write(`mock-pi: 需要以 --mode rpc 启动，收到 ${JSON.stringify(argv)}\n`)
   process.exit(2)
 }
 
 recordPidFile()
+
+/**
+ * A38：把「当前 agent」写进会话文件的扩展条目（与 pi-open-agents 同形）。
+ *
+ * 真实 pi 的 `get_state` 不返回 agent，客户端只能读文件里的
+ * `custom/open-agents-state` 条目；这个开关让 e2e 能端到端验证那条读路径。
+ * 不设 `MOCK_PI_AGENT_STATE` 时行为完全不变（其它用例零影响）。
+ */
+function recordAgentState() {
+  const raw = process.env['MOCK_PI_AGENT_STATE']
+  if (raw === undefined) return
+  const name = raw === '__null__' ? null : raw
+  try {
+    mkdirSync(dirname(SESSION_FILE), { recursive: true })
+    appendFileSync(
+      SESSION_FILE,
+      `${JSON.stringify({
+        type: 'custom',
+        customType: 'open-agents-state',
+        data: { name },
+        id: 'agent-1',
+        parentId: null,
+        timestamp: new Date().toISOString()
+      })}\n`,
+      'utf8'
+    )
+  } catch {
+    /* 夹具落盘失败不影响协议行为 */
+  }
+}
+
+recordAgentState()
 
 function writeRecord(record) {
   process.stdout.write(`${JSON.stringify(record)}\n`)

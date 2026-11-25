@@ -14,6 +14,7 @@
  *
  * fail-closed 语义（缺一不可）：
  * - 无 UI（`ctx.hasUI === false`，print/json 模式）→ 直接阻止，不挂起；
+ *   **唯一例外**：策略显式 `noUi:'allow'`（用户在设置页主动打开）时放行，并在 stderr 留痕；
  * - 超时（pi 侧 `timeout` 到期返回 `undefined`）→ 阻止；
  * - 返回 `undefined` / 未知选项 → 阻止；
  * - 询问过程抛异常 → 阻止；
@@ -25,6 +26,7 @@
 
 import {
   APPROVAL_OPTIONS,
+  EXTENSION_NAME,
   POLICY_ENV_KEY,
   STATUS_KEY,
   allowSessionKey,
@@ -118,8 +120,20 @@ export default function piDesktopPermission(
       const sessionId = sessionIdOf(ctx)
       if (allowSession.has(allowSessionKey(sessionId, toolName))) return undefined
 
-      // 无 UI（print / json 模式，或客户端未连接）→ 不挂起，直接拒绝
+      // 无 UI（print / json 模式，或客户端未连接）→ 不挂起
       if (ctx.hasUI === false || typeof ctx.ui.select !== 'function') {
+        if (policy.noUi === 'allow') {
+          // 放行必须留痕：不写 allowSession —— 那是「用户授权」的语义，
+          // 而这里根本没有人授权过，写进去会让后续调用看起来像被批准过。
+          // 只输出工具名 / sessionId / risk，**绝不含入参内容**（避免凭据落到日志）。
+          const { risk } = assessRisk(toolName, event.input)
+          const line = `[${EXTENSION_NAME}] noUi-allow tool=${toolName} session=${sessionId ?? 'unknown'} risk=${risk}`
+          if (risk === 'critical') console.warn(line)
+          else
+            process.stderr.write(`${line}
+`)
+          return undefined
+        }
         return blocked(`工具 ${toolName} 需要人工批准，但当前没有可用的审批界面，已拒绝`)
       }
 

@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  DEFAULT_NO_UI_POLICY,
   PERMISSION_EXTENSION_NAME,
   PERMISSION_PROTOCOL_VERSION
 } from '../../shared/contracts/permission'
@@ -134,12 +135,20 @@ function compareWithSource(
  *
  * 只下发**策略**，不含任何内容/密钥；扩展侧解析失败会回退到「默认审批开启」（fail-closed）。
  */
-export function buildPermissionPolicyEnv(policy: PermissionPolicy): Record<string, string> {
+export function buildPermissionPolicyEnv(
+  // noUi 允许缺省（老调用方/旧 renderer 的补丁里没有它）：缺省按 deny 下发，
+  // 这样扩展侧永远只有「显式 deny / 显式 allow」两种形态，不存在「字段缺失」歧义。
+  policy: Pick<PermissionPolicy, 'enabled' | 'tools' | 'timeoutMs'> & {
+    noUi?: PermissionPolicy['noUi']
+  }
+): Record<string, string> {
   return {
     [PERMISSION_POLICY_ENV_KEY]: JSON.stringify({
       enabled: policy.enabled,
       tools: policy.tools,
       timeoutMs: policy.timeoutMs,
+      // 即使 deny 也显式输出：避免「缺字段」与「deny」两种线上形态混用
+      noUi: policy.noUi ?? DEFAULT_NO_UI_POLICY,
       protocolVersion: PERMISSION_PROTOCOL_VERSION
     })
   }

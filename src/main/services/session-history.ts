@@ -1,3 +1,4 @@
+import { extractAgentFromEntries } from './session-agent'
 import { open, realpath, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, resolve } from 'node:path'
 
@@ -102,11 +103,17 @@ export function createSessionHistory(options: SessionHistoryOptions): SessionHis
       const records = toReplayRecords(parsed)
       const limit = resolveMaxRecords(input.maxRecords, options.defaultMaxRecords)
       const limited = records.length === 0 ? records : records.slice(-limit)
+      // A38：历史任务没有活会话，agent 只能从文件里读——这里已经解析过 entries，
+      // 顺手取最后一条 `open-agents-state`/`active_agent`，零额外 IO。
+      // 注意：`bytesTruncated` 时窗口外的标记读不到，结果是 `undefined`（未知），
+      // 调用方应保持现值，而不是据此认为「没有 agent」。
+      const agent = extractAgentFromEntries(parsed)
       return {
         records: limited,
         truncated: bytesTruncated || limited.length < records.length,
         messageCount: limited.length,
-        totalRecords: records.length
+        totalRecords: records.length,
+        ...(agent === undefined ? {} : { agent })
       }
     }
   }

@@ -2096,3 +2096,313 @@ kbd {
   border-color: var(--warn);
   color: var(--warn);
 }
+
+/* ------------------------------------------------------------ pi 更新（A34） */
+
+/* 顶栏「有新版」指示灯：只做提示，不抢 badge 的视觉权重 */
+.app__bar-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+
+/* 更新面板：`.panel` 在本样式表里没有既有定义，故 `.update` 自带给卡片外观
+   （只追加新选择器，不改动任何既有规则）。宽度沿用其它弹层的量级。 */
+.update {
+  flex: 0 0 auto;
+  align-self: center;
+  width: min(560px, calc(100vw - 48px));
+  margin: 12px 0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  max-height: 80vh;
+  overflow: auto;
+}
+
+.update__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.update__header h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* 版本事实表：标签列取内容宽，值列吃掉剩余空间 */
+.update__facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.update__fact {
+  display: contents;
+}
+
+.update__fact-label {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.update__fact dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 醒目但不算错误：真正失败才用 .field__error */
+.update__warning {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--warn-text);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  border-radius: 8px;
+}
+
+.update__actions,
+.update__confirm-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.update__force {
+  margin: 0;
+  font-size: 12px;
+}
+
+.update__confirm {
+  padding: 8px 10px;
+  border: 1px dashed var(--warn);
+  border-radius: 8px;
+}
+
+.update__confirm p {
+  margin: 0 0 6px;
+}
+
+.update__sessions {
+  color: var(--text-dim);
+}
+
+.update__dispose {
+  padding: 8px 10px;
+  border: 1px dashed color-mix(in srgb, var(--warn) 55%, var(--border));
+  border-radius: 8px;
+}
+
+.update__dispose p {
+  margin: 0 0 6px;
+}
+
+.update__manual {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.update__copy-state {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* 安装日志：等宽、保留换行、只留尾部可视区（内容已由组件裁剪行数） */
+.update__log {
+  margin: 0;
+  padding: 8px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+/* --------------------------------------------------- 会话结束（A36，追加） */
+
+/*
+ * 每行是「主按钮 + 结束按钮」的 flex 行，确认框占满整行折到下一行。
+ * `.task-item` 既有 `width: 100%` 会让结束按钮被挤出可视区，这里覆盖回 flex 尺寸。
+ */
+.task-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.task-row .task-item {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+.task-item__end {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.task-item__end-confirm {
+  flex: 1 1 100%;
+  padding: 8px 10px;
+  border: 1px dashed var(--warn);
+  border-radius: 8px;
+}
+
+.task-item__end-note {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.task-item__end-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* --------------------------------------------------- 插件面板（A37，追加） */
+/* `.panel` 在本样式表里没有既有定义，故 `.plugins` 自带给卡片外观（量级参考 `.update`）。 */
+.plugins {
+  flex: 0 0 auto;
+  align-self: center;
+  width: min(640px, calc(100vw - 48px));
+  margin: 12px 0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  max-height: 80vh;
+  overflow: auto;
+}
+
+.plugins > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.plugins > header h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.plugins__group {
+  margin-top: 4px;
+}
+
+.plugins__group h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.plugins__group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.plugins__item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--bg-panel);
+}
+
+/* 名称 + 版本 + 徽标：一行不够就换行，不横向溢出 */
+.plugins__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.plugins__badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  color: var(--warn-text);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+}
+
+/* 安装日志：等宽、保留换行（行数已由组件裁到 400） */
+.plugins__log {
+  margin: 0;
+  padding: 8px;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.plugins__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 表单行里输入框吃掉剩余宽度（`.field__input` 默认是内容宽） */
+.plugins__actions .field__input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+/* ------------------------------------------------- 输入区 agent 显示（A38） */
+
+/*
+ * 左侧一组（agent + 状态）用 margin-right:auto 顶开，右侧按钮保持右对齐。
+ * 之前 `.composer__state` 自己带 auto 边距，这里改成由容器负责，避免两个 auto 打架。
+ */
+.composer__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  min-width: 0;
+}
+
+.composer__agent {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.composer__state {
+  margin-right: 0;
+}

@@ -30,6 +30,7 @@ import type {
   Diagnostics,
   PermissionStatus
 } from '../../shared/contracts/types'
+import type { PiUpdateApplyInput } from '../../shared/contracts/update'
 
 import { IpcFailure } from '../../shared/contracts/result'
 
@@ -57,6 +58,9 @@ import type { FsBridge } from '../services/fs-bridge'
 import type { PermissionExtensionDeps } from '../services/permission-extension'
 import { detectPermissionExtension } from '../services/permission-extension'
 import type { PiLocator } from '../services/pi-locator'
+import type { PiPackageCatalog } from '../services/pi-package-catalog'
+import type { PiPackageInstaller } from '../services/pi-package-installer'
+import type { PiUpdateService } from '../services/pi-update'
 import type { SessionHistory } from '../services/session-history'
 import type { SessionIndex } from '../services/session-index'
 import type { SessionService } from '../services/session-service'
@@ -98,6 +102,20 @@ export interface RouterDeps {
   agentCatalog: AgentCatalog
   /** A31：技能清单（只读；扫描 SKILL.md） */
   skillCatalog: SkillCatalog
+  /**
+   * A37：插件清单（只读 settings.json + 受管目录里的 package.json）。
+   * 与 `piUpdate` 同样可选：既有测试装配点不必改动；缺失时 `pkg:list` 报 `NOT_IMPLEMENTED`。
+   */
+  pkgCatalog?: PiPackageCatalog
+  /** A37：插件安装/预览/取消（会执行第三方代码）；缺失时相关通道报 `NOT_IMPLEMENTED`。 */
+  pkgInstaller?: PiPackageInstaller
+  /**
+   * A34：pi 版本检测 / 更新服务（`pi:updateCheck` / `pi:updateApply` / `pi:updateCancel`）。
+   * 可选是刻意的：① 现有测试装配点（unit/integration 各一处）不必改动；
+   * ② `session:create/resume` 的「更新中」gate 用可选链表达「没接线 = 不可能在更新」。
+   * 缺失时三个更新通道统一报 `NOT_IMPLEMENTED`，不会被静默当成成功。
+   */
+  piUpdate?: PiUpdateService
   /** A25：客户端版本（`app.getVersion()`，由 main 注入；测试可覆盖） */
   appVersion?: () => string
   /** A26：写系统剪贴板（file:// 下 renderer 的 navigator.clipboard 不可用） */
@@ -135,6 +153,15 @@ const DEFAULT_TIMEOUTS: Partial<Record<InvokeChannel, number>> = {
   // A32：下载技能（网络请求，给 20s；服务层自身有 15s 下载超时）
   [IPC_INVOKE_CHANNELS.skillsPreview]: 20_000,
   [IPC_INVOKE_CHANNELS.skillsInstall]: 20_000,
+  // A34：检测＝单次 5s × 2 次重试 + 余量；执行＝服务内部已有 10min 总超时，通道预算必须更宽
+  [IPC_INVOKE_CHANNELS.piUpdateCheck]: 15_000,
+  [IPC_INVOKE_CHANNELS.piUpdateApply]: 660_000,
+  [IPC_INVOKE_CHANNELS.piUpdateCancel]: 5_000,
+  // A37：清单只读本地 JSON；预览＝一次 registry 请求（服务内 8s）；安装＝服务内 10min 总超时
+  [IPC_INVOKE_CHANNELS.pkgList]: 10_000,
+  [IPC_INVOKE_CHANNELS.pkgPreview]: 15_000,
+  [IPC_INVOKE_CHANNELS.pkgInstall]: 660_000,
+  [IPC_INVOKE_CHANNELS.pkgInstallCancel]: 5_000,
   // 选文件走原生对话框（用户可能停留很久），给足预算；取消不算失败
   [IPC_INVOKE_CHANNELS.fsPickWorkspaceFile]: 300_000,
   // A27：列个工作区目录（只读 readdir）
@@ -197,6 +224,37 @@ export function createRouter(
     return undefined
   }
 
+  /** A37：安装器兜底（未注入时给明确错误码，而不是 undefined 崩溃） */
+  function requirePkgInstaller(): PiPackageInstaller {
+    const pkgInstaller = deps.pkgInstaller
+    if (pkgInstaller === undefined) {
+      throw new IpcFailure('NOT_IMPLEMENTED', '插件安装服务未注入')
+    }
+    return pkgInstaller
+  }
+
+  /** A34：更新通道的服务兜底（主进程漏注入时给明确错误码，而不是 undefined 崩溃） */
+  function requirePiUpdate(): PiUpdateService {
+    const piUpdate = deps.piUpdate
+    if (piUpdate === undefined) {
+      throw new IpcFailure('NOT_IMPLEMENTED', '更新服务未注入')
+    }
+    return piUpdate
+  }
+
+  /**
+   * A34：更新期间禁止新建 / 恢复会话。
+   *
+   * 依据是「更新会替换磁盘上的 pi 二进制/入口脚本，而活跃会话正持有那个子进程」——
+   * 此时新建会话要么拿到半装的版本，要么让替换失败。检查是同步的、无 I/O，所以放在
+   * handler 最前面（在 agent 目录扫描之前）。
+   */
+  function assertNotUpdating(): void {
+    if (deps.piUpdate?.isRunning() === true) {
+      throw new IpcFailure('PI_UPDATE_BUSY', '正在更新 pi，请等更新结束后再新建/恢复会话')
+    }
+  }
+
   const handlers: HandlerMap = {
     [IPC_INVOKE_CHANNELS.appGetBoot]: (): Promise<BootState> =>
       Promise.resolve({
@@ -256,6 +314,58 @@ export function createRouter(
     [IPC_INVOKE_CHANNELS.piLocate]: (raw) => {
       const input = raw as PiLocateInput
       return deps.piLocator.locate(input.path)
+    },
+
+    /**
+     * A34：只读检测远端最新版。
+     *
+     * **永远** `Result.ok`：`check()` 自己保证不抛错，把离线/超时/源不可用折成
+     * `state: 'unknown'`（或回落到 `source: 'cache'`）。把它转成错误码只会让 UI
+     * 丢失「上次查到什么」的信息。
+     */
+    [IPC_INVOKE_CHANNELS.piUpdateCheck]: () => requirePiUpdate().check(),
+
+    /**
+     * A34：执行 `pi update`。
+     *
+     * 服务返回的是判别联合（`accepted`），错误码映射**只在这里做一次**：
+     * - `accepted: false` 的 gate 拒绝 → 对应错误码（这是「没开始执行」，属调用方问题）；
+     * - `accepted: true` 的 `outcome: 'failed'` → **仍是 `Result.ok`**：UI 要展示
+     *   `logTail` / `manualCommand` / `message`，伪装成异常只会丢掉诊断信息。
+     */
+    [IPC_INVOKE_CHANNELS.piUpdateApply]: async (raw) => {
+      const piUpdate = requirePiUpdate()
+      // A37：与插件安装互斥（安装器只挡住了「更新中装插件」，反向也要挡：
+      // 两者都在改 pi 的受管目录/全局包，同时跑会把版本与登记写成混合态）。
+      if (deps.pkgInstaller?.isRunning() === true) {
+        throw new IpcFailure('PKG_INSTALL_BUSY', '正在安装插件，请等安装结束后再更新 pi')
+      }
+      const outcome = await piUpdate.apply(raw as PiUpdateApplyInput)
+      if (outcome.accepted) return outcome.result
+
+      switch (outcome.reason) {
+        case 'busy':
+          throw new IpcFailure('PI_UPDATE_BUSY', outcome.message)
+        case 'session-busy':
+          throw new IpcFailure('SESSION_BUSY', outcome.message, outcome.sessionKeys?.join(', '))
+        case 'unavailable':
+          // 手动命令是这条路径上唯一可操作的信息，必须带出去
+          throw new IpcFailure(
+            'PI_UPDATE_UNAVAILABLE',
+            outcome.message,
+            outcome.manualCommand ?? outcome.logTail
+          )
+        case 'not-located':
+          throw new IpcFailure('PI_NOT_FOUND', outcome.message)
+        case 'failed':
+          throw new IpcFailure('INTERNAL', outcome.message, outcome.logTail)
+      }
+    },
+
+    /** A34：取消进行中的更新（幂等：没有任务也返回 ok）。 */
+    [IPC_INVOKE_CHANNELS.piUpdateCancel]: () => {
+      requirePiUpdate().cancel()
+      return Promise.resolve({ ok: true } as const)
     },
 
     [IPC_INVOKE_CHANNELS.sessionList]: (raw) => {
@@ -393,6 +503,8 @@ export function createRouter(
     [IPC_INVOKE_CHANNELS.sessionCreate]: (raw) => {
       const input = raw as SessionCreateInput
       return (async () => {
+        // A34：gate 放在最前面 —— 更新期间连 agent 目录扫描都不该做
+        assertNotUpdating()
         // agent 名字必须自己校验：pi 对未知 agent 是**静默忽略**（照常启动、回落默认模型），
         // 不校验就会出现「界面选了 architect，实际还是默认身份」的假象。
         if (input.agent !== undefined) {
@@ -418,8 +530,10 @@ export function createRouter(
       })()
     },
 
-    [IPC_INVOKE_CHANNELS.sessionResume]: (raw) =>
-      service.resume({ sessionFile: (raw as SessionResumeInput).sessionFile }),
+    [IPC_INVOKE_CHANNELS.sessionResume]: (raw) => {
+      assertNotUpdating()
+      return service.resume({ sessionFile: (raw as SessionResumeInput).sessionFile })
+    },
 
     [IPC_INVOKE_CHANNELS.sessionFork]: (raw) => {
       const input = raw as SessionForkInput
@@ -545,6 +659,75 @@ export function createRouter(
     [IPC_INVOKE_CHANNELS.agentsList]: (raw) => {
       const input = raw as { cwd?: string }
       return deps.agentCatalog.list(input.cwd)
+    },
+
+    /**
+     * A37：插件清单（只读）。
+     *
+     * 项目级 `.pi/settings.json` 的工作区根**只能**由主进程推导（活跃会话的 cwd /
+     * 会话索引里该 JSONL 的 cwd），与 `fs:*` 走同一个 `resolveWorkspaceRootForPick`：
+     * renderer 传路径一律不采信。会话引用缺失时 `projectRoot` 为 undefined，只读全局清单。
+     */
+    [IPC_INVOKE_CHANNELS.pkgList]: async (raw) => {
+      const input = raw as { sessionKey?: string; sessionFile?: string }
+      const catalog = deps.pkgCatalog
+      if (catalog === undefined) {
+        throw new IpcFailure('NOT_IMPLEMENTED', '插件清单服务未注入')
+      }
+      const projectRoot = await resolveWorkspaceRootForPick(input)
+      return catalog.list(projectRoot)
+    },
+
+    /**
+     * A37：预览 npm 源（只读 registry 元数据，不落盘、不执行任何第三方代码）。
+     *
+     * `preview` 只在校验失败时抛错 —— 那是**入参问题**，必须映射成 `VALIDATION`；
+     * 网络/格式问题服务层已折进 `PkgPreview.error`（预览失败不阻断安装）。
+     */
+    [IPC_INVOKE_CHANNELS.pkgPreview]: async (raw) => {
+      const input = raw as { source: string }
+      const installer = requirePkgInstaller()
+      try {
+        return await installer.preview(input.source)
+      } catch (error) {
+        throw new IpcFailure(
+          'VALIDATION',
+          error instanceof Error ? error.message : '无法校验该插件源'
+        )
+      }
+    },
+
+    /**
+     * A37：执行 `pi install <source>`。
+     *
+     * 错误码映射只在这里做一次：
+     * - `accepted: false` → 对应 gate 错误码（没开始执行，属调用方问题）；
+     * - `accepted: true` 的 `outcome: 'failed' / 'canceled'` → **仍是 `Result.ok`**：
+     *   UI 要展示 `logTail` / `manualCommand`，伪装成异常只会丢掉诊断信息。
+     */
+    [IPC_INVOKE_CHANNELS.pkgInstall]: async (raw) => {
+      const installer = requirePkgInstaller()
+      // 复用 A34 的 gate：更新期间不许装插件（服务内部还会再判一次，防止绕过本层）
+      assertNotUpdating()
+      const outcome = await installer.install((raw as { source: string }).source)
+      if (outcome.accepted) return outcome.result
+
+      switch (outcome.reason) {
+        case 'busy':
+          throw new IpcFailure('PKG_INSTALL_BUSY', outcome.message)
+        case 'updating':
+          throw new IpcFailure('PI_UPDATE_BUSY', outcome.message)
+        case 'not-located':
+          throw new IpcFailure('PI_NOT_FOUND', outcome.message)
+        case 'invalid':
+          throw new IpcFailure('VALIDATION', outcome.message)
+      }
+    },
+
+    /** A37：取消进行中的安装（幂等：没有任务也返回 ok，未接线同样安全）。 */
+    [IPC_INVOKE_CHANNELS.pkgInstallCancel]: () => {
+      deps.pkgInstaller?.cancel()
+      return Promise.resolve({ ok: true } as const)
     },
 
     [IPC_INVOKE_CHANNELS.modelsRead]: (): Promise<ModelConfigView> =>

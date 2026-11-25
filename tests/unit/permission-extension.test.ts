@@ -56,6 +56,7 @@ function defaultPolicy(overrides: Partial<PermissionPolicy> = {}): PermissionPol
     timeoutMs: 120_000,
     clientProtocol: 1,
     compatible: true,
+    noUi: 'deny',
     ...overrides
   }
 }

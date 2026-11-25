@@ -36,7 +36,10 @@ const api: PiApi = {
     copyText: (input) => invoke(IPC_INVOKE_CHANNELS.appCopyText, input)
   },
   pi: {
-    locate: (input) => invoke(IPC_INVOKE_CHANNELS.piLocate, input ?? {})
+    locate: (input) => invoke(IPC_INVOKE_CHANNELS.piLocate, input ?? {}),
+    updateCheck: () => invoke(IPC_INVOKE_CHANNELS.piUpdateCheck, {}),
+    updateApply: (input) => invoke(IPC_INVOKE_CHANNELS.piUpdateApply, input),
+    updateCancel: () => invoke(IPC_INVOKE_CHANNELS.piUpdateCancel, {})
   },
   session: {
     list: (input) => invoke(IPC_INVOKE_CHANNELS.sessionList, input ?? {}),
@@ -56,6 +59,12 @@ const api: PiApi = {
     list: (input) => invoke(IPC_INVOKE_CHANNELS.skillsList, input ?? {}),
     preview: (input) => invoke(IPC_INVOKE_CHANNELS.skillsPreview, input),
     install: (input) => invoke(IPC_INVOKE_CHANNELS.skillsInstall, input)
+  },
+  pkg: {
+    list: (input) => invoke(IPC_INVOKE_CHANNELS.pkgList, input ?? {}),
+    preview: (input) => invoke(IPC_INVOKE_CHANNELS.pkgPreview, input),
+    install: (input) => invoke(IPC_INVOKE_CHANNELS.pkgInstall, input),
+    installCancel: () => invoke(IPC_INVOKE_CHANNELS.pkgInstallCancel, {})
   },
   agents: {
     list: (input) => invoke(IPC_INVOKE_CHANNELS.agentsList, input ?? {})
@@ -96,7 +105,9 @@ const api: PiApi = {
     onRecord: (cb) => on(IPC_EVENT_CHANNELS.record, cb),
     onExtUi: (cb) => on(IPC_EVENT_CHANNELS.extui, cb),
     onStatus: (cb) => on(IPC_EVENT_CHANNELS.status, cb),
-    onDiagnostic: (cb) => on(IPC_EVENT_CHANNELS.diagnostic, cb)
+    onDiagnostic: (cb) => on(IPC_EVENT_CHANNELS.diagnostic, cb),
+    onPiUpdate: (cb) => on(IPC_EVENT_CHANNELS.piUpdate, cb),
+    onPkgInstall: (cb) => on(IPC_EVENT_CHANNELS.pkgInstall, cb)
   }
 }
 

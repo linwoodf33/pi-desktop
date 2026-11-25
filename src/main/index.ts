@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-import type { EventChannel } from '../shared/ipc-channels'
+import { IPC_EVENT_CHANNELS, type EventChannel } from '../shared/ipc-channels'
 import type { StatusEvent } from '../shared/contracts/types'
 import { IpcFailure } from '../shared/contracts/result'
 
@@ -16,6 +16,14 @@ import { createConfigStore } from './services/config-store'
 import { createFsBridge } from './services/fs-bridge'
 import { buildPermissionPolicyEnv } from './services/permission-extension'
 import { createPiLocator, defaultRunCapture } from './services/pi-locator'
+import {
+  createFileUpdateCache,
+  createPiUpdateService,
+  type PiUpdateService
+} from './services/pi-update'
+import { createPiPackageCatalog } from './services/pi-package-catalog'
+import { createPiPackageInstaller } from './services/pi-package-installer'
+import { readSessionAgent } from './services/session-agent'
 import { createSessionHistory } from './services/session-history'
 import { createSessionIndex } from './services/session-index'
 import { createSessionService, type SessionService } from './services/session-service'
@@ -33,6 +41,10 @@ const devServerUrl = process.env.ELECTRON_RENDERER_URL
 
 let mainWindow: BrowserWindow | null = null
 let activeServices: { sessionService: SessionService; connection: LocalConnection } | null = null
+/** A34：更新服务（`before-quit` 需要读它判断是否有更新正在跑） */
+let activePiUpdate: PiUpdateService | null = null
+/** 用户已确认「更新中继续退出」：置 true 后 `before-quit` 不再拦截，避免弹窗死循环 */
+let allowQuit = false
 
 /** main → renderer 事件推送；窗口未就绪时静默丢弃（事件是流式的，不需要补发） */
 function emitEvent(channel: EventChannel, payload: unknown): void {
@@ -66,6 +78,8 @@ function bootstrappedWindow(): void {
   })
 
   const sessionService = createSessionService({
+    // A38：`get_state` 不返回 agent，由主进程读会话文件尾部顺带取（fail-soft）
+    readAgent: readSessionAgent,
     connection,
     emit: (channel, payload) => {
       emitEvent(channel, payload)
@@ -145,6 +159,53 @@ function bootstrappedWindow(): void {
     runCapture: defaultRunCapture
   })
 
+  // A34：pi 版本检测 / 更新。
+  // 检测源与超时都在服务内部固定（renderer 不能指定地址，避免把主进程变成 SSRF 代理）；
+  // 检测缓存落 `userData`，只在「本次检测失败」时才被读，用于告诉用户上次查到什么。
+  const updateCache = createFileUpdateCache(join(app.getPath('userData'), 'pi-update-check.json'))
+  const piUpdate = createPiUpdateService({
+    // 只有「定位成功且读到版本」才算可用；其余情况返回 undefined（服务映射成 not-located）
+    locatePi: async () => {
+      const status = await piLocator.locate(config().piCommand)
+      if (status.state !== 'ok' || status.version === undefined) return undefined
+      return { command: status.path ?? config().piCommand, version: status.version }
+    },
+    launchPi: () => Promise.resolve(piLocator.launch()),
+    activeSessionKeys: () => sessionService.keys(),
+    disposeAllSessions: () => sessionService.disposeAll(),
+    emit: (event) => {
+      // 走独立事件通道推给所有窗口（renderer 重建后仍能看到进度）
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send(IPC_EVENT_CHANNELS.piUpdate, event)
+      }
+    },
+    readCache: () => updateCache.read(),
+    writeCache: (result) => updateCache.write(result)
+  })
+  activePiUpdate = piUpdate
+
+  // A37：插件（pi package）清单 + 安装。
+  // `agentDir` 统一取自 catalog（它内部已解析 `PI_CODING_AGENT_DIR` / `~/.pi/agent`）：
+  // 清单与安装后的复验必须是同一个目录事实，否则会出现「清单说装在这、复验读那里」。
+  const pkgCatalog = createPiPackageCatalog()
+  const pkgInstaller = createPiPackageInstaller({
+    // 与 piUpdate.locatePi 同构：只有「定位成功且读到版本」才算可用
+    locatePi: async () => {
+      const status = await piLocator.locate(config().piCommand)
+      if (status.state !== 'ok' || status.version === undefined) return undefined
+      return { command: status.path ?? config().piCommand, version: status.version }
+    },
+    launchPi: () => Promise.resolve(piLocator.launch()),
+    agentDir: () => pkgCatalog.agentDir(),
+    emit: (event) => {
+      // 走独立事件通道推给所有窗口（renderer 重建后仍能看到安装日志）
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send(IPC_EVENT_CHANNELS.pkgInstall, event)
+      }
+    },
+    isUpdating: () => piUpdate.isRunning()
+  })
+
   const router = createRouter(
     {
       configStore,
@@ -160,6 +221,11 @@ function bootstrappedWindow(): void {
       sessionIndex,
       piLocator,
       sessionService,
+      // A34：检测/执行/取消更新（执行期间 gate 住 session:create / session:resume）
+      piUpdate,
+      // A37：插件清单 + 安装/预览/取消（安装与更新互斥）
+      pkgCatalog,
+      pkgInstaller,
       fsBridge,
       sessionHistory,
       artifacts,
@@ -225,7 +291,35 @@ if (!gotSingleInstanceLock) {
     })
   })
 
-  app.on('before-quit', () => {
+  /**
+   * A34：更新进行中退出要先问一次。
+   *
+   * `before-quit` 里**不能** await（Electron 会忽略返回值直接继续退出），所以：
+   * 先同步 `preventDefault()`，再在异步回调里弹窗；选「继续退出」时置 `allowQuit`
+   * （否则 `app.quit()` 会再次进入本回调、再次弹窗），并先 `cancel()` 结束安装进程。
+   */
+  app.on('before-quit', (event) => {
+    const piUpdate = activePiUpdate
+    if (piUpdate !== null && piUpdate.isRunning() && !allowQuit) {
+      event.preventDefault()
+      void (async () => {
+        const choice = await dialog.showMessageBox({
+          type: 'warning',
+          title: 'pi 正在更新',
+          message: '更新正在执行，退出可能导致安装不完整',
+          detail: '建议等更新结束后再退出。若继续退出，将先尝试结束更新进程。',
+          buttons: ['继续退出', '取消'],
+          defaultId: 1,
+          cancelId: 1
+        })
+        if (choice.response !== 0) return
+        allowQuit = true
+        piUpdate.cancel()
+        shutdownServices()
+        app.quit()
+      })()
+      return
+    }
     shutdownServices()
   })
 

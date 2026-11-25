@@ -4,7 +4,7 @@ import { dirname } from 'node:path'
 import { z } from 'zod'
 
 import { IpcFailure } from '../../shared/contracts/result'
-import { DEFAULT_APPROVAL_TOOLS } from '../../shared/contracts/permission'
+import { DEFAULT_APPROVAL_TOOLS, DEFAULT_NO_UI_POLICY } from '../../shared/contracts/permission'
 import { SECRET_FIELD_PATTERN, type ConfigUpdateInput } from '../../shared/contracts/schemas'
 import { appConfigViewSchema, type AppConfigView } from '../../shared/contracts/types'
 import { normalizeThemeId } from '../../shared/contracts/theme'
@@ -70,7 +70,9 @@ export function defaultConfigView(env: NodeJS.ProcessEnv = process.env): AppConf
       // 清单单一来源：`shared/contracts/permission.ts#DEFAULT_APPROVAL_TOOLS`
       enabled: true,
       tools: [...DEFAULT_APPROVAL_TOOLS],
-      timeoutMs: DEFAULT_APPROVAL_TIMEOUT_MS
+      timeoutMs: DEFAULT_APPROVAL_TIMEOUT_MS,
+      // A35：无 UI 会话默认拒绝（fail-closed）；放行只能由用户在设置页显式打开
+      noUi: DEFAULT_NO_UI_POLICY
     }
   }
 }
@@ -226,7 +228,9 @@ function mergePatch(current: AppConfigView, patch: ConfigUpdateInput): AppConfig
     next.permission = {
       enabled: patch.permission.enabled,
       tools,
-      timeoutMs: patch.permission.timeoutMs
+      timeoutMs: patch.permission.timeoutMs,
+      // 补丁没带 noUi（旧 renderer）时沿用当前值，不能静默改回 deny
+      noUi: patch.permission.noUi ?? next.permission.noUi
     }
   }
   return next

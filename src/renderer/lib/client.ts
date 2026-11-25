@@ -53,6 +53,13 @@ export function subscribeEvents(api: PiApi): () => void {
       void refreshArtifacts(taskId)
     }
     if (event.status === 'exited') {
+      if (useRunStore.getState().ending[taskId] === true) {
+        // A36：用户主动结束 —— 降级由 endTask 在 dispose 真正返回后执行；
+        // 这里只把 phase 压到 settling（禁发），且不弹「子进程退出」的提示条
+        run.setPhase(taskId, 'settling')
+        forgetSession(event.sessionKey)
+        return
+      }
       // A6：子进程意外退出后必须**立刻可操作**——释放已死的 sessionKey，把任务降级为历史回放
       // （对话与 filePath 都保留，点「继续对话」即 `session:resume`）。
       // 不这么做的话，任务会留着一个僵尸 sessionKey：再发消息只会得到 SESSION_NOT_FOUND。

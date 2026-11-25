@@ -20,6 +20,10 @@ describe('IPC 通道白名单（§5.4）', () => {
         // A26 补充：写系统剪贴板（file:// 下 renderer 的 navigator.clipboard 不可用）
         'app:copyText',
         'pi:locate',
+        // A34 补充：pi 版本检测与更新（检测只读 / 执行真正调 pi update / 可取消）
+        'pi:updateCheck',
+        'pi:updateApply',
+        'pi:updateCancel',
         'session:list',
         // M3 补充：§5.4 缺「选中历史会话只回放 JSONL」的通道（§6.1 第 4 步）
         'session:history',
@@ -47,6 +51,11 @@ describe('IPC 通道白名单（§5.4）', () => {
         // A32 补充：技能预览 / 安装（URL）
         'skills:preview',
         'skills:install',
+        // A37 补充：插件清单/预览/安装/取消
+        'pkg:list',
+        'pkg:preview',
+        'pkg:install',
+        'pkg:installCancel',
         // A14 补充：模型管理（pi models.json / settings.json#defaultModel）
         'models:read',
         'models:setDefault',
@@ -77,9 +86,16 @@ describe('IPC 通道白名单（§5.4）', () => {
     expect(Object.keys(invokeInputSchemas).sort()).toEqual([...INVOKE_CHANNELS].sort())
   })
 
-  it('事件通道为 §5.4 事件表四条', () => {
+  it('事件通道为 §5.4 事件表六条', () => {
     expect([...EVENT_CHANNELS].sort()).toEqual(
-      ['evt:record', 'evt:extui', 'evt:status', 'evt:diagnostic'].sort()
+      [
+        'evt:record',
+        'evt:extui',
+        'evt:status',
+        'evt:diagnostic',
+        'evt:piUpdate',
+        'evt:pkgInstall'
+      ].sort()
     )
   })
 

@@ -32,6 +32,16 @@ export const DEFAULT_TIMEOUT_MS = 120_000
 export const MIN_TIMEOUT_MS = 5_000
 export const MAX_TIMEOUT_MS = 600_000
 
+/**
+ * 无 UI 会话（print / json 模式，或客户端未连接）的审批策略。
+ *
+ * 为什么默认 `deny`：无 UI 时没有人能看见并批准，放行等于把「审批」悄悄变成自动执行，
+ * 这正是 fail-closed 要防的形态；`allow` 只能由用户在设置页显式配置。
+ */
+export type NoUiPolicy = 'deny' | 'allow'
+export const NO_UI_POLICIES: readonly NoUiPolicy[] = ['deny', 'allow']
+export const DEFAULT_NO_UI_POLICY: NoUiPolicy = 'deny'
+
 export const OPTION_ALLOW_ONCE = '允许一次'
 export const OPTION_ALLOW_SESSION = '本会话允许'
 export const OPTION_DENY = '拒绝'
@@ -68,6 +78,11 @@ export interface PermissionPolicy {
   clientProtocol: number
   /** 策略是否与扩展协议兼容（false 时 UI 需显式告警，且不得静默放行） */
   compatible: boolean
+  /**
+   * 无 UI 会话的显式策略；解析后**总是**有值（调用方不必判 undefined）。
+   * 协议不兼容时恒为 `deny`（见 `parsePolicy`）。
+   */
+  noUi: NoUiPolicy
   /** 解析策略时遇到的问题（仅诊断用，不含敏感内容） */
   warning?: string
 }
@@ -96,6 +111,20 @@ function normalizeTools(value: unknown): readonly string[] {
  * - JSON 非法 / 形状不对 → 仍用默认策略并附 warning，绝不因为配置坏了就放行；
  * - 只有客户端显式 `enabled:false` 才关闭审批。
  */
+/**
+ * noUi 原始值 → 判定结果。
+ *
+ * 之所以把「没下发」与「下发了不可识别的值」分开：前者是老客户端的正常形态（静默回退
+ * deny 即可），后者说明配置链路坏了，要留 warning 让人看见。
+ */
+function normalizeNoUi(value: unknown): NoUiPolicy | 'missing' | 'invalid' {
+  if (value === undefined) return 'missing'
+  // 只认字符串：数字 / 布尔 / 数组 / 对象一律非法（`true`/`1` 不能被当成 allow）
+  if (typeof value !== 'string') return 'invalid'
+  const text = value.trim().toLowerCase()
+  return text === 'allow' || text === 'deny' ? text : 'invalid'
+}
+
 export function parsePolicy(raw: string | undefined): PermissionPolicy {
   if (raw === undefined || raw.trim().length === 0) {
     return {
@@ -103,7 +132,9 @@ export function parsePolicy(raw: string | undefined): PermissionPolicy {
       tools: DEFAULT_APPROVAL_TOOLS,
       timeoutMs: DEFAULT_TIMEOUT_MS,
       clientProtocol: PERMISSION_PROTOCOL_VERSION,
-      compatible: true
+      compatible: true,
+      // 静默 deny：没下发策略是老客户端的正常形态，不是配置错误
+      noUi: DEFAULT_NO_UI_POLICY
     }
   }
 
@@ -117,6 +148,8 @@ export function parsePolicy(raw: string | undefined): PermissionPolicy {
       timeoutMs: DEFAULT_TIMEOUT_MS,
       clientProtocol: PERMISSION_PROTOCOL_VERSION,
       compatible: true,
+      // 配置坏了只能更严格：无 UI 一律拒绝
+      noUi: DEFAULT_NO_UI_POLICY,
       warning: `${POLICY_ENV_KEY} 不是合法 JSON，已回退到默认审批策略`
     }
   }
@@ -128,6 +161,8 @@ export function parsePolicy(raw: string | undefined): PermissionPolicy {
       timeoutMs: DEFAULT_TIMEOUT_MS,
       clientProtocol: PERMISSION_PROTOCOL_VERSION,
       compatible: true,
+      // 配置坏了只能更严格：无 UI 一律拒绝
+      noUi: DEFAULT_NO_UI_POLICY,
       warning: `${POLICY_ENV_KEY} 不是对象，已回退到默认审批策略`
     }
   }
@@ -139,15 +174,24 @@ export function parsePolicy(raw: string | undefined): PermissionPolicy {
       : PERMISSION_PROTOCOL_VERSION
   const compatible = clientProtocol === PERMISSION_PROTOCOL_VERSION
 
+  // noUi 判定顺序即优先级：协议不兼容 > 未下发（静默 deny）> 合法取值 > 非法值（deny + warning）
+  const rawNoUi = normalizeNoUi(record['noUi'])
+  const noUi: NoUiPolicy = compatible && rawNoUi === 'allow' ? 'allow' : DEFAULT_NO_UI_POLICY
+  // warning 是单字符串字段：更重要的「协议不兼容」不得被 noUi 的提示覆盖
+  const warning = compatible
+    ? rawNoUi === 'invalid'
+      ? `${POLICY_ENV_KEY} 的 noUi 取值非法，已回退到 ${DEFAULT_NO_UI_POLICY}`
+      : undefined
+    : `客户端协议 v${clientProtocol} 与扩展 v${PERMISSION_PROTOCOL_VERSION} 不兼容，无 UI 策略强制 ${DEFAULT_NO_UI_POLICY}`
+
   return {
     enabled: record['enabled'] !== false,
     tools: normalizeTools(record['tools']),
     timeoutMs: clampTimeout(record['timeoutMs']),
     clientProtocol,
     compatible,
-    ...(compatible
-      ? {}
-      : { warning: `客户端协议 v${clientProtocol} 与扩展 v${PERMISSION_PROTOCOL_VERSION} 不兼容` })
+    noUi,
+    ...(warning === undefined ? {} : { warning })
   }
 }
 
@@ -160,6 +204,8 @@ export interface HandshakePayload {
   tools: readonly string[]
   timeoutMs: number
   compatible: boolean
+  /** 实际生效的无 UI 策略（握手要上报，客户端才能显示当前状态） */
+  noUi: NoUiPolicy
 }
 
 export function buildHandshake(policy: PermissionPolicy): HandshakePayload {
@@ -170,7 +216,8 @@ export function buildHandshake(policy: PermissionPolicy): HandshakePayload {
     enabled: policy.enabled,
     tools: policy.tools,
     timeoutMs: policy.timeoutMs,
-    compatible: policy.compatible
+    compatible: policy.compatible,
+    noUi: policy.noUi
   }
 }
 

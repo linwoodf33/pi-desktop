@@ -199,6 +199,7 @@ export function Conversation({
         onSend={onSend}
         onAbort={onAbort}
         {...(referenceTarget === undefined ? {} : { referenceTarget })}
+        {...(task?.agent === undefined ? {} : { agent: task.agent })}
       />
     </section>
   )

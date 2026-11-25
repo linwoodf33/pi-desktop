@@ -50,6 +50,11 @@ export interface SessionServiceOptions {
   limits: () => SessionLimits
   /** 可选：`--session-dir` 覆盖（§Q7） */
   sessionDir?: () => string | undefined
+  /**
+   * A38：从会话文件里读当前 agent（`open-agents-state` / `active_agent` 条目）。
+   * fail-soft：读不到必须返回 `undefined`（未知），不能把「没读到」当成「没有 agent」。
+   */
+  readAgent?: (filePath: string) => Promise<string | null | undefined>
   /** 单命令超时（§7 约束 13：默认 60s；prompt 的接受/排队响应仍受此约束，跑完不受） */
   commandTimeoutMs?: number
   /** abort / fork 前等待 idle 的上限 */
@@ -596,6 +601,17 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
     const model = toModelInfo(data['model'])
     if (model) session.model = `${model.provider}/${model.id}`
 
+    // A38：agent 不在 `get_state` 里，只能读会话文件。放在 `withLock` 之外，
+    // 且整段 fail-soft —— 读不到就当作「未知」（不返回该字段），不能让 state 失败。
+    let agent: string | null | undefined
+    if (session.sessionFile !== undefined && options.readAgent !== undefined) {
+      try {
+        agent = await options.readAgent(session.sessionFile)
+      } catch {
+        agent = undefined
+      }
+    }
+
     return {
       status: session.status,
       busy: session.busy,
@@ -611,6 +627,7 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
       ...(typeof data['thinkingLevel'] === 'string'
         ? { thinkingLevel: data['thinkingLevel'] }
         : {}),
+      ...(agent === undefined ? {} : { agent }),
       ...(typeof data['steeringMode'] === 'string' ? { steeringMode: data['steeringMode'] } : {}),
       ...(typeof data['followUpMode'] === 'string' ? { followUpMode: data['followUpMode'] } : {})
     }

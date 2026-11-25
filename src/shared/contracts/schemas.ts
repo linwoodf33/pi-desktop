@@ -9,9 +9,11 @@ import {
   upsertModelInputSchema,
   upsertProviderInputSchema
 } from './model-config'
+import { pkgInstallInputSchema, pkgListInputSchema, pkgPreviewInputSchema } from './packages'
 import { skillInstallInputSchema } from './skills'
 import { permissionPolicySchema, sessionToolModeSchema } from './types'
 import { THEME_IDS } from './theme'
+import { piUpdateApplyInputSchema } from './update'
 
 /**
  * 各 invoke 通道的入参 schema（架构文档 §5.4 入参列）。
@@ -309,6 +311,9 @@ export const invokeInputSchemas = {
   [IPC_INVOKE_CHANNELS.appDiagnostics]: emptyInputSchema,
   [IPC_INVOKE_CHANNELS.appCopyText]: z.object({ text: z.string().min(1).max(20_000) }).strict(),
   [IPC_INVOKE_CHANNELS.piLocate]: piLocateInputSchema,
+  [IPC_INVOKE_CHANNELS.piUpdateCheck]: emptyInputSchema,
+  [IPC_INVOKE_CHANNELS.piUpdateApply]: piUpdateApplyInputSchema,
+  [IPC_INVOKE_CHANNELS.piUpdateCancel]: emptyInputSchema,
   [IPC_INVOKE_CHANNELS.sessionList]: sessionListInputSchema,
   [IPC_INVOKE_CHANNELS.sessionHistory]: sessionHistoryInputSchema,
   [IPC_INVOKE_CHANNELS.sessionCreate]: sessionCreateInputSchema,
@@ -333,6 +338,10 @@ export const invokeInputSchemas = {
   [IPC_INVOKE_CHANNELS.skillsList]: agentsListInputSchema,
   [IPC_INVOKE_CHANNELS.skillsPreview]: skillInstallInputSchema,
   [IPC_INVOKE_CHANNELS.skillsInstall]: skillInstallInputSchema,
+  [IPC_INVOKE_CHANNELS.pkgList]: pkgListInputSchema,
+  [IPC_INVOKE_CHANNELS.pkgPreview]: pkgPreviewInputSchema,
+  [IPC_INVOKE_CHANNELS.pkgInstall]: pkgInstallInputSchema,
+  [IPC_INVOKE_CHANNELS.pkgInstallCancel]: emptyInputSchema,
   [IPC_INVOKE_CHANNELS.configUpdate]: configUpdateInputSchema,
   [IPC_INVOKE_CHANNELS.permissionStatus]: emptyInputSchema,
   [IPC_INVOKE_CHANNELS.extuiRespond]: extuiRespondInputSchema,

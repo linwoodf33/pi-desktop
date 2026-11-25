@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react'
 
+import type { PiUpdateCheckResult } from '../../shared/contracts/update'
 import type { ForkPoint } from '../../shared/contracts/types'
 import { Artifacts } from '../features/artifacts/Artifacts'
 import { ApprovalHost } from '../features/chat/ApprovalHost'
 import { Conversation } from '../features/chat/Conversation'
 import { DiagnosticsPanel } from '../features/diagnostics/DiagnosticsPanel'
 import { SkillsPanel } from '../features/skills/SkillsPanel'
+import { PackagesPanel } from '../features/plugins/PackagesPanel'
 import { ModelManager } from '../features/models/ModelManager'
 import { SettingsPanel } from '../features/settings/SettingsPanel'
+import { UpdatePanel } from '../features/update/UpdatePanel'
 import { NewTaskDialog } from '../features/tasks/NewTaskDialog'
 import { TaskList } from '../features/tasks/TaskList'
 import {
   abortRun,
+  endTask,
   renameTask,
   continueConversation,
   forkTask,
@@ -31,6 +35,12 @@ import { useArtifactStore } from '../stores/artifactStore'
 import { useRunStore } from '../stores/runStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { ErrorBanner } from './ErrorBanner'
+
+/**
+ * A34：挂载后延迟自动检测的毫秒数。等待 8s 是为了避开启动自检（定位 pi + 握手）
+ * 的 IO 高峰，让首屏先把桥接徽标和任务列出来，再去问更新源。
+ */
+const AUTO_UPDATE_CHECK_DELAY = 8000
 
 /**
  * 应用外壳（§4.1 / §5.5）：三栏布局 + 事件接线（§6.1 启动流程）。
@@ -81,6 +91,8 @@ export function App() {
   const models = useSessionStore((state) => state.models)
 
   const phases = useRunStore((state) => state.phases)
+  /** A36：结束会话在途（`session:dispose` 未返回） */
+  const ending = useRunStore((state) => state.ending)
   const aborting = useRunStore((state) => state.aborting)
   const aborted = useRunStore((state) => state.aborted)
   const switching = useRunStore((state) => state.switching)
@@ -96,6 +108,14 @@ export function App() {
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
   /** A31：技能面板 */
   const [skillsOpen, setSkillsOpen] = useState(false)
+  /** A37：插件面板 */
+  const [pluginsOpen, setPluginsOpen] = useState(false)
+  /** A34：pi 更新面板 */
+  const [updateOpen, setUpdateOpen] = useState(false)
+  /** 后台/手动检测到的结论：只用来给顶栏按钮做「有新版」提示 */
+  const [updateCheck, setUpdateCheck] = useState<PiUpdateCheckResult>()
+  /** 是否正在执行 `pi update`（面板关闭时顶栏也要能显示「更新中…」） */
+  const [updateRunning, setUpdateRunning] = useState(false)
 
   useEffect(() => {
     const api = getApi()
@@ -111,6 +131,57 @@ export function App() {
     })
     return unsubscribe
   }, [probeBridge])
+
+  /**
+   * A34：挂载后延迟自动探一次版本（只读，不安装）。
+   *
+   * 依赖数组为空是刻意的：只在应用挂载后跑一次，**不随任务切换、面板开关重复探测** ——
+   * 更新源是外网接口，重复请求既慢又可能被限流。
+   * 检测失败、`state: 'unknown'` 一律静默：自动检测属于后台行为，不该给用户弹红条；
+   * 想看到失败原因可到面板里手动点「检查更新」。
+   */
+  useEffect(() => {
+    // 卸载后不得 setState（主进程响应回来时组件可能已经没了）
+    let cancelled = false
+    const timer = setTimeout(() => {
+      const api = getApi()
+      if (api === undefined) return
+      void api.pi
+        .updateCheck()
+        .then((result) => {
+          if (cancelled || !result.ok) return
+          // unknown = 查不到（离线/超时）：不落状态，按钮保持「更新」
+          if (result.data.state === 'unknown') return
+          setUpdateCheck(result.data)
+        })
+        .catch(() => undefined)
+    }, AUTO_UPDATE_CHECK_DELAY)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [])
+
+  /**
+   * A34：在 App 级跟踪「更新中」。
+   *
+   * 面板自己订阅日志流，但面板关掉后事件仍在跑，顶栏按钮需要独立来源 —— 所以这里
+   * 再订阅一次同一条事件通道。依赖数组为空：处理器只用 setState（不读闭包旧值），
+   * 无需随依赖变化重订阅。
+   */
+  useEffect(() => {
+    const api = getApi()
+    if (api === undefined) return undefined
+    return api.events.onPiUpdate((event) => {
+      if (event.phase === 'started') {
+        setUpdateRunning(true)
+        return
+      }
+      if (event.phase === 'done' || event.phase === 'failed' || event.phase === 'canceled') {
+        setUpdateRunning(false)
+      }
+    })
+  }, [])
 
   const task = selectedId === undefined ? undefined : tasks.find((item) => item.id === selectedId)
   const chat = selectedId === undefined ? initialChatState : (chats[selectedId] ?? initialChatState)
@@ -154,12 +225,35 @@ export function App() {
         <button
           type="button"
           className="btn btn--ghost app__bar-action"
+          data-testid="open-plugins"
+          onClick={() => {
+            setPluginsOpen(true)
+          }}
+        >
+          插件
+        </button>
+        <button
+          type="button"
+          className="btn btn--ghost app__bar-action"
           data-testid="open-models-manager"
           onClick={() => {
             setModelsOpen(true)
           }}
         >
           模型
+        </button>
+        <button
+          type="button"
+          className="btn btn--ghost app__bar-action"
+          data-testid="open-update"
+          onClick={() => {
+            setUpdateOpen(true)
+          }}
+        >
+          {updateRunning ? '更新中…' : updateCheck?.state === 'available' ? '有新版' : '更新'}
+          {updateCheck?.state === 'available' ? (
+            <span className="app__bar-dot" data-testid="update-dot" />
+          ) : null}
         </button>
         <BridgeIndicator />
       </header>
@@ -172,6 +266,11 @@ export function App() {
       <main className={artifactsCollapsed ? 'layout layout--artifacts-collapsed' : 'layout'}>
         <TaskList
           onRename={renameTask}
+          onEndTask={(taskId) => {
+            void endTask(taskId)
+          }}
+          ending={ending}
+          phases={phases}
           tasks={tasks}
           selectedId={selectedId}
           loading={!loaded}
@@ -258,6 +357,22 @@ export function App() {
         />
       ) : null}
 
+      {pluginsOpen ? (
+        <PackagesPanel
+          {...(task === undefined
+            ? {}
+            : {
+                target: {
+                  ...(task.sessionKey === undefined ? {} : { sessionKey: task.sessionKey }),
+                  ...(task.filePath === undefined ? {} : { sessionFile: task.filePath })
+                }
+              })}
+          onClose={() => {
+            setPluginsOpen(false)
+          }}
+        />
+      ) : null}
+
       {diagnosticsOpen ? (
         <DiagnosticsPanel
           onClose={() => {
@@ -270,6 +385,18 @@ export function App() {
         <ModelManager
           onClose={() => {
             setModelsOpen(false)
+          }}
+        />
+      ) : null}
+
+      {updateOpen ? (
+        <UpdatePanel
+          onClose={() => {
+            setUpdateOpen(false)
+          }}
+          // 更新会替换本机 pi（版本/路径可能变了）：重跑自检刷新徽标与诊断信息
+          onApplied={() => {
+            void probeBridge()
           }}
         />
       ) : null}

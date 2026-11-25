@@ -316,15 +316,24 @@ interface PiTransport {
 | `fs:readText`           | `{ path, maxBytes?, offset?, sessionKey?, sessionFile? }`                                       | `ReadTextResult`（M6）                                            | **M6**：默认前 64KB、`offset` 分页、二进制标记；路径必须在会话工作区（或主进程已知根）内                                     |
 | `fs:diff`               | `{ path, sessionKey?, sessionFile? }`                                                           | `UnifiedDiff`（M6）                                               | **M6**：git 走 `git diff`（暂存+未暂存），非 git 走快照比对合成；上限 2MB 显式截断                                           |
 | `artifact:open`         | `{ path, sessionKey?, sessionFile? }`                                                           | `{ ok: true }`                                                    | **M6**：`shell.openPath`（**不是** `openExternal`）打开前校验工作区与文件存在性，并记审计                                    |
+| `pi:updateCheck`        | `{}`                                                                                            | `PiUpdateCheckResult`                                             | **A34**：检测远端最新版；**只读、永不报错**（离线/超时给 `state: 'unknown'` + `error`），`source` 标注新查还是缓存           |
+| `pi:updateApply`        | `{ force?, disposeSessions? }`                                                                  | `PiUpdateApplyResult`                                             | **A34**：真调 `pi update`（argv 仅 `update` / `update --force`，`shell:false`）；零活跃会话前置，更新中禁建/恢复会话         |
+| `pi:updateCancel`       | `{}`                                                                                            | `{ ok: true }`                                                    | **A34**：取消进行中的更新（SIGTERM → 2s → SIGKILL）；无任务时**幂等**返回 `ok`                                               |
+| `pkg:list`              | `{ sessionKey?, sessionFile? }`                                                                 | `PkgCatalogView`                                                  | **A37**：插件清单（只读 settings.json + 受管目录 package.json）；settings 损坏降级为空 + 错误字段，不抛错                    |
+| `pkg:preview`           | `{ source }`                                                                                    | `PkgPreview`                                                      | **A37**：仅 npm 源查 registry 元数据（8s/1MB/逐跳校验）；失败返回 `origin:'none'` + error，**不阻断**安装                    |
+| `pkg:install`           | `{ source }`                                                                                    | `PkgInstallResult`                                                | **A37**：`pi install <source>`（argv 恒两元素、`shell:false`、10min）；与更新双向互斥；exit 0 仍复验 settings 登记           |
+| `pkg:installCancel`     | `{}`                                                                                            | `{ ok: true }`                                                    | **A37**：取消进行中的安装（SIGTERM → 2s → SIGKILL）；无任务时**幂等**返回 `ok`                                               |
 
 事件（main → renderer）：
 
-| 通道             | 载荷                                                                           | 频率策略                         |
-| ---------------- | ------------------------------------------------------------------------------ | -------------------------------- |
-| `evt:record`     | 归一化会话事件                                                                 | 逐条；`text_delta` 合并窗口 16ms |
-| `evt:extui`      | `extension_ui_request`                                                         | 逐条，需立即响应                 |
-| `evt:status`     | `{ sessionKey, status }`（`starting / running / settled / exited / recycled`） | 状态变更                         |
-| `evt:diagnostic` | stderr 尾部、崩溃信息                                                          | 变更时                           |
+| 通道             | 载荷                                                                           | 频率策略                                                                       |
+| ---------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `evt:record`     | 归一化会话事件                                                                 | 逐条；`text_delta` 合并窗口 16ms                                               |
+| `evt:extui`      | `extension_ui_request`                                                         | 逐条，需立即响应                                                               |
+| `evt:status`     | `{ sessionKey, status }`（`starting / running / settled / exited / recycled`） | 状态变更                                                                       |
+| `evt:diagnostic` | stderr 尾部、崩溃信息                                                          | 变更时                                                                         |
+| `evt:piUpdate`   | `{ jobId, phase, line?, message? }`                                            | 更新逐行输出与状态迁移（`jobId` 归属）；单行 ≤2000、尾部 32KB、主进程脱敏      |
+| `evt:pkgInstall` | `{ jobId, phase, line?, message? }`                                            | 插件安装逐行输出与状态迁移；与 `evt:piUpdate` 同构（同一套剥离/脱敏/截断上限） |
 
 **`fs:*` 路由（补齐 v0.2 缺口）**：MVP 全部由 `FsBridge` 处理且只接受本地路径；Phase 2 按连接 `kind` 分流（local → `FsBridge`，gateway → `RemoteFs`），路由判断集中在 `services/fs-router.ts`，不在 IPC 层散落分支。
 
@@ -512,6 +521,20 @@ UI：任务标题**双击**进入编辑，`Enter` 保存、`Esc` 取消；失败
 **快照语义（避免误读，与 git 一致）**：基线是**会话开始那一刻**。会话期间新增又删除的文件在两个时点都不存在 → 不会出现在列表里（git 下未跟踪文件同理）。只 `touch` 不`改内容 → 通过 sha1 复核判为「未变化」（不误报）。符号链接不跟随（既防逃逸也防环）：判定走 **`lstat`**（只看链接本身、不解析目标），`readdir`的 dirent 与`lstat`双重把关以覆盖 TOCTOU 窗口；链接/目录等非普通文件不计入`files`，只累加到 `skippedSymlinks`/`skippedNonRegular`，且**不会**把快照标记为不完整（`tests/unit/workspace-snapshot-links.test.ts`、`workspace-snapshot-lstat.test.ts`）。
 
 **触发时机（不轮询）**：只有 `evt:status=settled`（renderer 收到后调一次）与用户点「刷新」。会话 `starting` 时 main 侧顺带建立基线快照（非 git 工作区才做，异步不阻塞会话创建）；若某次扫描时基线还没建立，会补建并在 `note` 里显式说明「此前的变更不可见」。
+
+**A34 更新链路（v0.16，检测与执行分开）**：
+
+- **检测**：`pi:updateCheck` 自己请求 `https://pi.dev/api/latest-version`（硬编码、仅 https），只回
+  `state / currentVersion / latestVersion / source / checkedAt` —— **只读、永不报错**，查不到就是
+  `unknown`（离线不该被读成「有新版」），`source` 标明是新查还是缓存。
+- **执行**：`pi:updateApply` 只 spawn `pi update`（argv 固定、`shell:false`），**不自己拼 npm 安装命令**
+  —— 拼错 prefix 会把全局环境装歪，这正是用户最不想被客户端动的地方。
+- **前置**：必须有**零活跃会话**（Windows 会挪动安装目录），且更新中 `session:create` / `session:resume`
+  被 gate 住（二进制可能正被替换）。
+- **判定**：更新后跑 `pi --version` 复验，`afterVersion === targetVersion` → `updated`；进程已退出 / 待生效
+  → `pendingRestart`；非 0 或版本未变 → `failed` + `manualCommand`；**不回滚**。
+- **唯一放宽口**：`PI_DESKTOP_UPDATE_CHECK_URL` 只在 host 为 `127.0.0.1` / `localhost` 时允许 http（e2e 用），
+  其它一律 https。
 
 ### 5.5 渲染进程模块
 
@@ -769,6 +792,18 @@ Phase 2 的连接级断连/重连见附录 A.5。
 - A13 会话 `agent_settled` 后产物面板显示工作区变更（git：`status`+`diff`；非 git：快照比对并**显式标注**），单文件 diff 超 2MB 截断有提示，越权路径 100% `PATH_DENIED`，「用系统程序打开」需用户确认且经主进程校验后走 `shell.openPath`。
 - A14 模型管理：客户端可列出 / 新增 / 编辑 / 删除 pi `models.json` 里的 provider 与模型，可设默认模型；**apiKey 明文不出主进程**（界面只有掩码）；写回保留客户端未建模字段；写入原子替换 + 备份，坏 JSON 拒绝改动；改动对已在运行的会话不生效且有明示。
 - A15 主题：内置 9 套主题 + 跟随系统，切换立即生效并持久化；每个主题正文对比度 ≥ 4.5、强调/状态/代码 token ≥ 3（单测按 WCAG 断言），浅色主题下代码高亮可读；历史配置值不致主题被重置。
+- A34 检测：`pi:updateCheck` 只读、永不报错 —— 离线 / 超时 / 解析失败一律 `state: 'unknown'`（附 `error`），UI 不给「有新版」的强结论；`source` 标明新查（`pi.dev`）还是缓存并给 `checkedAt`。
+- A34 执行路径：`pi:updateApply` 只 spawn `pi update`，argv 仅 `update` / `update --force` 且 `shell:false`；不自己拼 `npm i -g`。
+- A34 活跃会话拒绝：有活跃会话时不启动更新并给可操作提示（Windows 会挪动安装目录）；`disposeSessions` 需显式传入才代为释放。
+- A34 单飞锁：同一时刻只允许一个更新任务，第二次调用**直接拒绝不排队**；`pi:updateCancel` 在无任务时幂等返回 `ok`。
+- A34 复验判定：更新后以 `pi --version` 为准 —— `afterVersion === targetVersion` → `updated`；待生效 → `pendingRestart`；非 0 或版本未变 → `failed` + `manualCommand`；不做自动回滚。
+- A34 gate：更新进行中 `session:create` / `session:resume` 被拒绝（二进制可能正被替换），任务结束后自动解除。
+- A34 五处契约一致：`pi:updateCheck` / `pi:updateApply` / `pi:updateCancel` / `evt:piUpdate` 在 `IPC_INVOKE_CHANNELS`、zod 白名单、preload 桥、`api.pi` 类型、主进程 handler 五处一致（`tests/unit/channels.test.ts` 同步白名单）。
+- A34 回归：E34-1..5（面板可开与结论展示 / 检测失败不误报 / 执行与逐行回显 / 活跃会话拒绝 / 取消收敛）+ integration 覆盖 `pi update` 四种形态（成功、无新版、非 0、不可自更新）。
+- A35 无 UI 审批策略：`noUi: deny|allow` 默认 deny；`compatible===false` 强制 deny；放行不写 `allowSession`、只在 stderr 留一行审计；设置页勾选后才随 env 下发。
+- A36 结束会话：仅 live 任务有「结束」按钮；内联二次确认（Esc 可取消）；成功后 `detachSession`（有文件）或 `removeTask`（无文件）；`runStore.ending` 区分「主动结束」与 A6「意外退出」。
+- A37 插件面板：清单读 `settings.json#packages`（不解析 `pi list`）；安装只调 `pi install`（argv 恒 `['install', source]`、`shell:false`），只接受 npm/git/https 三类源，拒绝 ssh/本地/`file:`；与更新双向互斥。
+- A38 当前 agent：`get_state` 不返回 agent，主进程在 `session:state` 读会话文件尾部（256KB、锁外、fail-soft），历史任务复用 `session:history`；三态（string/null/undefined）分别更新/清除/保持；不引入监听或轮询。
 - A25 版本与诊断：顶栏显示客户端版本；「诊断」面板列出客户端/pi 版本、配置与会话目录、默认工作目录、Electron/Node 版本，可一键复制；面板只读且不含任何密钥。
 - A23 任务改名：任务标题双击可改名（Enter 保存 / Esc 取消）；活跃会话走 RPC `set_session_name`，历史任务追加 `session_info`（只 append，不改写既有会话内容，且文件必须在会话根内）；刷新列表即读到新名字。
 - A22 文件引用：输入框可「引用文件」（限本会话工作区内），插入工作区相对路径；越界被主进程拒绝；取消不报错。不提供 `@path` 语义（RPC 不支持）。

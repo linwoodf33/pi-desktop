@@ -16,6 +16,7 @@ import {
   abortRun,
   continueConversation,
   createTask,
+  endTask,
   forkTask,
   loadForkPoints,
   loadTasks,
@@ -68,7 +69,12 @@ const BOOT_CONFIG: AppConfigView = {
   maxActiveSessions: 3,
   idleRecycleMinutes: 30,
   theme: 'system',
-  permission: { enabled: true, tools: ['bash', 'powershell', 'write', 'edit'], timeoutMs: 120_000 }
+  permission: {
+    enabled: true,
+    tools: ['bash', 'powershell', 'write', 'edit'],
+    timeoutMs: 120_000,
+    noUi: 'deny'
+  }
 }
 
 interface FakeApiOptions {
@@ -79,6 +85,7 @@ interface FakeApiOptions {
   resumed?: Result<{ sessionKey: string }>
   prompt?: Result<{ disposition: 'started' | 'queued' | 'handled' }>
   aborted?: Result<{ ok: true }>
+  disposed?: Result<{ ok: true }>
   fork?: Result<{ sessionKey: string }>
   state?: Result<AgentState>
   stats?: Result<SessionStats>
@@ -135,7 +142,12 @@ function createFakeApi(options: FakeApiOptions = {}) {
         calls.push({ method: 'session.abort', input })
         return Promise.resolve(options.aborted ?? { ok: true, data: { ok: true as const } })
       },
-      dispose: () => Promise.resolve({ ok: true as const, data: { ok: true as const } }),
+      dispose: (input: { sessionKey: string }) => {
+        calls.push({ method: 'session.dispose', input })
+        return Promise.resolve(
+          options.disposed ?? { ok: true as const, data: { ok: true as const } }
+        )
+      },
       state: (input: { sessionKey: string }) => {
         calls.push({ method: 'session.state', input })
         return Promise.resolve(options.state ?? { ok: true as const, data: AGENT_STATE })
@@ -248,6 +260,9 @@ function resetStores(): void {
     banners: [],
     aborting: {},
     aborted: {},
+    switching: {},
+    forking: {},
+    ending: {},
     locating: false
   })
 }
@@ -918,5 +933,166 @@ describe('M4：设置持久化（config:update）', () => {
     expect(saved).toBeUndefined()
     expect(useRunStore.getState().banners[0]?.message).toContain('VALIDATION')
     expect(useAppStore.getState().config?.piCommand).toBe('pi')
+  })
+})
+
+describe('A36：结束会话（session:dispose → 本地降级）', () => {
+  /** 造一个活跃任务：newTask 建会话，再补会话文件（模拟首条消息已落盘） */
+  async function seedLive(fake: ReturnType<typeof createFakeApi>): Promise<string> {
+    await newTask({ api: fake.api })
+    const taskId = useSessionStore.getState().selectedId as string
+    useSessionStore.getState().setFilePatch(taskId, 'C:/sessions/--work--/live.jsonl')
+    return taskId
+  }
+
+  it('成功（已有会话文件）：释放 sessionKey、降级为历史、保留可回放', async () => {
+    const fake = createFakeApi()
+    const taskId = await seedLive(fake)
+    useRunStore.getState().setPhase(taskId, 'streaming')
+
+    const ok = await endTask(taskId, { api: fake.api })
+
+    expect(ok).toBe(true)
+    const disposeCalls = fake.calls.filter((call) => call.method === 'session.dispose')
+    expect(disposeCalls).toHaveLength(1)
+    expect(disposeCalls[0]?.input).toEqual({ sessionKey: 's1' })
+
+    const task = useSessionStore.getState().tasks.find((item) => item.id === taskId)
+    expect(task?.kind).toBe('history')
+    expect(task?.sessionKey).toBeUndefined()
+    expect(task?.filePath).toBe('C:/sessions/--work--/live.jsonl')
+    expect(useSessionStore.getState().taskIdForSession('s1')).toBeUndefined()
+    expect(useRunStore.getState().phases[taskId]).toBe('idle')
+    expect(useRunStore.getState().ending[taskId]).toBeUndefined()
+    expect(
+      useRunStore
+        .getState()
+        .banners.some((item) => item.level === 'info' && item.message.includes('历史已保留'))
+    ).toBe(true)
+  })
+
+  it('成功（首条消息前结束，没有会话文件）：移除空任务并选中下一条', async () => {
+    const fake = createFakeApi({ list: { ok: true, data: { items: [summary()] } } })
+    await loadTasks({ api: fake.api })
+    await newTask({ api: fake.api })
+    const taskId = useSessionStore.getState().selectedId as string
+    expect(taskId.startsWith('live:')).toBe(true)
+
+    const ok = await endTask(taskId, { api: fake.api })
+
+    expect(ok).toBe(true)
+    expect(fake.calls.filter((call) => call.method === 'session.dispose')).toHaveLength(1)
+    expect(useSessionStore.getState().tasks.some((item) => item.id === taskId)).toBe(false)
+    expect(useSessionStore.getState().tasks).toHaveLength(1)
+    // removeTask 清掉 selectedId → 回落到第一条任务
+    expect(useSessionStore.getState().selectedId).toBe('sess-1')
+    expect(
+      useRunStore.getState().banners.some((item) => item.message.includes('没有历史需要保留'))
+    ).toBe(true)
+  })
+
+  it('历史任务（没有运行中的会话）零 IPC，只给告警条', async () => {
+    const fake = createFakeApi({ list: { ok: true, data: { items: [summary()] } } })
+    await loadTasks({ api: fake.api })
+    const taskId = useSessionStore.getState().selectedId as string
+    const before = fake.calls.length
+
+    const ok = await endTask(taskId, { api: fake.api })
+
+    expect(ok).toBe(false)
+    expect(fake.calls).toHaveLength(before)
+    expect(useRunStore.getState().banners[0]?.level).toBe('warn')
+    expect(useRunStore.getState().banners[0]?.message).toContain('没有运行中的会话')
+  })
+
+  it('SESSION_NOT_FOUND：本地降级成功，不弹红色错误条', async () => {
+    const fake = createFakeApi({
+      disposed: { ok: false, error: { code: 'SESSION_NOT_FOUND', message: '会话已释放' } }
+    })
+    const taskId = await seedLive(fake)
+
+    const ok = await endTask(taskId, { api: fake.api })
+
+    expect(ok).toBe(true)
+    const task = useSessionStore.getState().tasks.find((item) => item.id === taskId)
+    expect(task?.sessionKey).toBeUndefined()
+    expect(task?.kind).toBe('history')
+    expect(useRunStore.getState().banners.some((item) => item.level === 'error')).toBe(false)
+    expect(
+      useRunStore.getState().banners.some((item) => item.message.includes('会话已不存在'))
+    ).toBe(true)
+  })
+
+  it('其它错误（INTERNAL）：红条 + store 完全不动', async () => {
+    const fake = createFakeApi({
+      disposed: { ok: false, error: { code: 'INTERNAL', message: 'dispose 失败' } }
+    })
+    const taskId = await seedLive(fake)
+
+    const ok = await endTask(taskId, { api: fake.api })
+
+    expect(ok).toBe(false)
+    const task = useSessionStore.getState().tasks.find((item) => item.id === taskId)
+    expect(task?.sessionKey).toBe('s1')
+    expect(task?.kind).toBe('live')
+    expect(useSessionStore.getState().taskIdForSession('s1')).toBe(taskId)
+    expect(useRunStore.getState().banners[0]?.level).toBe('error')
+    expect(useRunStore.getState().banners[0]?.message).toContain('INTERNAL')
+    expect(useRunStore.getState().ending[taskId]).toBeUndefined()
+  })
+
+  it('并发点击只发一次 dispose（ending 在 await 之前置位）', async () => {
+    const fake = createFakeApi()
+    const taskId = await seedLive(fake)
+
+    const first = endTask(taskId, { api: fake.api })
+    const second = endTask(taskId, { api: fake.api })
+
+    expect(await second).toBe(false)
+    expect(await first).toBe(true)
+    expect(fake.calls.filter((call) => call.method === 'session.dispose')).toHaveLength(1)
+  })
+
+  it('运行中结束（busy）：不调用 session:abort，结束后回 idle', async () => {
+    const fake = createFakeApi()
+    const taskId = await seedLive(fake)
+    useRunStore.getState().setPhase(taskId, 'streaming')
+
+    const ok = await endTask(taskId, { api: fake.api })
+
+    expect(ok).toBe(true)
+    expect(fake.calls.some((call) => call.method === 'session.abort')).toBe(false)
+    expect(fake.calls.filter((call) => call.method === 'session.dispose')).toHaveLength(1)
+    expect(useRunStore.getState().phases[taskId]).toBe('idle')
+  })
+
+  it('exited 事件先于 dispose 响应到达：不提前降级、不弹「子进程退出」条', async () => {
+    const fake = createFakeApi()
+    const taskId = await seedLive(fake)
+    const off = subscribeEvents(fake.api)
+    let kindAtExit: string | undefined
+    let keyAtExit: string | undefined
+    fake.api.session.dispose = (input: { sessionKey: string }) => {
+      fake.emitStatus(input.sessionKey, 'exited')
+      const at = useSessionStore.getState().tasks.find((item) => item.id === taskId)
+      kindAtExit = at?.kind
+      keyAtExit = at?.sessionKey
+      return Promise.resolve({ ok: true as const, data: { ok: true as const } })
+    }
+
+    const ok = await endTask(taskId, { api: fake.api })
+
+    expect(ok).toBe(true)
+    // 事件到达那一刻：任务仍是 live、sessionKey 未释放（降级只由 endTask 做）
+    expect(kindAtExit).toBe('live')
+    expect(keyAtExit).toBe('s1')
+    expect(useRunStore.getState().banners.some((item) => item.message.includes('子进程退出'))).toBe(
+      false
+    )
+    const task = useSessionStore.getState().tasks.find((item) => item.id === taskId)
+    expect(task?.kind).toBe('history')
+    expect(task?.filePath).toBe('C:/sessions/--work--/live.jsonl')
+    expect(useRunStore.getState().phases[taskId]).toBe('idle')
+    off()
   })
 })

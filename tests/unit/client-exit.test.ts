@@ -99,6 +99,25 @@ describe('client: evt:status=exited（A6 可操作入口）', () => {
     unsubscribe()
   })
 
+  it('用户主动结束（ending）：只压 settling，不降级、不提示「继续对话」', () => {
+    const { api, emitStatus } = createFakeApi()
+    const unsubscribe = subscribeEvents(api)
+    const taskId = seedLiveTask('live-key-ending')
+    useRunStore.getState().setEnding(taskId, true)
+
+    emitStatus({ sessionKey: 'live-key-ending', status: 'exited' })
+
+    const task = useSessionStore.getState().tasks.find((item) => item.id === taskId)
+    expect(task?.kind).toBe('live')
+    expect(task?.sessionKey).toBe('live-key-ending')
+    expect(useSessionStore.getState().taskIdForSession('live-key-ending')).toBe(taskId)
+    expect(useRunStore.getState().phases[taskId]).toBe('settling')
+    expect(
+      useRunStore.getState().banners.some((banner) => banner.message.includes('继续对话'))
+    ).toBe(false)
+    unsubscribe()
+  })
+
   it('running 等中间状态不动 sessionKey（避免过度降级）', () => {
     const { api, emitStatus } = createFakeApi()
     const unsubscribe = subscribeEvents(api)
