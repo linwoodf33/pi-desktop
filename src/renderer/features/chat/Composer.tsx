@@ -239,7 +239,11 @@ export function Composer({
           >
             agent：{agent ?? '默认'}
           </span>
-          <span className="composer__state" data-testid="composer-state">
+          <span
+            className="composer__state"
+            data-testid="composer-state"
+            data-phase={aborted ? 'aborted' : aborting ? 'settling' : phase}
+          >
             {/* E4：点击停止就立即提示「已中止」，不依赖 abort 响应到达 */}
             {aborted ? '已中止' : aborting ? '正在中止…' : phaseLabel(phase)}
           </span>

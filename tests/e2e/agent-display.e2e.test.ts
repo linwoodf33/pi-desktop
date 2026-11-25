@@ -105,6 +105,10 @@ describe('A38：输入区显示 agent（文件 marker = scout）', () => {
     await expect.poll(async () => agentText(page), { timeout: 30_000 }).toContain('scout')
     // 回归：agent 与 composer-state 是同一个分组里的两个元素，不能互相挤掉
     expect(await page.textContent('[data-testid="composer-state"]')).not.toBeNull()
+    // A39：状态颜色靠 data-phase 驱动（CSS 按 phase 上色），必须真的有这个属性
+    expect(await page.getAttribute('[data-testid="composer-state"]', 'data-phase')).toBeTruthy()
+    // A39：顶部那份重复的状态徽标已删除，只剩输入区这一处
+    expect(await page.locator('[data-testid="run-phase"]').count()).toBe(0)
   }, 90_000)
 })
 

@@ -2241,28 +2241,33 @@ kbd {
  * 每行是「主按钮 + 结束按钮」的 flex 行，确认框占满整行折到下一行。
  * `.task-item` 既有 `width: 100%` 会让结束按钮被挤出可视区，这里覆盖回 flex 尺寸。
  */
+/*
+ * 用 grid 而不是 flex-wrap：flex 下结束按钮会换行落到任务块**左侧**（宽度不够时），
+ * 视觉上像下一行的标签，用户很容易以为「没有结束按钮」。grid 固定两列后，
+ * 按钮永远贴在任务块右侧同一行，确认区再单独跨两列。
+ */
 .task-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px;
-  align-items: flex-start;
+  align-items: start;
 }
 
 .task-row .task-item {
-  flex: 1 1 auto;
+  grid-column: 1;
   width: auto;
   min-width: 0;
 }
 
 .task-item__end {
-  flex: 0 0 auto;
+  grid-column: 2;
   align-self: center;
   padding: 2px 8px;
   font-size: 11px;
 }
 
 .task-item__end-confirm {
-  flex: 1 1 100%;
+  grid-column: 1 / -1;
   padding: 8px 10px;
   border: 1px dashed var(--warn);
   border-radius: 8px;
@@ -2405,4 +2410,31 @@ kbd {
 
 .composer__state {
   margin-right: 0;
+}
+
+/* ------------------------------------------------- 运行状态颜色（A39） */
+
+/*
+ * 状态只有一处（输入区上方那行），颜色按 phase 区分：
+ * 生成中=绿（正在产出内容）、工具执行=蓝（在跑命令/读写）、收尾=黄（等 idle）、
+ * 空闲=暗、已中止=红。用 `data-phase` 而不是 JS 拼 className，便于在 DOM 里直接断言。
+ */
+.composer__state[data-phase='streaming'] {
+  color: var(--ok);
+}
+
+.composer__state[data-phase='tool_running'] {
+  color: var(--accent);
+}
+
+.composer__state[data-phase='settling'] {
+  color: var(--warn);
+}
+
+.composer__state[data-phase='idle'] {
+  color: var(--text-dim);
+}
+
+.composer__state[data-phase='aborted'] {
+  color: var(--error);
 }

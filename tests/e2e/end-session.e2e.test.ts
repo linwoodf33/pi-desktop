@@ -135,8 +135,9 @@ describe('A36 结束会话', () => {
       .toBe(workDir)
     await page.click('[data-testid="new-task-submit"]')
 
-    // 新建后任务才 live；按钮由 `kind === 'live' && sessionKey !== undefined` 派生 → poll
-    const endButton = page.locator('[data-testid="task-end-button"]')
+    // 新建后任务才 live；历史任务也会渲染同一个 testid（禁用态），
+    // 所以这里按「可用的那个」定位，数量恰为 1 才说明 live 任务真的拿到了按钮。
+    const endButton = page.locator('[data-testid="task-end-button"]:not([disabled])')
     await expect.poll(async () => endButton.count(), { timeout: 30_000 }).toBe(1)
     await expect.poll(async () => endButton.isEnabled(), { timeout: 10_000 }).toBe(true)
 
@@ -157,18 +158,20 @@ describe('A36 结束会话', () => {
       .toBe(1)
   }, 120_000)
 
-  it('E2 历史任务没有结束按钮（只有 live 任务有）', async () => {
-    // 首屏历史条目来自 session:list（异步）：等两行都在，否则「没有按钮」是空断言
+  it('E2 历史任务有「结束」按钮但禁用（没有进程可结束，隐藏会让人以为功能没做）', async () => {
+    // 首屏历史条目来自 session:list（异步）：等两行都在，否则断言会跑在空 DOM 上
     await expect.poll(async () => page.locator('li.task-row').count(), { timeout: 20_000 }).toBe(2)
 
     const history = historyRow()
     await expect.poll(async () => history.count(), { timeout: 10_000 }).toBe(1)
     // 历史条目本身渲染正常（不是「行没出现所以没按钮」）
     expect(await history.locator('[data-testid="task-item"]').count()).toBe(1)
-    expect(await history.locator('[data-testid="task-end-button"]').count()).toBe(0)
 
-    // 全局口径：结束按钮数量 == live 任务数量（1），历史条目一个都没有
-    expect(await page.locator('[data-testid="task-end-button"]').count()).toBe(1)
+    const disabledEnd = history.locator('[data-testid="task-end-button"]')
+    expect(await disabledEnd.count()).toBe(1)
+    expect(await disabledEnd.isDisabled()).toBe(true)
+    // 说明文字要讲清「为什么不能点」，否则禁用态同样让人困惑
+    expect(await disabledEnd.getAttribute('title')).toContain('没有运行中的会话')
   }, 60_000)
 
   it('E3 确认流程可取消：点结束 → 出现确认区（含「中断」「历史」）→ 取消后一切照旧', async () => {
@@ -232,11 +235,14 @@ describe('A36 结束会话', () => {
       .toBe(1)
     await row.locator('[data-testid="task-end-confirm-yes"]').click()
 
-    // 终态：live 标志（pill / 结束按钮）都没了（dispose → exited → detachSession 后才成立）
+    // 终态：live 标志消失（dispose → exited → detachSession 后才成立）。
+    // 结束按钮**保留**但变禁用 —— 历史任务仍显示它，用 title 说明没有进程可结束。
     await expect.poll(async () => row.locator('.pill').count(), { timeout: 30_000 }).toBe(0)
     await expect
-      .poll(async () => row.locator('[data-testid="task-end-button"]').count(), { timeout: 30_000 })
-      .toBe(0)
+      .poll(async () => row.locator('[data-testid="task-end-button"]').isDisabled(), {
+        timeout: 30_000
+      })
+      .toBe(true)
 
     // 历史保留：任务行还在（不是被 removeTask 掉），且没有落成红条
     expect(await row.count()).toBe(1)

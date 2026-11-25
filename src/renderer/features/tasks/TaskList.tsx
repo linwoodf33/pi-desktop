@@ -163,16 +163,28 @@ export function TaskList({
                   A36：结束按钮是 `<li>` 里 `task-item` **兄弟**节点，不能塞进
                   `task-item` 内部 —— 按钮套按钮是无效 HTML，也会让「点击选中」串味。
                 */}
-                {task.kind === 'live' &&
-                task.sessionKey !== undefined &&
-                onEndTask !== undefined ? (
+                {/*
+                  结束按钮对**所有**任务都渲染，但只有 live 任务可点：
+                  历史任务没有进程可结束，直接隐藏会让用户以为「功能没做」——
+                  显示成禁用态 + title 说明，才解释得清。
+                */}
+                {onEndTask !== undefined ? (
                   <button
                     type="button"
                     className="btn btn--small task-item__end"
                     data-testid="task-end-button"
                     data-task-id={task.id}
                     aria-label={`结束会话：${task.title}`}
-                    disabled={ending?.[task.id] === true}
+                    title={
+                      task.kind === 'live' && task.sessionKey !== undefined
+                        ? '结束该会话（释放 pi 子进程；已写入的历史保留）'
+                        : '该任务没有运行中的会话（历史任务无需结束）'
+                    }
+                    disabled={
+                      task.kind !== 'live' ||
+                      task.sessionKey === undefined ||
+                      ending?.[task.id] === true
+                    }
                     onClick={() => {
                       // 点另一行的结束按钮时直接切换成新 id，不留两个确认框
                       setConfirmingEnd(task.id)

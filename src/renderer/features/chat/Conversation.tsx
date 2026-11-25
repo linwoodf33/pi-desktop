@@ -6,7 +6,7 @@ import {
   type ModelInfo,
   type SessionStats
 } from '../../../shared/contracts/types'
-import { formatCost, formatTokens, phaseLabel } from '../../lib/format'
+import { formatCost, formatTokens } from '../../lib/format'
 import type { ChatState } from '../../lib/reducer'
 import type { VirtualTimelineControls } from '../../lib/use-virtual-timeline'
 import type { TaskItem } from '../../stores/sessionStore'
@@ -104,9 +104,6 @@ export function Conversation({
         <div className="pane__badges">
           {task === undefined ? null : (
             <>
-              <span className="badge" data-testid="run-phase">
-                {phaseLabel(phase)}
-              </span>
               <StatsBadges stats={stats} />
               {hasSession ? (
                 <ModelSwitcher
