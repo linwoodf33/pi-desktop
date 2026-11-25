@@ -2264,6 +2264,17 @@ kbd {
   align-self: center;
   padding: 2px 8px;
   font-size: 11px;
+  /* 结束是「终止运行中会话」的动作：用危险色描边 + 文字，但保持轻量，
+     避免一列按钮把任务列表的视觉重心抢走。 */
+  border-color: color-mix(in srgb, var(--error) 45%, var(--border-strong));
+  color: var(--error);
+  background: transparent;
+}
+
+/* 比 `.btn:hover:not(:disabled)` 更具体且定义在后面，悬停时盖掉默认的灰底 */
+.task-item__end:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--error) 14%, transparent);
+  border-color: var(--error);
 }
 
 .task-item__end-confirm {

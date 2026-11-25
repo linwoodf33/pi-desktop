@@ -17,7 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
  *   `session:state` 回填、`kind` 由 store 归约）。结束流程更明显：点「确认结束」后先
  *   `ending` 置位 → dispose 杀进程 → `evt:status=exited` → detachSession → banner，
  *   中间每一帧都可能被 `waitForSelector` 抓到；只有轮询到**目标终态**才算验证了行为。
- * - 「pill 消失」「banner 文本变化」都是**消失型/内容型**断言，天生只能 poll。
+ * - 「结束按钮消失」「banner 文本变化」都是**消失型/内容型**断言，天生只能 poll。
  *
  * 为什么断言 `task-item` 内部不能有 button：
  * `task-item` 本身就是一个 `<button>`（点击选中）。把「结束」塞进去会形成
@@ -158,7 +158,7 @@ describe('A36 结束会话', () => {
       .toBe(1)
   }, 120_000)
 
-  it('E2 历史任务有「结束」按钮但禁用（没有进程可结束，隐藏会让人以为功能没做）', async () => {
+  it('E2 历史任务既不显示结束按钮，也不显示「进行中」（有结束按钮就代表 live）', async () => {
     // 首屏历史条目来自 session:list（异步）：等两行都在，否则断言会跑在空 DOM 上
     await expect.poll(async () => page.locator('li.task-row').count(), { timeout: 20_000 }).toBe(2)
 
@@ -166,12 +166,8 @@ describe('A36 结束会话', () => {
     await expect.poll(async () => history.count(), { timeout: 10_000 }).toBe(1)
     // 历史条目本身渲染正常（不是「行没出现所以没按钮」）
     expect(await history.locator('[data-testid="task-item"]').count()).toBe(1)
-
-    const disabledEnd = history.locator('[data-testid="task-end-button"]')
-    expect(await disabledEnd.count()).toBe(1)
-    expect(await disabledEnd.isDisabled()).toBe(true)
-    // 说明文字要讲清「为什么不能点」，否则禁用态同样让人困惑
-    expect(await disabledEnd.getAttribute('title')).toContain('没有运行中的会话')
+    expect(await history.locator('[data-testid="task-end-button"]').count()).toBe(0)
+    expect(await history.locator('.pill').count()).toBe(0)
   }, 60_000)
 
   it('E3 确认流程可取消：点结束 → 出现确认区（含「中断」「历史」）→ 取消后一切照旧', async () => {
@@ -187,11 +183,8 @@ describe('A36 结束会话', () => {
 
     await row.locator('[data-testid="task-end-confirm-no"]').click()
 
-    // 取消 = 三件事同时回到原样：确认区消失、pill 仍在、结束按钮仍在
+    // 取消 = 回到原样：确认区消失、结束按钮仍在（它就是 live 标记，不需要 pill 佐证）
     await expect.poll(async () => confirm.count(), { timeout: 10_000 }).toBe(0)
-    await expect
-      .poll(async () => row.locator('.pill').textContent(), { timeout: 10_000 })
-      .toBe('进行中')
     await expect
       .poll(async () => row.locator('[data-testid="task-end-button"]').count(), { timeout: 10_000 })
       .toBe(1)
@@ -211,12 +204,11 @@ describe('A36 结束会话', () => {
     await page.keyboard.press('Escape')
 
     await expect.poll(async () => confirm.count(), { timeout: 10_000 }).toBe(0)
-    expect(await row.locator('.pill').textContent()).toBe('进行中')
     // Esc 只是收起确认框，绝不能顺手把会话结束掉
     expect(await end.count()).toBe(1)
   }, 60_000)
 
-  it('E4 结束成功：pill 与结束按钮消失、任务降级为历史、banner 说明已结束', async () => {
+  it('E4 结束成功：结束按钮消失、任务降级为历史、banner 说明已结束', async () => {
     const row = liveRow(liveTaskId)
     // 先选中它并发一条消息：`filePath` 要在结束前由 `session:state` 回填，
     // 否则 endTask 会按「首条消息前结束」把任务整个删掉（那是另一条合法但不同的路径）。
@@ -235,14 +227,11 @@ describe('A36 结束会话', () => {
       .toBe(1)
     await row.locator('[data-testid="task-end-confirm-yes"]').click()
 
-    // 终态：live 标志消失（dispose → exited → detachSession 后才成立）。
-    // 结束按钮**保留**但变禁用 —— 历史任务仍显示它，用 title 说明没有进程可结束。
-    await expect.poll(async () => row.locator('.pill').count(), { timeout: 30_000 }).toBe(0)
+    // 终态：结束按钮消失（dispose → exited → detachSession 后才成立，
+    // 降级为历史任务后按「只给 live 渲染」的规则自然不再出现）
     await expect
-      .poll(async () => row.locator('[data-testid="task-end-button"]').isDisabled(), {
-        timeout: 30_000
-      })
-      .toBe(true)
+      .poll(async () => row.locator('[data-testid="task-end-button"]').count(), { timeout: 30_000 })
+      .toBe(0)
 
     // 历史保留：任务行还在（不是被 removeTask 掉），且没有落成红条
     expect(await row.count()).toBe(1)
@@ -329,16 +318,16 @@ describe('A36 结束会话', () => {
     const history = historyRow()
     await expect.poll(async () => history.count(), { timeout: 10_000 }).toBe(1)
 
-    // 恢复前：禁用（没有进程可结束）
+    // 恢复前：历史任务根本不渲染结束按钮
     const end = history.locator('[data-testid="task-end-button"]')
-    await expect.poll(async () => end.isDisabled(), { timeout: 10_000 }).toBe(true)
+    await expect.poll(async () => end.count(), { timeout: 10_000 }).toBe(0)
 
     await history.locator('[data-testid="task-item"]').click()
     await page.click('[data-testid="continue-conversation"]')
 
-    // 恢复成功后必须升级为 live：按钮可用 + 「进行中」pill 出现。
-    // 只挂 sessionKey 而不改 kind 会让这两样都不出现（v0.16.1 的真实 bug）。
-    await expect.poll(async () => end.isDisabled(), { timeout: 30_000 }).toBe(false)
-    await expect.poll(async () => history.locator('.pill').count(), { timeout: 10_000 }).toBe(1)
+    // 恢复成功后必须升级为 live：结束按钮出现且可用。
+    // 只挂 sessionKey 而不改 kind 会让按钮根本不出现（v0.16.1 的真实 bug）。
+    await expect.poll(async () => end.count(), { timeout: 30_000 }).toBe(1)
+    await expect.poll(async () => end.isEnabled(), { timeout: 10_000 }).toBe(true)
   }, 90_000)
 })
