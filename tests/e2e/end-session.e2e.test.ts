@@ -324,4 +324,21 @@ describe('A36 结束会话', () => {
       )
       .not.toContain('task-item--active')
   }, 90_000)
+
+  it('E7 历史任务恢复会话后，结束按钮变为可用（kind 必须从 history 升级为 live）', async () => {
+    const history = historyRow()
+    await expect.poll(async () => history.count(), { timeout: 10_000 }).toBe(1)
+
+    // 恢复前：禁用（没有进程可结束）
+    const end = history.locator('[data-testid="task-end-button"]')
+    await expect.poll(async () => end.isDisabled(), { timeout: 10_000 }).toBe(true)
+
+    await history.locator('[data-testid="task-item"]').click()
+    await page.click('[data-testid="continue-conversation"]')
+
+    // 恢复成功后必须升级为 live：按钮可用 + 「进行中」pill 出现。
+    // 只挂 sessionKey 而不改 kind 会让这两样都不出现（v0.16.1 的真实 bug）。
+    await expect.poll(async () => end.isDisabled(), { timeout: 30_000 }).toBe(false)
+    await expect.poll(async () => history.locator('.pill').count(), { timeout: 10_000 }).toBe(1)
+  }, 90_000)
 })

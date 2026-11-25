@@ -1,5 +1,28 @@
 # 更新日志（Changelog）
 
+## v0.16.2（2026-11-25）
+
+修「历史任务恢复会话后，结束按钮仍是灰的」。
+
+### 根因
+
+`continueConversation`（以及发送消息前的隐式恢复）只调了 `attachSessionKey` 挂上 sessionKey，
+**没有把 `kind` 从 `history` 改成 `live`**。而界面上的「结束」按钮与「进行中」pill 都以
+`kind === 'live'` 为判据 —— 于是恢复会话看起来像没成功：输入框能用了，但任务仍是「历史」外观。
+
+### 修复
+
+- `attachSessionKey` 的语义补全：**挂上活会话即升级为 live**（`sessionKey` + `kind: 'live'`）。
+  这是「恢复成功」的唯一真实判据，两个调用点（继续对话 / 发送前自动恢复）同时受益。
+- 单测把原来断言 `kind === 'history'` 的用例改为 `'live'`，并断言 `bySessionKey` 已建立。
+- 新增 e2e：历史任务恢复会话后，结束按钮必须从禁用变为可用、且出现「进行中」pill。
+
+### 测试
+
+unit 853 / integration 67 / e2e **72**（`end-session` 8 条，新增 E7）。全绿；`virtual-scroll` 仍为已知时序偶发。
+
+---
+
 ## v0.16.1（2026-11-25）
 
 修 A36/A38 的三处观感问题（功能逻辑不变）。

@@ -679,7 +679,11 @@ describe('M4：恢复与分叉', () => {
     })
     const task = useSessionStore.getState().tasks.find((item) => item.id === 'hist-1')
     expect(task?.sessionKey).toBe('s-resumed')
-    expect(task?.kind).toBe('history')
+    // 恢复会话 = 重新有了活进程：必须升级为 live，否则「结束」按钮一直是禁用态、
+    // 「进行中」pill 也不出现（用户会以为恢复失败）。
+    expect(task?.kind).toBe('live')
+    // 可结束的直接证据：有 live 通道
+    expect(useSessionStore.getState().taskIdForSession('s-resumed')).toBe('hist-1')
   })
 
   it('分叉：原任务降级为只读回放，新任务接管新 sessionKey', async () => {

@@ -201,7 +201,12 @@ export const useSessionStore = create<SessionStoreState>()((set, get) => ({
 
   attachSessionKey: (taskId, sessionKey) => {
     set((state) => ({
-      tasks: state.tasks.map((task) => (task.id === taskId ? { ...task, sessionKey } : task)),
+      // 关键：挂上活会话就意味着这个任务不再是「只读历史」。
+      // 只加 sessionKey 而保持 kind='history' 会让「结束」按钮一直禁用、
+      // 「进行中」pill 不出现——恢复会话后看起来像没恢复成功。
+      tasks: state.tasks.map((task) =>
+        task.id === taskId ? { ...task, sessionKey, kind: 'live' } : task
+      ),
       bySessionKey: { ...state.bySessionKey, [sessionKey]: taskId }
     }))
   },
