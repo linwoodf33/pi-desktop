@@ -192,7 +192,7 @@ export function createSessionIndex(options: SessionIndexOptions = {}): SessionIn
      * 布局判定**只用真实路径这一组事实**（realRoot ↔ realFile）。
      *
      * 曾经的写法是把「realpath 后的长名文件」与「未归一的 `root()`（可能是 8.3 短名）」
-     * 做词法前缀比对 —— 在 CI 的 `C:\Users\RUNNER~1\...` 下必然对不上，
+     * 做词法前缀比对 —— 在 CI 用户目录的 8.3 短名（`…\RUNNER~1\…`）下必然对不上，
      * 让改名/删除全部误报 `PATH_DENIED`（本地 `tmpdir()` 不是短名，所以本地一直是绿的）。
      * 现在两侧都 realpath 到同一形态，短名 / 大小写 / junction 三种别名都不会再误判。
      */
