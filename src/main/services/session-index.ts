@@ -186,21 +186,28 @@ export function createSessionIndex(options: SessionIndexOptions = {}): SessionIn
    * 不再为了校验一条路径去 `list` 全目录，也不会被 `pageSize` 截断（F1）。
    */
   async function find(filePath: string): Promise<SessionSummary | undefined> {
-    // 词法闸：必须在根之下、深度恰好 2（`<root>/--<path>--/<id>.jsonl`）、扩展名 .jsonl
     if (!isAbsolute(filePath)) return undefined
-    const lexical = resolve(filePath)
-    const rootLexical = resolve(root())
-    const rootKey = normalizeCacheKey(rootLexical)
-    const lexicalKey = normalizeCacheKey(lexical)
-    if (lexicalKey === rootKey || !lexicalKey.startsWith(`${rootKey}/`)) return undefined
-    if (extname(lexical) !== '.jsonl') return undefined
-    if (normalizeCacheKey(dirname(dirname(lexical))) !== rootKey) return undefined
 
-    // 真实路径闸：junction / 符号链接可以把「词法在根内」映射到根外（§7 约束 8）
+    /**
+     * 布局判定**只用真实路径这一组事实**（realRoot ↔ realFile）。
+     *
+     * 曾经的写法是把「realpath 后的长名文件」与「未归一的 `root()`（可能是 8.3 短名）」
+     * 做词法前缀比对 —— 在 CI 的 `C:\Users\RUNNER~1\...` 下必然对不上，
+     * 让改名/删除全部误报 `PATH_DENIED`（本地 `tmpdir()` 不是短名，所以本地一直是绿的）。
+     * 现在两侧都 realpath 到同一形态，短名 / 大小写 / junction 三种别名都不会再误判。
+     */
+    const rootLexical = resolve(root())
     const realRoot = await realpathNative(rootLexical).catch(() => rootLexical)
-    const realFile = await realpathNative(lexical).catch(() => undefined)
+    const realFile = await realpathNative(resolve(filePath)).catch(() => undefined)
     if (realFile === undefined) return undefined
-    if (!normalizeCacheKey(realFile).startsWith(`${normalizeCacheKey(realRoot)}/`)) return undefined
+
+    // 根内（严格在根之下，排除根本身）+ 真实路径也要在真实根内（防 junction 逃逸）
+    const realRootKey = normalizeCacheKey(realRoot)
+    const realFileKey = normalizeCacheKey(realFile)
+    if (realFileKey === realRootKey || !realFileKey.startsWith(`${realRootKey}/`)) return undefined
+    // 深度恰好 2：`<root>/--<path>--/<session-id>.jsonl`
+    if (normalizeCacheKey(dirname(dirname(realFile))) !== realRootKey) return undefined
+    if (extname(realFile) !== '.jsonl') return undefined
 
     // 摘要闸：解析不出 header 的脏文件不能被当成「可删的会话」（fail-closed）
     let info: { mtimeMs: number; size?: number }

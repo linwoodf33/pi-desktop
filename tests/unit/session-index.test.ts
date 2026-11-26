@@ -574,4 +574,35 @@ ${big}
     const index = createSessionIndex({ sessionDir: () => root })
     expect(await index.find(join(linkedDir, 'redirected.jsonl'))).toBeUndefined()
   })
+
+  it('S9d：root() 是别名路径（CI 的 8.3 短名形状）→ 传入真实长名仍能命中', async (ctx) => {
+    /**
+     * 这条用例守的是 CI 上翻过的车：`session:setName` 传进来的是 **realpath 后的长名**，
+     * 而 `root()` 可能是 **8.3 短名**（`C:\Users\RUNNER~1\...`）。
+     * 一旦把两侧混着做词法前缀比较，改名/删除在 CI 上就全部误报 `PATH_DENIED`。
+     *
+     * 本地 `tmpdir()` 不带短名，所以这里用 junction 造一个「根的字符串 ≠ 真实路径」
+     * 的同构场景（Windows 上等价于短名别名）。
+     */
+    const realRoot = await makeRoot('pi-index-find-alias-')
+    const group = join(realRoot, '--work--')
+    await mkdir(group, { recursive: true })
+    const file = join(group, 's.jsonl')
+    await writeFile(file, content('sid-alias'), 'utf8')
+
+    const aliasParent = await mkdtemp(join(tmpdir(), 'pi-index-find-alias-link-'))
+    dirs.push(aliasParent)
+    const aliasRoot = join(aliasParent, 'alias')
+    try {
+      await symlink(realRoot, aliasRoot, 'junction')
+    } catch (error) {
+      ctx.skip(`无法创建 junction：${String(error)}`)
+      return
+    }
+
+    const index = createSessionIndex({ sessionDir: () => aliasRoot })
+    const found = await index.find(file)
+    expect(found?.id).toBe('sid-alias')
+    expect(found?.filePath).toBe(await realpathNative(file))
+  })
 })
