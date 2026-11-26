@@ -54,6 +54,14 @@ export interface RunStoreState {
   setAborting: (taskId: string, value: boolean) => void
   markAborted: (taskId: string) => void
   clearAborted: (taskId: string) => void
+  /**
+   * A39：任务被删除后清掉所有按 taskId 存的运行态。
+   *
+   * 为什么必须有：`sessionStore.removeTask` 只管 session 侧（tasks/chats/stats/truncated），
+   * `phases/aborting/aborted/switching/forking/ending` 都按 taskId 存在这里 —— 任务被删后
+   * 这些键永远读不到，并行开关任务久了就是一堆孤儿键。
+   */
+  forgetTask: (taskId: string) => void
 }
 
 let bannerSeq = 0
@@ -185,6 +193,46 @@ export const useRunStore = create<RunStoreState>()((set, get) => ({
       const aborted = { ...state.aborted }
       delete aborted[taskId]
       return { aborted }
+    })
+  },
+
+  forgetTask: (taskId) => {
+    set((state) => {
+      // 每个键独立判定：只清真的存在的那几个，避免为了「可能存在的空键」每次都造新对象
+      // （任务列表频繁增删时，每一份多余的对象都会触发一次重渲染）。
+      const patch: Partial<RunStoreState> = {}
+      if (state.phases[taskId] !== undefined) {
+        const phases = { ...state.phases }
+        delete phases[taskId]
+        patch.phases = phases
+      }
+      if (state.aborting[taskId] !== undefined) {
+        const aborting = { ...state.aborting }
+        delete aborting[taskId]
+        patch.aborting = aborting
+      }
+      if (state.aborted[taskId] !== undefined) {
+        const aborted = { ...state.aborted }
+        delete aborted[taskId]
+        patch.aborted = aborted
+      }
+      if (state.switching[taskId] !== undefined) {
+        const switching = { ...state.switching }
+        delete switching[taskId]
+        patch.switching = switching
+      }
+      if (state.forking[taskId] !== undefined) {
+        const forking = { ...state.forking }
+        delete forking[taskId]
+        patch.forking = forking
+      }
+      if (state.ending[taskId] !== undefined) {
+        const ending = { ...state.ending }
+        delete ending[taskId]
+        patch.ending = ending
+      }
+      // 一个键都没有 = 本来就没有孤儿，原样返回（zustand 不会因此触发订阅者）
+      return Object.keys(patch).length === 0 ? state : patch
     })
   }
 }))

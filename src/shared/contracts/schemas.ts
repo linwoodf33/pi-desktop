@@ -114,6 +114,19 @@ export const sessionPromptInputSchema = z
     }
   })
 
+/**
+ * A39：删除本地会话文件（移到系统回收站）。
+ *
+ * `sessionId` 可选：给了就必须与文件**当前**解析出的会话 id 一致
+ * （防「同一路径被换成另一个会话」后误删）。路径边界与活跃会话拒绝全在主进程判定。
+ */
+export const sessionDeleteInputSchema = z
+  .object({
+    sessionFile: z.string().min(1).max(4096),
+    sessionId: z.string().min(1).max(128).optional()
+  })
+  .strict()
+
 /** A23：改会话名。会话引用二选一：活跃会话 `sessionKey` / 历史任务 `sessionFile` */
 export const sessionSetNameInputSchema = z
   .object({
@@ -325,6 +338,7 @@ export const invokeInputSchemas = {
   [IPC_INVOKE_CHANNELS.sessionState]: sessionKeyInputSchema,
   [IPC_INVOKE_CHANNELS.sessionStats]: sessionKeyInputSchema,
   [IPC_INVOKE_CHANNELS.sessionSetName]: sessionSetNameInputSchema,
+  [IPC_INVOKE_CHANNELS.sessionDelete]: sessionDeleteInputSchema,
   [IPC_INVOKE_CHANNELS.sessionForkPoints]: sessionKeyInputSchema,
   [IPC_INVOKE_CHANNELS.modelList]: emptyInputSchema,
   [IPC_INVOKE_CHANNELS.modelSet]: modelSetInputSchema,

@@ -38,6 +38,8 @@ describe('IPC 通道白名单（§5.4）', () => {
         'session:stats',
         // A23 补充：改会话显示名（活跃会话 RPC / 历史任务追加 session_info）
         'session:setName',
+        // A39 补充：删除本地会话文件（移到回收站；仅历史任务）
+        'session:delete',
         'session:forkPoints',
         'config:update',
         // M5 补充：审批扩展安装状态（只读）

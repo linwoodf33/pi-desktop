@@ -1,11 +1,14 @@
 import {
   appendFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  utimesSync,
   writeFileSync
 } from 'node:fs'
+import { unlink } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -22,8 +25,10 @@ import { createModelConfigStore } from '../../src/main/services/model-config-sto
 import { createFsBridge, type FsBridge } from '../../src/main/services/fs-bridge'
 import { createPiLocator } from '../../src/main/services/pi-locator'
 import { createSessionHistory } from '../../src/main/services/session-history'
+import { createSessionDelete, type SessionDelete } from '../../src/main/services/session-delete'
 import { createSessionIndex, type SessionIndex } from '../../src/main/services/session-index'
 import type { SessionService } from '../../src/main/services/session-service'
+import { realpathNative } from '../../src/main/services/realpath-native'
 import { createWorkspaceResolver } from '../../src/main/services/workspace-resolver'
 import { IPC_INVOKE_CHANNELS, type InvokeChannel } from '../../src/shared/ipc-channels'
 import { IpcFailure } from '../../src/shared/contracts/result'
@@ -58,7 +63,8 @@ function buildRouter(
   overrides: Partial<SessionService> = {},
   timeouts?: Partial<Record<InvokeChannel, number>>,
   fsBridgeOverride?: FsBridge,
-  sessionIndexOverride?: SessionIndex
+  sessionIndexOverride?: SessionIndex,
+  sessionDeleteOverride?: SessionDelete
 ): IpcRouter {
   const sessionService = stubSessionService(overrides)
   return createRouter(
@@ -92,7 +98,13 @@ function buildRouter(
         }),
         openPath: () => Promise.resolve(''),
         audit: createAuditLog({ sink: () => {} })
-      })
+      }),
+      // A39：`sessionDelete` 在 RouterDeps 里是必填（破坏性通道，缺依赖不能静默成功）。
+      // 默认给一个「被调用即失败」的桩，需要真实链路的用例从第 5 个参数传进来，
+      // 这样既有 4 参调用（以及所有不碰删除的用例）一行都不用改。
+      sessionDelete: sessionDeleteOverride ?? {
+        remove: () => Promise.reject(new Error('该会话删除方法不应被调用'))
+      }
     },
     undefined,
     timeouts
@@ -569,6 +581,212 @@ describe('A23：改会话名（历史任务，追加 session_info）', () => {
       expect(listed.items[0]?.title).toBe('第三版')
     } finally {
       rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+/**
+ * R1–R5 + I2b：`session:delete` 的路由层（A39）。
+ *
+ * 真实要素：zod 校验 → 真实处理器 → 真实 `SessionIndex` → 真实 `SessionDelete` → 真实文件；
+ * 只把「回收站」注入成真实 `unlink`（E2E 里由主进程 stub 成同样的语义）。
+ */
+describe('A39：删除本地会话（session:delete）', () => {
+  /** 一条 > 64KB 的真实会话（头部 + 单行约 75KB 用户消息） */
+  function sessionContent(id: string, cwd = 'C:/work'): string {
+    const header = JSON.stringify({
+      type: 'session',
+      version: 3,
+      id,
+      timestamp: '2026-11-20T00:00:00.000Z',
+      cwd
+    })
+    const big = JSON.stringify({
+      type: 'message',
+      id: 'b1',
+      parentId: null,
+      timestamp: '2026-11-20T00:00:02.000Z',
+      message: { role: 'user', content: `首条消息${'填'.repeat(25_000)}`, timestamp: 1 }
+    })
+    return `${header}
+${big}
+`
+  }
+
+  /** 真实删除服务（trash = 记录路径 + 真实 unlink） */
+  function realDeleteService(index: SessionIndex): {
+    service: SessionDelete
+    trashed: string[]
+  } {
+    const trashed: string[] = []
+    const service = createSessionDelete({
+      sessionRoot: () => index.root(),
+      findSession: (filePath) => index.find(filePath),
+      activeSessionFiles: () => [],
+      trash: async (absPath) => {
+        trashed.push(absPath)
+        await unlink(absPath)
+      }
+    })
+    return { service, trashed }
+  }
+
+  it('R1：入参校验失败一律 VALIDATION，且服务未被调用', async () => {
+    const remove = vi.fn(() => Promise.reject(new Error('不应被调用')))
+    const router = buildRouter({}, undefined, undefined, undefined, { remove })
+
+    const payloads: unknown[] = [
+      {},
+      { sessionFile: 1 },
+      { sessionFile: '' },
+      { sessionFile: 'x', extra: 1 }
+    ]
+    for (const payload of payloads) {
+      const result = await router.dispatch(IPC_INVOKE_CHANNELS.sessionDelete, payload)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error.code).toBe('VALIDATION')
+    }
+    expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('R2：真实索引 + 真实文件 → ok，且紧接着 session:list 已不含它（索引被失效）', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'pi-del-router-'))
+    const group = join(root, '--work--')
+    mkdirSync(group, { recursive: true })
+    const file = join(group, 's.jsonl')
+    writeFileSync(file, sessionContent('sid-1'), 'utf8')
+
+    try {
+      const index = createSessionIndex({ sessionDir: () => root })
+      const { service, trashed } = realDeleteService(index)
+      const router = buildRouter({}, undefined, undefined, index, service)
+      const realFile = await realpathNative(file)
+
+      const result = await router.dispatch(IPC_INVOKE_CHANNELS.sessionDelete, {
+        sessionFile: file,
+        sessionId: 'sid-1'
+      })
+      expect(result).toMatchObject({ ok: true })
+      if (result.ok) {
+        expect(result.data).toEqual({ id: 'sid-1', filePath: realFile })
+      }
+      expect(trashed).toHaveLength(1)
+      expect(existsSync(file)).toBe(false)
+
+      // 同一毫秒内的下一次查询也必须看到「已删除」（handler 显式 invalidate）
+      const listed = await router.dispatch(IPC_INVOKE_CHANNELS.sessionList, {})
+      expect(listed).toMatchObject({ ok: true })
+      if (listed.ok) expect((listed.data as { items: unknown[] }).items).toHaveLength(0)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('R3：根外文件 → PATH_DENIED，trash 未调用，列表不变', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'pi-del-router-deny-'))
+    const group = join(root, '--work--')
+    mkdirSync(group, { recursive: true })
+    writeFileSync(join(group, 's.jsonl'), sessionContent('sid-1'), 'utf8')
+
+    const outside = mkdtempSync(join(tmpdir(), 'pi-del-router-outside-'))
+    const outsideFile = join(outside, 'x.jsonl')
+    writeFileSync(outsideFile, sessionContent('sid-outside'), 'utf8')
+
+    try {
+      const index = createSessionIndex({ sessionDir: () => root })
+      const { service, trashed } = realDeleteService(index)
+      const router = buildRouter({}, undefined, undefined, index, service)
+
+      const result = await router.dispatch(IPC_INVOKE_CHANNELS.sessionDelete, {
+        sessionFile: outsideFile
+      })
+      expect(result).toMatchObject({ ok: false })
+      if (!result.ok) expect(result.error.code).toBe('PATH_DENIED')
+      expect(trashed).toEqual([])
+      expect(existsSync(outsideFile)).toBe(true)
+
+      const listed = await router.dispatch(IPC_INVOKE_CHANNELS.sessionList, {})
+      expect(listed).toMatchObject({ ok: true })
+      if (listed.ok) expect((listed.data as { items: unknown[] }).items).toHaveLength(1)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('R4：sessionId 超长 / 非字符串 → VALIDATION', async () => {
+    const remove = vi.fn(() => Promise.reject(new Error('不应被调用')))
+    const router = buildRouter({}, undefined, undefined, undefined, { remove })
+
+    for (const payload of [
+      { sessionFile: 'x', sessionId: 'y'.repeat(129) },
+      { sessionFile: 'x', sessionId: 1 },
+      { sessionFile: 'x'.repeat(4097) }
+    ]) {
+      const result = await router.dispatch(IPC_INVOKE_CHANNELS.sessionDelete, payload)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error.code).toBe('VALIDATION')
+    }
+    expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('R5：删除后新建索引实例（模拟重启）仍不含该条', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'pi-del-router-restart-'))
+    const group = join(root, '--work--')
+    mkdirSync(group, { recursive: true })
+    const file = join(group, 's.jsonl')
+    writeFileSync(file, sessionContent('sid-1'), 'utf8')
+
+    try {
+      const index = createSessionIndex({ sessionDir: () => root })
+      const { service } = realDeleteService(index)
+      const router = buildRouter({}, undefined, undefined, index, service)
+
+      const result = await router.dispatch(IPC_INVOKE_CHANNELS.sessionDelete, {
+        sessionFile: file
+      })
+      expect(result).toMatchObject({ ok: true })
+
+      const restarted = createSessionIndex({ sessionDir: () => root })
+      expect((await restarted.list({})).items).toHaveLength(0)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('I2b：25 条会话中改名第 21 条及之后（F1 回归：旧实现只校验 list 首页）', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'pi-rename-page2-'))
+    const files: string[] = []
+    for (let i = 0; i < 25; i += 1) {
+      const group = join(root, `--g${i}--`)
+      mkdirSync(group, { recursive: true })
+      const file = join(group, 's.jsonl')
+      writeFileSync(file, sessionContent(`sid-${i}`), 'utf8')
+      // mtime 严格递增：首页 = sid-24..sid-5，目标（最早写入的 sid-0）必然在第二页
+      const at = new Date(Date.UTC(2026, 10, 20, 0, 0, i))
+      utimesSync(file, at, at)
+      files.push(file)
+    }
+
+    try {
+      const index = createSessionIndex({ sessionDir: () => root })
+      const router = buildRouter({}, undefined, undefined, index)
+      const target = files[0]!
+
+      // 前提校验必须在改名之前：改名会 append 一行，mtime 变成「最新」，目标会被顶到首页，
+      // 那样这条用例就再也盖不住 F1 了。
+      const firstPage = await index.list({})
+      expect(firstPage.items).toHaveLength(20)
+      expect(firstPage.items.some((item) => item.id === 'sid-0')).toBe(false)
+
+      const result = await router.dispatch(IPC_INVOKE_CHANNELS.sessionSetName, {
+        sessionFile: target,
+        name: '第二页也能改名'
+      })
+      expect(result).toMatchObject({ ok: true })
+      expect(readFileSync(target, 'utf8')).toContain('第二页也能改名')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })

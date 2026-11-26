@@ -2295,6 +2295,43 @@ kbd {
   gap: 8px;
 }
 
+/* A39：历史任务的「删除」——与「结束」在边框/措辞/testid 上全部区分 */
+.task-item__delete {
+  grid-column: 2;
+  align-self: center;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: transparent;
+  border-color: var(--border-strong);
+  /* 历史任务行默认不显形：一列「删除」会把任务标题挤成配角 */
+  opacity: 0;
+}
+.task-row:hover .task-item__delete,
+.task-row:focus-within .task-item__delete,
+.task-item__delete:focus-visible {
+  opacity: 1;
+}
+.task-item__delete:disabled {
+  opacity: 1;
+}
+.task-item__delete-confirm {
+  grid-column: 1 / -1;
+  padding: 8px 10px;
+  border: 1px solid var(--error);
+  border-left: 3px solid var(--error);
+  border-radius: 8px;
+}
+.task-item__delete-note {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.task-item__delete-actions {
+  display: flex;
+  gap: 8px;
+}
+
 /* --------------------------------------------------- 插件面板（A37，追加） */
 /* `.panel` 在本样式表里没有既有定义，故 `.plugins` 自带给卡片外观（量级参考 `.update`）。 */
 .plugins {

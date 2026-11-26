@@ -90,7 +90,11 @@ function buildHarness(workspaceRoot: string): Harness {
     // A14：本用例不碰模型管理通道，但 RouterDeps 要求注入（指向临时 agent 目录，绝不写用户真配置）
     modelConfigStore: createModelConfigStore({ agentDir: join(workspaceRoot, '.agent') }),
     agentCatalog: createAgentCatalog({}),
-    skillCatalog: createSkillCatalog({})
+    skillCatalog: createSkillCatalog({}),
+    // A39：本用例不碰删除通道，但 RouterDeps 要求注入（被调用即说明用例写错了）
+    sessionDelete: {
+      remove: () => Promise.reject(new Error('该会话删除方法不应被调用'))
+    }
   })
 
   return { dispatch: (channel, payload) => router.dispatch(channel, payload), audit, opened }

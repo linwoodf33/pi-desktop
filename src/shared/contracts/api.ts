@@ -156,6 +156,17 @@ export interface PiInvokeApi {
       sessionFile?: string
       name: string
     }): Promise<Result<{ ok: true }>>
+    /**
+     * A39：删除本地会话文件（移到**系统回收站**，不是硬删除；应用内不提供撤销）。
+     *
+     * `sessionId` 可选：给了就必须与文件当前的会话 id 一致。
+     * 仅历史任务可用：活跃会话由主进程以 `SESSION_BUSY` 拒绝；
+     * 失败时文件与列表都不变，回收站不可用返回 `DELETE_FAILED`（绝不降级为永久删除）。
+     */
+    delete(input: {
+      sessionFile: string
+      sessionId?: string
+    }): Promise<Result<{ id: string; filePath: string }>>
   }
   /**
    * 模型管理（A14）：直接管理 pi 的 `models.json` 与 `settings.json#defaultModel`。

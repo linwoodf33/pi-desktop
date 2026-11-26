@@ -24,6 +24,8 @@ export interface TaskListProps {
   ending?: Record<string, true>
   /** A36：用于判断「正在运行」的文案加强 */
   phases?: Record<string, RunPhase>
+  /** A39：删除本地会话文件（移到回收站）。返回是否成功 */
+  onDeleteTask?: (taskId: string) => Promise<boolean>
 }
 
 /**
@@ -47,13 +49,18 @@ export function TaskList({
   onRename,
   onEndTask,
   ending,
-  phases
+  phases,
+  onDeleteTask
 }: TaskListProps) {
   /** 正在改名的任务 id 与草稿（A23） */
   const [renaming, setRenaming] = useState<string | undefined>(undefined)
   const [draft, setDraft] = useState('')
   /** A36：正在等哪个任务二次确认（同一时刻只允许一个） */
   const [confirmingEnd, setConfirmingEnd] = useState<string | undefined>(undefined)
+  /** A39：正在等哪个任务二次确认删除（与 confirmingEnd 互斥） */
+  const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
+  /** A39：删除在途（按钮显示「删除中…」并禁用） */
+  const [deleting, setDeleting] = useState<string | undefined>(undefined)
   return (
     <aside className="pane pane--tasks" aria-label="任务列表">
       <header className="pane__header">
@@ -85,11 +92,12 @@ export function TaskList({
                 className="task-row"
                 key={task.id}
                 onKeyDown={(event) => {
-                  // Esc 必须挂在整行上：点「结束」后焦点仍在外层按钮，keydown 不会
+                  // Esc 必须挂在整行上：点「结束」/「删除」后焦点仍在外层按钮，keydown 不会
                   // 冒泡经过兄弟节点（确认框），挂在那里等于按了没反应。
-                  if (event.key === 'Escape' && confirmingEnd === task.id) {
-                    setConfirmingEnd(undefined)
-                  }
+                  // A39：一套 Esc 收两套确认（两者本互斥，不需要判断谁开着）。
+                  if (event.key !== 'Escape') return
+                  if (confirmingEnd === task.id) setConfirmingEnd(undefined)
+                  if (confirmingDelete === task.id) setConfirmingDelete(undefined)
                 }}
               >
                 <button
@@ -187,6 +195,77 @@ export function TaskList({
                   >
                     {ending?.[task.id] === true ? '结束中…' : '结束'}
                   </button>
+                ) : null}
+                {/*
+                  A39：删除只给**历史**任务（live 行有「结束」），两个动作永远不同行 ——
+                  这是「不会把结束当删除」的结构性保证，比任何文案都硬。
+
+                  同样是 `<li>` 里 `task-item` 的兄弟节点：塞进 `task-item` 就变成
+                  button 套 button（选中与删除两套点击语义会串味）。
+                */}
+                {onDeleteTask !== undefined &&
+                task.kind === 'history' &&
+                task.filePath !== undefined ? (
+                  <button
+                    type="button"
+                    className="btn btn--small task-item__delete"
+                    data-testid="task-delete-button"
+                    data-task-id={task.id}
+                    aria-label={`删除会话：${task.title}`}
+                    title="删除该会话的本地记录（移到回收站，可在系统回收站恢复）"
+                    onClick={() => {
+                      // 两套确认永不同时开：切换目标时先收掉另一套
+                      setConfirmingEnd(undefined)
+                      setConfirmingDelete(task.id)
+                    }}
+                  >
+                    删除
+                  </button>
+                ) : null}
+                {confirmingDelete === task.id ? (
+                  <div
+                    className="task-item__delete-confirm"
+                    data-testid="task-delete-confirm"
+                    role="group"
+                    aria-label="确认删除会话"
+                  >
+                    <p className="task-item__delete-note">
+                      删除后此任务从列表消失；会话文件会移到系统回收站（可在系统回收站恢复）。不会影响其他会话。
+                    </p>
+                    <div className="task-item__delete-actions">
+                      {/*
+                        与「确认结束」同理：刻意**不加 autoFocus** —— 连续 Enter 不能把
+                        「确认删除」当默认动作（删掉会话比结束进程更难补救）。
+                      */}
+                      <button
+                        type="button"
+                        className="btn btn--danger btn--small"
+                        data-testid="task-delete-confirm-yes"
+                        disabled={deleting === task.id}
+                        onClick={() => {
+                          const id = task.id
+                          setDeleting(id)
+                          void onDeleteTask?.(id).finally(() => {
+                            setDeleting(undefined)
+                            setConfirmingDelete(undefined)
+                          })
+                        }}
+                      >
+                        {deleting === task.id ? '删除中…' : '确认删除'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--small"
+                        data-testid="task-delete-confirm-no"
+                        disabled={deleting === task.id}
+                        onClick={() => {
+                          setConfirmingDelete(undefined)
+                        }}
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
                 ) : null}
                 {confirmingEnd === task.id ? (
                   <div

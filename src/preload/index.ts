@@ -53,7 +53,8 @@ const api: PiApi = {
     dispose: (input) => invoke(IPC_INVOKE_CHANNELS.sessionDispose, input),
     state: (input) => invoke(IPC_INVOKE_CHANNELS.sessionState, input),
     stats: (input) => invoke(IPC_INVOKE_CHANNELS.sessionStats, input),
-    setName: (input) => invoke(IPC_INVOKE_CHANNELS.sessionSetName, input)
+    setName: (input) => invoke(IPC_INVOKE_CHANNELS.sessionSetName, input),
+    delete: (input) => invoke(IPC_INVOKE_CHANNELS.sessionDelete, input)
   },
   skills: {
     list: (input) => invoke(IPC_INVOKE_CHANNELS.skillsList, input ?? {}),

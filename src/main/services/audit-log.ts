@@ -8,12 +8,19 @@
 export interface AuditEntry {
   /** ISO 8601 时间戳 */
   at: string
-  /** 动作（目前只有 artifact:open） */
-  action: 'artifact:open'
-  /** 工作区相对路径（POSIX） */
+  /** 动作：artifact:open（打开产物）/ session:delete（删除会话文件，A39） */
+  action: 'artifact:open' | 'session:delete'
+  /**
+   * - `artifact:open`：工作区相对路径（POSIX）；
+   * - `session:delete`：**会话 id**（不写绝对路径/文件名，§7 约束 9）。
+   */
   target: string
-  /** 结果：opened 成功 / denied 校验拒绝 / failed 打开失败 */
-  outcome: 'opened' | 'denied' | 'failed'
+  /**
+   * 结果：
+   * - opened 成功打开 / denied 校验拒绝 / failed 打开失败（artifact:open）；
+   * - deleted 已移到回收站 / denied 校验拒绝 / failed 回收站失败（session:delete）。
+   */
+  outcome: 'opened' | 'deleted' | 'denied' | 'failed'
   /** 失败时的错误码（不含路径与内容） */
   code?: string
 }

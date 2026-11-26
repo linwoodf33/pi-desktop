@@ -27,6 +27,11 @@ export const ERROR_CODES = [
   'NOT_FOUND',
   /** 用系统默认程序打开失败（M6 `artifact:open`；`shell.openPath` 返回的错误串） */
   'OPEN_FAILED',
+  /**
+   * 删除会话文件失败（A39：回收站不可用 / 文件被占用）。
+   * 此时文件与列表都不变，**绝不**降级为永久删除。
+   */
+  'DELETE_FAILED',
   /** 找不到 / 无法执行 pi */
   'PI_NOT_FOUND',
   /** 协议污染或非法协议记录 */

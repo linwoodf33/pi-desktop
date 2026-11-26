@@ -16,6 +16,7 @@ import {
   abortRun,
   continueConversation,
   createTask,
+  deleteTask,
   endTask,
   forkTask,
   loadForkPoints,
@@ -32,7 +33,7 @@ import { subscribeEvents } from '../../src/renderer/lib/client'
 import { useAppStore } from '../../src/renderer/stores/appStore'
 import { useRunStore } from '../../src/renderer/stores/runStore'
 import { initialChatState } from '../../src/renderer/lib/reducer'
-import { liveTaskId, useSessionStore } from '../../src/renderer/stores/sessionStore'
+import { liveTaskId, useSessionStore, type TaskItem } from '../../src/renderer/stores/sessionStore'
 
 /**
  * renderer 编排层单测（组件不拼状态，编排与归约都可测）：
@@ -86,6 +87,8 @@ interface FakeApiOptions {
   prompt?: Result<{ disposition: 'started' | 'queued' | 'handled' }>
   aborted?: Result<{ ok: true }>
   disposed?: Result<{ ok: true }>
+  /** A39：session:delete 的结果（默认按入参回显 id/filePath） */
+  deleted?: Result<{ id: string; filePath: string }>
   fork?: Result<{ sessionKey: string }>
   state?: Result<AgentState>
   stats?: Result<SessionStats>
@@ -146,6 +149,15 @@ function createFakeApi(options: FakeApiOptions = {}) {
         calls.push({ method: 'session.dispose', input })
         return Promise.resolve(
           options.disposed ?? { ok: true as const, data: { ok: true as const } }
+        )
+      },
+      delete: (input: { sessionFile: string; sessionId?: string }) => {
+        calls.push({ method: 'session.delete', input })
+        return Promise.resolve(
+          options.deleted ?? {
+            ok: true as const,
+            data: { id: input.sessionId ?? 'sess-1', filePath: input.sessionFile }
+          }
         )
       },
       state: (input: { sessionKey: string }) => {
@@ -1098,5 +1110,130 @@ describe('A36：结束会话（session:dispose → 本地降级）', () => {
     expect(task?.filePath).toBe('C:/sessions/--work--/live.jsonl')
     expect(useRunStore.getState().phases[taskId]).toBe('idle')
     off()
+  })
+})
+
+describe('A39：删除会话（session:delete → 本地移除）', () => {
+  /**
+   * 种一条历史任务，并把它按 taskId 存的 session 侧/运行态键都填上 ——
+   * 这些键正是「删掉任务后必须一起清」的那部分（否则成了永远读不到的孤儿）。
+   */
+  function seedHistory(id: string, title = '历史任务'): TaskItem {
+    const task: TaskItem = {
+      id,
+      title,
+      cwd: 'C:/work',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      filePath: `C:/sessions/--work--/${id}.jsonl`,
+      kind: 'history'
+    }
+    useSessionStore.setState((state) => ({
+      tasks: [...state.tasks, task],
+      chats: { ...state.chats, [id]: initialChatState },
+      stats: { ...state.stats, [id]: EMPTY_STATS },
+      truncated: { ...state.truncated, [id]: true }
+    }))
+    useRunStore.getState().setPhase(id, 'idle')
+    useRunStore.getState().markAborted(id)
+    return task
+  }
+
+  it('RA1 历史任务：参数带 sessionFile+sessionId，删成功后任务与按 taskId 的键全部消失', async () => {
+    const fake = createFakeApi()
+    const task = seedHistory('hist-del', '待删除的历史任务')
+
+    const ok = await deleteTask(task.id, { api: fake.api })
+
+    expect(ok).toBe(true)
+    // `filePath` 是唯一可信入参；`id` 只作为交叉校验用
+    expect(fake.calls.find((call) => call.method === 'session.delete')?.input).toEqual({
+      sessionFile: 'C:/sessions/--work--/hist-del.jsonl',
+      sessionId: 'hist-del'
+    })
+
+    const state = useSessionStore.getState()
+    expect(state.tasks.some((item) => item.id === task.id)).toBe(false)
+    expect(state.chats[task.id]).toBeUndefined()
+    expect(state.stats[task.id]).toBeUndefined()
+    expect(state.truncated[task.id]).toBeUndefined()
+
+    const run = useRunStore.getState()
+    expect(run.phases[task.id]).toBeUndefined()
+    expect(run.aborted[task.id]).toBeUndefined()
+    expect(
+      run.banners.some((item) => item.level === 'info' && item.message.includes('回收站'))
+    ).toBe(true)
+    // 成功不是错误：不许出现红条
+    expect(run.banners.some((item) => item.level === 'error')).toBe(false)
+  })
+
+  it('RA2 删除选中的任务：自动选中另一条并回放它（不留空对话）', async () => {
+    const fake = createFakeApi()
+    seedHistory('hist-a', '留下来的')
+    const target = seedHistory('hist-b', '被删掉的')
+    useSessionStore.getState().select(target.id)
+
+    const ok = await deleteTask(target.id, { api: fake.api })
+
+    expect(ok).toBe(true)
+    expect(useSessionStore.getState().selectedId).toBe('hist-a')
+    expect(fake.calls.find((call) => call.method === 'session.history')?.input).toEqual({
+      sessionFile: 'C:/sessions/--work--/hist-a.jsonl'
+    })
+  })
+
+  it('RA3 live 任务：零 IPC，提示先「结束」', async () => {
+    const fake = createFakeApi()
+    await newTask({ api: fake.api })
+    const taskId = useSessionStore.getState().selectedId as string
+    useSessionStore.getState().setFilePatch(taskId, 'C:/sessions/--work--/live.jsonl')
+    const before = fake.calls.length
+
+    const ok = await deleteTask(taskId, { api: fake.api })
+
+    expect(ok).toBe(false)
+    // 正在被 pi 追加的文件不能删：连 IPC 都不发（主进程的 SESSION_BUSY 只是兜底）
+    expect(fake.calls).toHaveLength(before)
+    expect(useRunStore.getState().banners[0]?.level).toBe('warn')
+    expect(useRunStore.getState().banners[0]?.message).toContain('先「结束」')
+    expect(useSessionStore.getState().tasks.some((item) => item.id === taskId)).toBe(true)
+  })
+
+  it('RA4 NOT_FOUND（文件已被外部删除）：移除本地行 + info 条，不报错', async () => {
+    const fake = createFakeApi({
+      deleted: { ok: false, error: { code: 'NOT_FOUND', message: '会话文件不存在' } }
+    })
+    const task = seedHistory('hist-gone', '文件已不在')
+
+    const ok = await deleteTask(task.id, { api: fake.api })
+
+    expect(ok).toBe(true)
+    expect(useSessionStore.getState().tasks.some((item) => item.id === task.id)).toBe(false)
+    const banners = useRunStore.getState().banners
+    expect(banners.some((item) => item.level === 'error')).toBe(false)
+    expect(banners.some((item) => item.level === 'info' && item.message.includes('已不存在'))).toBe(
+      true
+    )
+  })
+
+  it('RA5 真失败（DELETE_FAILED / PATH_DENIED）：红条带错误码，任务仍在且没有 info 条', async () => {
+    for (const code of ['DELETE_FAILED', 'PATH_DENIED'] as const) {
+      resetStores()
+      const fake = createFakeApi({
+        deleted: { ok: false, error: { code, message: '删除未生效' } }
+      })
+      const task = seedHistory(`hist-${code}`, '失败样例')
+
+      const ok = await deleteTask(task.id, { api: fake.api })
+
+      expect(ok).toBe(false)
+      // 失败时列表必须原样（不做乐观移除），文件同理
+      expect(useSessionStore.getState().tasks.some((item) => item.id === task.id)).toBe(true)
+      const banners = useRunStore.getState().banners
+      expect(banners.some((item) => item.level === 'error' && item.message.includes(code))).toBe(
+        true
+      )
+      expect(banners.some((item) => item.level === 'info')).toBe(false)
+    }
   })
 })

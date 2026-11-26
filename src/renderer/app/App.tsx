@@ -15,6 +15,7 @@ import { NewTaskDialog } from '../features/tasks/NewTaskDialog'
 import { TaskList } from '../features/tasks/TaskList'
 import {
   abortRun,
+  deleteTask,
   endTask,
   renameTask,
   continueConversation,
@@ -269,6 +270,7 @@ export function App() {
           onEndTask={(taskId) => {
             void endTask(taskId)
           }}
+          onDeleteTask={deleteTask}
           ending={ending}
           phases={phases}
           tasks={tasks}

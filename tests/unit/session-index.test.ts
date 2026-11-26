@@ -1,8 +1,9 @@
-import { appendFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdtemp, mkdir, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 
+import { realpathNative } from '../../src/main/services/realpath-native'
 import { createSessionIndex, defaultSessionsRoot } from '../../src/main/services/session-index'
 import { findLastRecordInTail } from '../../src/main/services/session-tail'
 
@@ -461,5 +462,116 @@ describe('SessionIndex：尾部补读与头部回退（A23 改名回归，真实
     // 无参数 = 清空全部缓存
     index.invalidate()
     expect((await index.list({})).items[0]?.title).toBe('新名字')
+  })
+})
+
+/**
+ * S9a–S9c：`SessionIndex.find` —— 单路径授权（A39/A23 F1）。
+ *
+ * 全部用真实临时文件：`find` 的价值就在于「真实路径归一 + 布局闸 + 摘要闸」，
+ * 任何注入式 fake 都会退化成「再实现一遍 find」。
+ */
+describe('SessionIndex.find：单路径判定（A39）', () => {
+  const dirs: string[] = []
+
+  afterAll(async () => {
+    await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })))
+  })
+
+  /** 真实规模的会话（> 64KB 单行记录，确保不是靠「小文件恰好能读」通过） */
+  function content(id: string): string {
+    const header = JSON.stringify({
+      type: 'session',
+      version: 3,
+      id,
+      timestamp: '2026-11-20T00:00:00.000Z',
+      cwd: 'C:/work'
+    })
+    const big = JSON.stringify({
+      type: 'message',
+      id: 'b1',
+      parentId: null,
+      timestamp: '2026-11-20T00:00:02.000Z',
+      message: { role: 'user', content: `首条消息${'填'.repeat(25_000)}`, timestamp: 1 }
+    })
+    return `${header}
+${big}
+`
+  }
+
+  async function makeRoot(prefix: string): Promise<string> {
+    const root = await realpathNative(await mkdtemp(join(tmpdir(), prefix)))
+    dirs.push(root)
+    return root
+  }
+
+  it('S9a：根内深度 2 的会话文件命中；根外 / 深度不符 / 相对路径 → undefined', async () => {
+    const root = await makeRoot('pi-index-find-')
+    const group = join(root, '--C--work--')
+    await mkdir(group, { recursive: true })
+    const file = join(group, 's.jsonl')
+    await writeFile(file, content('sid-1'), 'utf8')
+    const loose = join(root, 'loose.jsonl')
+    await writeFile(loose, content('sid-loose'), 'utf8')
+
+    const outsideDir = await mkdtemp(join(tmpdir(), 'pi-index-find-outside-'))
+    dirs.push(outsideDir)
+    const outsideFile = join(outsideDir, 'x.jsonl')
+    await writeFile(outsideFile, content('sid-outside'), 'utf8')
+
+    const index = createSessionIndex({ sessionDir: () => root })
+    const found = await index.find(file)
+    expect(found?.id).toBe('sid-1')
+    expect(found?.filePath).toBe(await realpathNative(file))
+
+    expect(await index.find(outsideFile)).toBeUndefined()
+    expect(await index.find(loose)).toBeUndefined()
+    expect(await index.find(join(group, 'missing.jsonl'))).toBeUndefined()
+    expect(await index.find('relative.jsonl')).toBeUndefined()
+  })
+
+  it('S9b：25 条会话时第 25 条也能命中（不受 pageSize=20 影响）', async () => {
+    const root = await makeRoot('pi-index-find-many-')
+    const files: string[] = []
+    for (let i = 0; i < 25; i += 1) {
+      const group = join(root, `--g${i}--`)
+      await mkdir(group, { recursive: true })
+      const file = join(group, 's.jsonl')
+      await writeFile(file, content(`sid-${i}`), 'utf8')
+      // mtime 严格递增：首页固定是 sid-24..sid-5，目标（sid-0）一定不在首页
+      const at = new Date(Date.UTC(2026, 10, 20, 0, 0, i))
+      await utimes(file, at, at)
+      files.push(file)
+    }
+
+    const index = createSessionIndex({ sessionDir: () => root })
+    const firstPage = await index.list({})
+    expect(firstPage.items).toHaveLength(20)
+    expect(firstPage.items.some((item) => item.id === 'sid-0')).toBe(false)
+
+    const oldest = files[0]!
+    const found = await index.find(oldest)
+    expect(found?.id).toBe('sid-0')
+    expect(found?.filePath).toBe(await realpathNative(oldest))
+  })
+
+  it('S9c：分组目录是指向根外的 junction → undefined（真实路径闸）', async (ctx) => {
+    const root = await makeRoot('pi-index-find-link-')
+    const outsideDir = await mkdtemp(join(tmpdir(), 'pi-index-find-link-out-'))
+    dirs.push(outsideDir)
+    const outsideFile = join(outsideDir, 'redirected.jsonl')
+    await writeFile(outsideFile, content('sid-redirected'), 'utf8')
+
+    const linkedDir = join(root, '--linked--')
+    try {
+      await symlink(outsideDir, linkedDir, 'junction')
+    } catch (error) {
+      // 与 session-history.test.ts 同口径：创建失败时**显式 skip**（return 空跑会伪装成绿）
+      ctx.skip(`无法创建 junction：${String(error)}`)
+      return
+    }
+
+    const index = createSessionIndex({ sessionDir: () => root })
+    expect(await index.find(join(linkedDir, 'redirected.jsonl'))).toBeUndefined()
   })
 })

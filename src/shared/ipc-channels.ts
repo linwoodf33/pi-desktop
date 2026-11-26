@@ -32,6 +32,8 @@ export const IPC_INVOKE_CHANNELS = {
   sessionStats: 'session:stats',
   /** A23：改会话显示名（活跃会话走 RPC；历史任务追加 session_info 记录） */
   sessionSetName: 'session:setName',
+  /** A39：删除本地会话文件（移到回收站；仅历史任务，活跃会话拒绝） */
+  sessionDelete: 'session:delete',
   /** M4：可分叉点列表（pi `get_fork_messages`，§5.4 注） */
   sessionForkPoints: 'session:forkPoints',
   modelList: 'model:list',

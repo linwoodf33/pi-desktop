@@ -228,17 +228,18 @@ Phase 2 追加：`transport/gateway-connection.ts`、`services/remote-fs.ts`、`
 
 ### 5.2 主进程模块职责
 
-| 模块                     | 职责                                                                                                                                                           | 不做什么               |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| `window.ts`              | 创建窗口；`contextIsolation:true`、`nodeIntegration:false`、`sandbox:true`、`webSecurity:true`；拦截 `will-navigate`、`setWindowOpenHandler`                   | 不注入 Node 能力       |
-| `pi-locator.ts`          | 定位 pi、`--version`、`--mode rpc` 连通性自检                                                                                                                  | 不解析会话语义         |
-| `PiConnection`（Local）  | 启动/停止子进程；`openChannel` 产出一会话一通道；进程退出上报                                                                                                  | 不做业务状态机         |
-| `PiTransport`（Channel） | 写命令、读记录、stderr 环形缓冲（末 200 行）                                                                                                                   | 不做业务状态机         |
-| `SessionService`         | `create/resume/fork/prompt/abort/dispose`；串行化；LRU 与空闲回收                                                                                              | 不解析会话内容         |
-| `SessionIndex`           | 只读扫描 JSONL：头部窗口 32KB 取 header/标题，尾部反向窗口 128KB（最多反扫 2MB）取最新 `session_info`，必要时前向补扫 512KB，产出 id/标题/cwd/mtime/token/成本 | 不写会话文件           |
-| `FsBridge`               | 原生对话框；受限读写（`workspaceRoots` 内）；产物列表与 diff                                                                                                   | 不做通用 fs 代理       |
-| `ConfigStore`            | 偏好持久化（`userData/config.json`）+ schema 校验 + 迁移                                                                                                       | 不存会话内容、不存密钥 |
-| `IpcRouter`              | 通道注册、zod 校验、错误码映射、超时                                                                                                                           | 不含业务逻辑           |
+| 模块                     | 职责                                                                                                                                                           | 不做什么                                    |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `window.ts`              | 创建窗口；`contextIsolation:true`、`nodeIntegration:false`、`sandbox:true`、`webSecurity:true`；拦截 `will-navigate`、`setWindowOpenHandler`                   | 不注入 Node 能力                            |
+| `pi-locator.ts`          | 定位 pi、`--version`、`--mode rpc` 连通性自检                                                                                                                  | 不解析会话语义                              |
+| `PiConnection`（Local）  | 启动/停止子进程；`openChannel` 产出一会话一通道；进程退出上报                                                                                                  | 不做业务状态机                              |
+| `PiTransport`（Channel） | 写命令、读记录、stderr 环形缓冲（末 200 行）                                                                                                                   | 不做业务状态机                              |
+| `SessionService`         | `create/resume/fork/prompt/abort/dispose`；串行化；LRU 与空闲回收                                                                                              | 不解析会话内容                              |
+| `SessionIndex`           | 只读扫描 JSONL：头部窗口 32KB 取 header/标题，尾部反向窗口 128KB（最多反扫 2MB）取最新 `session_info`，必要时前向补扫 512KB，产出 id/标题/cwd/mtime/token/成本 | 不写会话文件                                |
+| `FsBridge`               | 原生对话框；受限读写（`workspaceRoots` 内）；产物列表与 diff                                                                                                   | 不做通用 fs 代理                            |
+| `ConfigStore`            | 偏好持久化（`userData/config.json`）+ schema 校验 + 迁移                                                                                                       | 不存会话内容、不存密钥                      |
+| `IpcRouter`              | 通道注册、zod 校验、错误码映射、超时                                                                                                                           | 不含业务逻辑                                |
+| `SessionDelete`          | 删除本地会话 JSONL（索引成员校验 + 活跃会话拒绝 + 系统回收站 + 审计；A39）                                                                                     | 不结束进程、不做批量/永久删除、不删分组目录 |
 
 ### 5.3 核心接口
 
@@ -323,6 +324,7 @@ interface PiTransport {
 | `pkg:preview`           | `{ source }`                                                                                    | `PkgPreview`                                                      | **A37**：仅 npm 源查 registry 元数据（8s/1MB/逐跳校验）；失败返回 `origin:'none'` + error，**不阻断**安装                    |
 | `pkg:install`           | `{ source }`                                                                                    | `PkgInstallResult`                                                | **A37**：`pi install <source>`（argv 恒两元素、`shell:false`、10min）；与更新双向互斥；exit 0 仍复验 settings 登记           |
 | `pkg:installCancel`     | `{}`                                                                                            | `{ ok: true }`                                                    | **A37**：取消进行中的安装（SIGTERM → 2s → SIGKILL）；无任务时**幂等**返回 `ok`                                               |
+| `session:delete`        | `{ sessionFile, sessionId? }`                                                                   | `{ id, filePath }`                                                | **A39**：删除本地会话文件（移到回收站）；仅历史任务，活跃会话 `SESSION_BUSY`；非索引内路径 `PATH_DENIED`                     |
 
 事件（main → renderer）：
 
@@ -378,6 +380,12 @@ interface PiTransport {
 | ------------------------------ | -------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `extui:respond`（实现 + 收窄） | pi `extension_ui_response` | §6.3 审批链路回包；M3 时只占位 `response: unknown` | **只认当前通道的未决 requestId**：主进程按 `sessionKey + requestId` 登记（`services/extui-registry.ts`），伪造 / 跨会话 / 通道已换 / 选项不在清单 → `REQUEST_NOT_FOUND` + `evt:diagnostic`（§9.4 S9'） |
 | `permission:status`            | 本地文件探测（无 pi 调用） | 设置页需要如实显示「扩展装没装 / 是否落后于源」    | 只读：不执行任何东西、不返回内容，只回路径 / 版本 / 协议号                                                                                                                                             |
+
+**A39「删除会话」说明（v0.16.5）**：pi 没有会话索引/元数据，官方删除方式就是删掉那个 `.jsonl`
+（`/resume` 是实时扫目录的），所以客户端只删本地文件、不同步任何远端状态，也**不**删除因此变空的
+分组目录。授权事实全部来自 `SessionIndex.find`（布局深度 2 + 根内 + 可解析会话），不复用
+`path-guard.ts`（那是 workspace 语义，会话根是另一套契约）。**已知不做**：批量删除、永久删除
+（跳过回收站）、跨设备/云端同步删除、删除空分组目录。
 
 #### 「起始模式」= pi 的工具选择（A17，v0.4 修订）
 
@@ -656,6 +664,7 @@ Phase 2 的连接级断连/重连见附录 A.5。
 16. **主题**：调色板只有一份真源（`shared/contracts/theme.ts`），运行时写成 `<html>` 的 CSS 变量 + `color-scheme`（§12）；**对比度是断言不是审美**——逐主题按 WCAG AA 校验（正文 ≥ 4.5、强调/状态/代码 token ≥ 3），不达标就改色，不放宽阈值。
 17. **模型配置（A14）**：写 pi 的 `models.json` / `settings.json` 时——apiKey **只进不出**（不进 IPC / 日志 / 审计）；客户端未建模的字段（`compat`/`samplingParams`/`cost`/`headers`/`modelOverrides`）必须原样保留；写入走「临时文件 + rename」原子替换并留 `.bak-<时间戳>`（保留 3 份）；坏 JSON 拒绝改动而非覆盖。
 18. **发布**：产物命名不带空格（GitHub 会把空格转点，与 `SHA256SUMS.txt` 对不上）；`electron-builder` 一律显式 `--publish never`（CI 环境下它会隐式发布并因缺 `GH_TOKEN` 失败）；Release notes 由 Node 脚本生成（§14），不放 shell 里拼。
+19. **破坏性文件操作（A39）**：删除会话只接受 `SessionIndex.find` 认同的根内深度 2 的 `.jsonl` 普通文件；活跃会话持有同一文件一律 `SESSION_BUSY`（不隐式 dispose）；一律走 `shell.trashItem`，失败返回 `DELETE_FAILED` 且**不回退为永久删除**；审计只记会话 id，不记路径。
 
 ---
 
@@ -692,71 +701,74 @@ Phase 2 的连接级断连/重连见附录 A.5。
 
 ### 9.1 单元（Vitest）
 
-| ID  | 阶段 | 场景                                                                                                         | 期望                                                                                                                  |
-| --- | ---- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| U1  | MVP  | 跨 chunk 边界的半个 JSON                                                                                     | 补齐后 1 条记录，不产出半条                                                                                           |
-| U2  | MVP  | 字符串内含 `U+2028`/`U+2029`                                                                                 | 不切分                                                                                                                |
-| U3  | MVP  | CRLF 行                                                                                                      | 剥离 CR 后正常解析                                                                                                    |
-| U4  | MVP  | 非法 JSON 行                                                                                                 | 不崩溃，产出诊断，后续继续                                                                                            |
-| U5  | MVP  | `reducer` delta 序列 + `message_end`                                                                         | 最终文本 == 权威文本                                                                                                  |
-| U6  | MVP  | 重复 `message_end`                                                                                           | 幂等                                                                                                                  |
-| U7  | MVP  | `agent_end` 后仍有排队事件                                                                                   | 保持 `settling` 直到 `agent_settled`                                                                                  |
-| U8  | MVP  | IPC 入参缺失/类型错                                                                                          | `ok:false, code:VALIDATION`，不进业务层                                                                               |
-| U9  | MVP  | `fs:readText` 含 `../`、符号链接逃逸、UNC 变体                                                               | `PATH_DENIED`                                                                                                         |
-| U10 | MVP  | 审批超时                                                                                                     | 自动发拒绝，UI 复位                                                                                                   |
-| U11 | MVP  | `LocalConnection` 状态机非法迁移（`failed → ready`）                                                         | 拒绝并记录                                                                                                            |
-| U12 | MVP  | 增量拼接 + 整体替换二次聚合                                                                                  | 幂等一致                                                                                                              |
-| U13 | MVP  | `readTail` 作用于 100MB 会话                                                                                 | 只读尾部、不 OOM                                                                                                      |
-| U14 | MVP  | 配置 schema 出现明文 `token`/`password` 字段                                                                 | 拒绝并给字段路径                                                                                                      |
-| U15 | P2   | 连接串解析（合法/缺字段/指纹格式错）                                                                         | 合法项解出 URL+token+指纹；非法项拒绝且不回显 token                                                                   |
-| U16 | P2   | seq 空洞                                                                                                     | 触发 `GAP` 回退全量快照                                                                                               |
-| U17 | P2   | 重连对齐（本地有未确认增量、远端多出消息）                                                                   | 以远端为准，不重复不丢条                                                                                              |
-| U18 | MVP  | 路径对抗矩阵（`..`/UNC/设备名/ADS/尾随点空格/保留名/工作区内符号链接放行/逃逸 junction 拒绝/Windows 大小写） | 攻击形态全部 `PATH_DENIED`，合法形态放行（`tests/unit/path-guard.test.ts`）                                           |
-| U19 | MVP  | unified diff 解析与截断                                                                                      | 文件/hunk/行类型正确；超限按行截断并带显式说明（`tests/unit/unified-diff.test.ts`、`tests/unit/diff-parser.test.ts`） |
-| U20 | MVP  | 非 git 快照比对（新增/修改/删除/`touch` 不误报/大小变化内容前缀相同）                                        | 变更集合正确，`touch` 不算变化（`tests/unit/workspace-snapshot.test.ts`）                                             |
-| U21 | MVP  | 产物服务上限与审计（列表 1000、预览 64KB、diff 2MB、`artifact:open` 四种结果）                               | 超限显式 `truncated`；审计只含 `action/target/outcome/code`（`tests/unit/artifacts-service.test.ts`）                 |
-| U22 | MVP  | 主题注册表：9 套调色板逐项 WCAG 对比度（正文 ≥4.5 / 强调·状态·代码 token ≥3 / scheme 与背景亮度一致）        | 全部达标；`dark`/`light` 历史值归一为 `pi-dark`/`pi-light`（`tests/unit/theme.test.ts`）                              |
-| U23 | MVP  | 模型配置：apiKey 脱敏、未知字段保留、原子写 + 备份轮转、坏 JSON 拒绝、非法 id/baseUrl/api                    | 明文不出视图；`compat`/`headers` 等原样保留；`../evil`、`ftp://` 被拒（`tests/unit/model-config-store.test.ts`）      |
-| U24 | MVP  | 提示条同文案去重（连续保存不堆叠）                                                                           | 同 `level+message+detail` 替换而非追加，最多 5 条（`tests/unit/run-store-banners.test.ts`）                           |
+| ID  | 阶段 | 场景                                                                                                                                                    | 期望                                                                                                                                                                                                     |
+| --- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| U1  | MVP  | 跨 chunk 边界的半个 JSON                                                                                                                                | 补齐后 1 条记录，不产出半条                                                                                                                                                                              |
+| U2  | MVP  | 字符串内含 `U+2028`/`U+2029`                                                                                                                            | 不切分                                                                                                                                                                                                   |
+| U3  | MVP  | CRLF 行                                                                                                                                                 | 剥离 CR 后正常解析                                                                                                                                                                                       |
+| U4  | MVP  | 非法 JSON 行                                                                                                                                            | 不崩溃，产出诊断，后续继续                                                                                                                                                                               |
+| U5  | MVP  | `reducer` delta 序列 + `message_end`                                                                                                                    | 最终文本 == 权威文本                                                                                                                                                                                     |
+| U6  | MVP  | 重复 `message_end`                                                                                                                                      | 幂等                                                                                                                                                                                                     |
+| U7  | MVP  | `agent_end` 后仍有排队事件                                                                                                                              | 保持 `settling` 直到 `agent_settled`                                                                                                                                                                     |
+| U8  | MVP  | IPC 入参缺失/类型错                                                                                                                                     | `ok:false, code:VALIDATION`，不进业务层                                                                                                                                                                  |
+| U9  | MVP  | `fs:readText` 含 `../`、符号链接逃逸、UNC 变体                                                                                                          | `PATH_DENIED`                                                                                                                                                                                            |
+| U10 | MVP  | 审批超时                                                                                                                                                | 自动发拒绝，UI 复位                                                                                                                                                                                      |
+| U11 | MVP  | `LocalConnection` 状态机非法迁移（`failed → ready`）                                                                                                    | 拒绝并记录                                                                                                                                                                                               |
+| U12 | MVP  | 增量拼接 + 整体替换二次聚合                                                                                                                             | 幂等一致                                                                                                                                                                                                 |
+| U13 | MVP  | `readTail` 作用于 100MB 会话                                                                                                                            | 只读尾部、不 OOM                                                                                                                                                                                         |
+| U14 | MVP  | 配置 schema 出现明文 `token`/`password` 字段                                                                                                            | 拒绝并给字段路径                                                                                                                                                                                         |
+| U15 | P2   | 连接串解析（合法/缺字段/指纹格式错）                                                                                                                    | 合法项解出 URL+token+指纹；非法项拒绝且不回显 token                                                                                                                                                      |
+| U16 | P2   | seq 空洞                                                                                                                                                | 触发 `GAP` 回退全量快照                                                                                                                                                                                  |
+| U17 | P2   | 重连对齐（本地有未确认增量、远端多出消息）                                                                                                              | 以远端为准，不重复不丢条                                                                                                                                                                                 |
+| U18 | MVP  | 路径对抗矩阵（`..`/UNC/设备名/ADS/尾随点空格/保留名/工作区内符号链接放行/逃逸 junction 拒绝/Windows 大小写）                                            | 攻击形态全部 `PATH_DENIED`，合法形态放行（`tests/unit/path-guard.test.ts`）                                                                                                                              |
+| U19 | MVP  | unified diff 解析与截断                                                                                                                                 | 文件/hunk/行类型正确；超限按行截断并带显式说明（`tests/unit/unified-diff.test.ts`、`tests/unit/diff-parser.test.ts`）                                                                                    |
+| U20 | MVP  | 非 git 快照比对（新增/修改/删除/`touch` 不误报/大小变化内容前缀相同）                                                                                   | 变更集合正确，`touch` 不算变化（`tests/unit/workspace-snapshot.test.ts`）                                                                                                                                |
+| U21 | MVP  | 产物服务上限与审计（列表 1000、预览 64KB、diff 2MB、`artifact:open` 四种结果）                                                                          | 超限显式 `truncated`；审计只含 `action/target/outcome/code`（`tests/unit/artifacts-service.test.ts`）                                                                                                    |
+| U22 | MVP  | 主题注册表：9 套调色板逐项 WCAG 对比度（正文 ≥4.5 / 强调·状态·代码 token ≥3 / scheme 与背景亮度一致）                                                   | 全部达标；`dark`/`light` 历史值归一为 `pi-dark`/`pi-light`（`tests/unit/theme.test.ts`）                                                                                                                 |
+| U23 | MVP  | 模型配置：apiKey 脱敏、未知字段保留、原子写 + 备份轮转、坏 JSON 拒绝、非法 id/baseUrl/api                                                               | 明文不出视图；`compat`/`headers` 等原样保留；`../evil`、`ftp://` 被拒（`tests/unit/model-config-store.test.ts`）                                                                                         |
+| U24 | MVP  | 提示条同文案去重（连续保存不堆叠）                                                                                                                      | 同 `level+message+detail` 替换而非追加，最多 5 条（`tests/unit/run-store-banners.test.ts`）                                                                                                              |
+| U25 | MVP  | 删除会话：根外/深度不对/非会话/符号链接、活跃会话、`sessionId` 不一致、回收站 `EPERM`、连续删两次、真实 junction 逃逸；`SessionIndex.find` 不受分页影响 | 越权 `PATH_DENIED`、活跃 `SESSION_BUSY`、不一致 `NOT_FOUND`、失败 `DELETE_FAILED`（文件仍在）；审计 1 行且不含盘符/分隔符（`tests/unit/session-delete.test.ts` D1–D12、`session-index.test.ts` S9a–S9c） |
 
 ### 9.2 集成（主进程 + 真实/mock pi 子进程）
 
-| ID  | 阶段 | 场景                                                                                       | 期望                                                                                                                 |
-| --- | ---- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| I1  | MVP  | 启动 → prompt → 完整事件序列 → settled                                                     | 顺序符合 golden JSONL，状态回 idle                                                                                   |
-| I2  | MVP  | busy 且无 `streamingBehavior`                                                              | 客户端明确报错，不挂起                                                                                               |
-| I3  | MVP  | `steer` 与 `followUp` 分别注入                                                             | 插入时机符合协议                                                                                                     |
-| I4  | MVP  | 运行中 `abort`                                                                             | 合理时间内回 idle，进程可继续用                                                                                      |
-| I5  | MVP  | 强杀子进程                                                                                 | `evt:diagnostic` 有 stderr 尾部；可重开会话继续对话                                                                  |
-| I6  | MVP  | 扩展命令（`/xxx`）经 prompt                                                                | `disposition=handled`，不等 settled                                                                                  |
-| I7  | MVP  | 恢复既有 session 文件                                                                      | 消息数与末条内容与 pi 一致                                                                                           |
-| I8  | MVP  | 请求 10 个会话、上限 3                                                                     | 超限挂起可唤醒；无资源冲突                                                                                           |
-| I9  | MVP  | 高频 `text_delta`（>500/s）                                                                | 合并后 renderer 帧率不降                                                                                             |
-| I10 | MVP  | pi 不存在 / 版本过老 / 首条记录非 JSON                                                     | 三步自检给出可操作提示，不进入坏状态                                                                                 |
-| I11 | P2   | 断网 30s 恢复                                                                              | 重连后条数与末条哈希与云端一致                                                                                       |
-| I12 | P2   | 云端 `kill -9` 后重连                                                                      | 无重复工具执行记录                                                                                                   |
-| I13 | P2   | RTT 200ms + 2% 丢包                                                                        | 零解析失败，首 token 增量 ≤ 1.5×RTT                                                                                  |
-| I14 | P2   | 远端工具输出 >100KB                                                                        | 经 `RemoteFs` 按需读取 `fullOutputPath`                                                                              |
-| I15 | P2   | 同网关 3 会话并行                                                                          | 事件不串流                                                                                                           |
-| I16 | MVP  | 真实 git 仓库：`fs:listArtifacts` / `fs:diff` 全链路（已暂存重命名 + 未暂存修改 + 未跟踪） | 列表含 `renamed/oldPath`，补丁覆盖暂存与未暂存，未跟踪合成 `new file`（`tests/integration/artifacts-chain.test.ts`） |
-| I17 | MVP  | 非 git 工作区：会话开始快照 → 重扫 → diff/预览                                             | 标注「非 git 工作区，快照比对」，diff/预览可用                                                                       |
+| ID  | 阶段 | 场景                                                                                              | 期望                                                                                                                                            |
+| --- | ---- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| I1  | MVP  | 启动 → prompt → 完整事件序列 → settled                                                            | 顺序符合 golden JSONL，状态回 idle                                                                                                              |
+| I2  | MVP  | busy 且无 `streamingBehavior`                                                                     | 客户端明确报错，不挂起                                                                                                                          |
+| I3  | MVP  | `steer` 与 `followUp` 分别注入                                                                    | 插入时机符合协议                                                                                                                                |
+| I4  | MVP  | 运行中 `abort`                                                                                    | 合理时间内回 idle，进程可继续用                                                                                                                 |
+| I5  | MVP  | 强杀子进程                                                                                        | `evt:diagnostic` 有 stderr 尾部；可重开会话继续对话                                                                                             |
+| I6  | MVP  | 扩展命令（`/xxx`）经 prompt                                                                       | `disposition=handled`，不等 settled                                                                                                             |
+| I7  | MVP  | 恢复既有 session 文件                                                                             | 消息数与末条内容与 pi 一致                                                                                                                      |
+| I8  | MVP  | 请求 10 个会话、上限 3                                                                            | 超限挂起可唤醒；无资源冲突                                                                                                                      |
+| I9  | MVP  | 高频 `text_delta`（>500/s）                                                                       | 合并后 renderer 帧率不降                                                                                                                        |
+| I10 | MVP  | pi 不存在 / 版本过老 / 首条记录非 JSON                                                            | 三步自检给出可操作提示，不进入坏状态                                                                                                            |
+| I11 | P2   | 断网 30s 恢复                                                                                     | 重连后条数与末条哈希与云端一致                                                                                                                  |
+| I12 | P2   | 云端 `kill -9` 后重连                                                                             | 无重复工具执行记录                                                                                                                              |
+| I13 | P2   | RTT 200ms + 2% 丢包                                                                               | 零解析失败，首 token 增量 ≤ 1.5×RTT                                                                                                             |
+| I14 | P2   | 远端工具输出 >100KB                                                                               | 经 `RemoteFs` 按需读取 `fullOutputPath`                                                                                                         |
+| I15 | P2   | 同网关 3 会话并行                                                                                 | 事件不串流                                                                                                                                      |
+| I16 | MVP  | 真实 git 仓库：`fs:listArtifacts` / `fs:diff` 全链路（已暂存重命名 + 未暂存修改 + 未跟踪）        | 列表含 `renamed/oldPath`，补丁覆盖暂存与未暂存，未跟踪合成 `new file`（`tests/integration/artifacts-chain.test.ts`）                            |
+| I17 | MVP  | 非 git 工作区：会话开始快照 → 重扫 → diff/预览                                                    | 标注「非 git 工作区，快照比对」，diff/预览可用                                                                                                  |
+| I18 | MVP  | 真实 100 条会话中删除中间一条、按 cursor 遍历全量列表、删后重建索引实例（重启语义）、别名路径删除 | 99 条仍在、被删者不在、无 `nextCursor` 死循环；新实例同样看不到它；trash 收到 realpath 长名（`tests/integration/session-delete-chain.test.ts`） |
 
 ### 9.3 E2E（Playwright + Electron）
 
-| ID  | 阶段 | 场景                                                                                                       | 期望                                                                                                                         |
-| --- | ---- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| E1  | MVP  | 首次启动（无配置）                                                                                         | 空态 + 「定位 pi / 新建任务」引导，无报错                                                                                    |
-| E2  | MVP  | 新建任务 → 选目录 → 发「列出当前目录」                                                                     | 流式回复，工具卡片含 bash 调用与输出                                                                                         |
-| E3  | MVP  | 审批「拒绝」                                                                                               | 工具未执行，对话显示拒绝结果，流程继续                                                                                       |
-| E4  | MVP  | 点击停止                                                                                                   | 300ms 内按钮置灰并显示已中止，可继续发消息                                                                                   |
-| E5  | MVP  | 关闭窗口再打开                                                                                             | 任务列表在，选中会话历史完整                                                                                                 |
-| E6  | MVP  | 主进程异常（mock 抛出）                                                                                    | 错误对话框，不白屏                                                                                                           |
-| E7  | P2   | 粘贴连接串导入                                                                                             | 指纹确认后可连；指纹不符阻断且不落配置                                                                                       |
-| E8  | P2   | 断网 → 横幅 → 重连 → 继续                                                                                  | 无重复消息，发送恢复                                                                                                         |
-| E9  | P2   | 远端产物 diff 与下载打开                                                                                   | 预览正确，临时文件关闭即清理                                                                                                 |
-| E10 | MVP  | 产物面板：settled 自动扫描 → diff 可见 → 确认后用系统程序打开（`shell.openPath` 被 stub） → 清理文件后刷新 | 变更可见、只在确认后调外部程序、清理后回到空态（`tests/e2e/app.e2e.test.ts`）                                                |
-| E11 | MVP  | 主题切换（9 套逐一切换 + 重载保持 + 跟随系统）                                                             | `data-theme`/`--bg` 生效、浏览器实算对比度 ≥4.5、截图留档（`tests/e2e/theme.e2e.test.ts`）                                   |
-| E12 | MVP  | 模型管理：打开弹层 → 新增 provider → 设默认模型 → 删除（隔离到临时 `PI_CODING_AGENT_DIR`）                 | 真写进 `models.json`/`settings.json`；界面只出现掩码；预置 provider 的额外字段仍在（`tests/e2e/models-manager.e2e.test.ts`） |
+| ID  | 阶段 | 场景                                                                                                             | 期望                                                                                                                         |
+| --- | ---- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| E1  | MVP  | 首次启动（无配置）                                                                                               | 空态 + 「定位 pi / 新建任务」引导，无报错                                                                                    |
+| E2  | MVP  | 新建任务 → 选目录 → 发「列出当前目录」                                                                           | 流式回复，工具卡片含 bash 调用与输出                                                                                         |
+| E3  | MVP  | 审批「拒绝」                                                                                                     | 工具未执行，对话显示拒绝结果，流程继续                                                                                       |
+| E4  | MVP  | 点击停止                                                                                                         | 300ms 内按钮置灰并显示已中止，可继续发消息                                                                                   |
+| E5  | MVP  | 关闭窗口再打开                                                                                                   | 任务列表在，选中会话历史完整                                                                                                 |
+| E6  | MVP  | 主进程异常（mock 抛出）                                                                                          | 错误对话框，不白屏                                                                                                           |
+| E7  | P2   | 粘贴连接串导入                                                                                                   | 指纹确认后可连；指纹不符阻断且不落配置                                                                                       |
+| E8  | P2   | 断网 → 横幅 → 重连 → 继续                                                                                        | 无重复消息，发送恢复                                                                                                         |
+| E9  | P2   | 远端产物 diff 与下载打开                                                                                         | 预览正确，临时文件关闭即清理                                                                                                 |
+| E10 | MVP  | 产物面板：settled 自动扫描 → diff 可见 → 确认后用系统程序打开（`shell.openPath` 被 stub） → 清理文件后刷新       | 变更可见、只在确认后调外部程序、清理后回到空态（`tests/e2e/app.e2e.test.ts`）                                                |
+| E11 | MVP  | 主题切换（9 套逐一切换 + 重载保持 + 跟随系统）                                                                   | `data-theme`/`--bg` 生效、浏览器实算对比度 ≥4.5、截图留档（`tests/e2e/theme.e2e.test.ts`）                                   |
+| E12 | MVP  | 模型管理：打开弹层 → 新增 provider → 设默认模型 → 删除（隔离到临时 `PI_CODING_AGENT_DIR`）                       | 真写进 `models.json`/`settings.json`；界面只出现掩码；预置 provider 的额外字段仍在（`tests/e2e/models-manager.e2e.test.ts`） |
+| E13 | MVP  | 删除历史任务：确认/取消/Esc/成功/失败/删除选中项/与「结束」互斥/重启后不存在（`shell.trashItem` 被 stub 成真删） | 行与文件同步消失、info 条说明可恢复、失败时列表与文件都不变（`tests/e2e/delete-session.e2e.test.ts` E39-1..8）               |
 
 ### 9.4 安全
 
@@ -773,6 +785,7 @@ Phase 2 的连接级断连/重连见附录 A.5。
 | S9  | P2   | 伪造其他通道 id 的审批请求                        | 拒绝                                              |
 | S10 | P2   | 远端越权路径（`../../etc/passwd`）                | 由**远端**拒绝                                    |
 | S9' | MVP  | 伪造 `requestId` / 跨会话回 `extui:respond`（M5） | `REQUEST_NOT_FOUND` + `evt:diagnostic`，不送达 pi |
+| S11 | MVP  | 删除越权路径、活跃会话、回收站失败（A39）         | 一律拒绝；审计只含会话 id                         |
 
 ---
 
@@ -816,6 +829,8 @@ Phase 2 的连接级断连/重连见附录 A.5。
 - A36 结束会话：仅 live 任务有「结束」按钮；内联二次确认（Esc 可取消）；成功后 `detachSession`（有文件）或 `removeTask`（无文件）；`runStore.ending` 区分「主动结束」与 A6「意外退出」。
 - A37 插件面板：清单读 `settings.json#packages`（不解析 `pi list`）；安装只调 `pi install`（argv 恒 `['install', source]`、`shell:false`），只接受 npm/git/https 三类源，拒绝 ssh/本地/`file:`；与更新双向互斥。
 - A38 当前 agent：`get_state` 不返回 agent，主进程在 `session:state` 读会话文件尾部（256KB、锁外、fail-soft），历史任务复用 `session:history`；三态（string/null/undefined）分别更新/清除/保持；不引入监听或轮询。
+- A39 删除会话：仅历史任务有「删除」，行内二次确认（无默认焦点、Esc 可取消）；成功即从列表消失、重启后仍不存在；文件进系统回收站；失败时列表与文件都不变。
+- A39 安全：根外/非布局/非会话/符号链接 → `PATH_DENIED`；活跃会话 → `SESSION_BUSY`；回收站失败 → `DELETE_FAILED`（不永久删除）；审计只含 action/target(sessionId)/outcome/code。
 - A25 版本与诊断：顶栏显示客户端版本；「诊断」面板列出客户端/pi 版本、配置与会话目录、默认工作目录、Electron/Node 版本，可一键复制；面板只读且不含任何密钥。
 - A23 任务改名：任务标题双击可改名（Enter 保存 / Esc 取消）；活跃会话走 RPC `set_session_name`，历史任务追加 `session_info`（只 append，不改写既有会话内容，且文件必须在会话根内）；刷新列表即读到新名字；索引同时读**头部与尾部窗口**，**重启后名字仍在**（`tests/unit/session-index.test.ts` S1–S8、`tests/unit/ipc-router.test.ts` I1–I4）。
 - A22 文件引用：输入框可「引用文件」（限本会话工作区内），插入工作区相对路径；越界被主进程拒绝；取消不报错。不提供 `@path` 语义（RPC 不支持）。

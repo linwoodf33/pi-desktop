@@ -660,6 +660,65 @@ export async function endTask(taskId: string, deps: ActionDeps = {}): Promise<bo
   }
 }
 
+/**
+ * A39：删除本地会话文件（移到系统回收站）。
+ *
+ * 语义边界（§5.4 / §7 约束 19）：
+ * - **只删历史任务**：live 会话必须先「结束」—— 正在被 pi 追加的文件删掉只会让它写盘失败；
+ * - **不做乐观移除**：失败时列表必须原样（用户要看得到「删失败了」且条目还在）；
+ * - `NOT_FOUND` 视为「已删除」（文件已被外部删除），按成功处理并如实说明；
+ * - 成功后清 session 侧（`removeTask`）与运行态（`runStore.forgetTask`），并选中下一条。
+ */
+export async function deleteTask(taskId: string, deps: ActionDeps = {}): Promise<boolean> {
+  const api = resolveApi(deps)
+  if (api === undefined) return false
+
+  const task = useSessionStore.getState().tasks.find((item) => item.id === taskId)
+  if (task === undefined) return false
+
+  if (task.kind === 'live') {
+    useRunStore.getState().pushBanner({
+      level: 'warn',
+      message: '该会话仍在运行：请先「结束」，再删除本地记录'
+    })
+    return false
+  }
+  if (task.filePath === undefined) {
+    useRunStore.getState().pushBanner({
+      level: 'warn',
+      message: '该任务还没有落盘的会话文件，无需删除'
+    })
+    return false
+  }
+
+  const result = await api.session.delete({ sessionFile: task.filePath, sessionId: task.id })
+  // 「文件已被外部删除」不是失败：目标状态（本地没有这条记录）已经成立
+  const missing = !result.ok && result.error.code === 'NOT_FOUND'
+  if (!result.ok && !missing) {
+    reportError(result.error)
+    return false
+  }
+
+  useSessionStore.getState().removeTask(taskId)
+  // removeTask 只管 session 侧；phases/aborted 这些按 taskId 存在 runStore 里，必须一起清
+  useRunStore.getState().forgetTask(taskId)
+
+  const after = useSessionStore.getState()
+  const first = after.tasks[0]
+  if (after.selectedId === undefined && first !== undefined) await selectTask(first.id, deps)
+
+  const run = useRunStore.getState()
+  if (missing) {
+    run.pushBanner({ level: 'info', message: '会话文件已不存在：已从任务列表移除' })
+  } else {
+    run.pushBanner({
+      level: 'info',
+      message: '已删除会话：会话文件已移到系统回收站（可在系统回收站恢复）'
+    })
+  }
+  return true
+}
+
 /** 定位 pi（A12 引导第一步）：自检后刷新 boot 视图；可带显式路径（设置页） */
 export async function locatePi(
   input: { path?: string } = {},

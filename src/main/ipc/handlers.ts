@@ -12,6 +12,7 @@ import type {
   modelSetInputSchema,
   piLocateInputSchema,
   sessionCreateInputSchema,
+  sessionDeleteInputSchema,
   sessionForkInputSchema,
   sessionHistoryInputSchema,
   sessionKeyInputSchema,
@@ -61,6 +62,7 @@ import type { PiLocator } from '../services/pi-locator'
 import type { PiPackageCatalog } from '../services/pi-package-catalog'
 import type { PiPackageInstaller } from '../services/pi-package-installer'
 import type { PiUpdateService } from '../services/pi-update'
+import type { SessionDelete } from '../services/session-delete'
 import type { SessionHistory } from '../services/session-history'
 import type { SessionIndex } from '../services/session-index'
 import type { SessionService } from '../services/session-service'
@@ -90,6 +92,14 @@ export interface RouterDeps {
   fsBridge: FsBridge
   /** M3：会话 JSONL 只读回放（`session:history`） */
   sessionHistory: SessionHistory
+  /**
+   * A39：删除本地会话文件（移到系统回收站）。
+   *
+   * **必填**是刻意的：这是破坏性通道，缺依赖时不能静默「当作成功」，也不该在装配期被忘掉
+   * （与 `pkgInstaller` / `piUpdate` 这类「没接线就报 NOT_IMPLEMENTED」的可选服务不同）。
+   * 授权（根内布局 / 索引成员 / 活跃会话拒绝 / 回收站失败）全在服务层，本层只搬移。
+   */
+  sessionDelete: SessionDelete
   /** M6：产物列表 / diff / 预览 / 系统程序打开（`fs:listArtifacts` / `fs:diff` / `fs:readText` / `artifact:open`） */
   artifacts: ArtifactsService
   /** 进程级 cwd，作为「新建任务」的默认目录（M3 起只作为对话框初值） */
@@ -128,6 +138,8 @@ const DEFAULT_TIMEOUTS: Partial<Record<InvokeChannel, number>> = {
   [IPC_INVOKE_CHANNELS.piLocate]: 30_000,
   [IPC_INVOKE_CHANNELS.sessionList]: 5_000,
   [IPC_INVOKE_CHANNELS.sessionHistory]: 10_000,
+  // A39：移到回收站是单次 shell 调用（可能遇到占用/重试）；失败要能及时报 DELETE_FAILED
+  [IPC_INVOKE_CHANNELS.sessionDelete]: 10_000,
   [IPC_INVOKE_CHANNELS.fsPickDirectory]: 300_000,
   [IPC_INVOKE_CHANNELS.sessionState]: 65_000,
   [IPC_INVOKE_CHANNELS.sessionStats]: 65_000,
@@ -170,6 +182,7 @@ const DEFAULT_TIMEOUTS: Partial<Record<InvokeChannel, number>> = {
 
 type SessionListInput = z.infer<typeof sessionListInputSchema>
 type SessionHistoryInput = z.infer<typeof sessionHistoryInputSchema>
+type SessionDeleteInput = z.infer<typeof sessionDeleteInputSchema>
 type FsPickDirectoryInput = z.infer<typeof fsPickDirectoryInputSchema>
 type SessionCreateInput = z.infer<typeof sessionCreateInputSchema>
 type SessionResumeInput = z.infer<typeof sessionResumeInputSchema>
@@ -577,29 +590,41 @@ export function createRouter(
         throw new IpcFailure('NOT_FOUND', '会话文件不存在', sessionFile)
       })
       /**
-       * 授权依据用「**是不是我们索引里列出的会话文件**」，而不是比对根目录字符串：
+       * 授权依据用「**SessionIndex.find 认同的会话文件**」，而不是比对根目录字符串：
        * 会话目录可以由 `PI_CODING_AGENT_SESSION_DIR` 配置改变，根字符串比对很容易在
        * 真实环境里误判（用户报的「改名无法保存」就是这个方向）。索引是我们自己的事实来源。
+       *
+       * F1（A39 顺带修复）：旧实现拿 `sessionIndex.list({})` 的**首页**（默认 20 条）逐条比对，
+       * 第 21 条及之后的历史会话改名必然 PATH_DENIED。`find` 不分页、只查一条路径，
+       * 并在内部做 realpath 归一（8.3 短名 / 大小写 / junction），语义正是
+       * 「这条路径会出现在全量列表里」。
        */
-      const listed = await deps.sessionIndex.list({})
-      const wanted = normalizeForCompare(realFile)
-      // 索引里的 filePath 可能是 **8.3 短名**（CI 的 `RUNNER~1`），而 realFile 是长名。
-      // 两边都 realpath 归一后再比较，否则真实环境会误判成 PATH_DENIED（本地路径无别名所以看不出来）。
-      let known = false
-      for (const item of listed.items) {
-        const realItem = await realpathNative(item.filePath).catch(() => item.filePath)
-        if (normalizeForCompare(realItem) === wanted) {
-          known = true
-          break
-        }
-      }
-      if (!known) {
+      const summary = await deps.sessionIndex.find(realFile)
+      if (summary === undefined) {
         throw new IpcFailure('PATH_DENIED', '只能修改本地会话索引里的会话文件', sessionFile)
       }
       appendSessionName({ sessionFile: realFile, name: input.name })
       // 名字写在文件尾，索引需要重算（尾部窗口才有最新 session_info）
       deps.sessionIndex.invalidate(realFile)
       return { ok: true }
+    },
+
+    /**
+     * A39：删除本地会话文件（移到回收站）。
+     *
+     * 授权全在 `SessionDelete`：会话根布局 + 索引成员 + 活跃会话拒绝 + 普通文件闸；
+     * 本层只做搬移与索引失效，不重复校验（重复一遍就有了第二个事实来源）。
+     * `.invalidate` 是必需的：删除后紧接着 `session:list` 时文件已不在，
+     * 缓存里仍是旧摘要（同一毫秒内 mtime 不变也会命中缓存）。
+     */
+    [IPC_INVOKE_CHANNELS.sessionDelete]: async (raw) => {
+      const input = raw as SessionDeleteInput
+      const result = await deps.sessionDelete.remove({
+        sessionFile: input.sessionFile,
+        ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId })
+      })
+      deps.sessionIndex.invalidate(result.filePath)
+      return result
     },
 
     [IPC_INVOKE_CHANNELS.sessionStats]: (raw) =>

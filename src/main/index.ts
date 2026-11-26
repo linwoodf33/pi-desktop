@@ -24,6 +24,7 @@ import {
 import { createPiPackageCatalog } from './services/pi-package-catalog'
 import { createPiPackageInstaller } from './services/pi-package-installer'
 import { readSessionAgent } from './services/session-agent'
+import { createSessionDelete } from './services/session-delete'
 import { createSessionHistory } from './services/session-history'
 import { createSessionIndex } from './services/session-index'
 import { createSessionService, type SessionService } from './services/session-service'
@@ -60,6 +61,9 @@ function bootstrappedWindow(): void {
 
   const sessionIndex = createSessionIndex({ sessionDir: () => config().sessionDir })
   const piLocator = createPiLocator()
+
+  // 审计：产物打开（M6）与会话删除（A39）共用同一实例，便于按时间线对照「谁动过这条会话」
+  const audit = createAuditLog()
 
   // §5.3：连接层只负责「拿到可执行的 pi 命令 + 开通道」，不关心业务状态
   const connection = new LocalConnection({
@@ -113,7 +117,7 @@ function bootstrappedWindow(): void {
     // 只用 shell.openPath（**不用** openExternal）：本地路径交给系统默认程序，
     // 且返回值是错误串（空串 = 成功），可映射成可操作提示 + 审计记录。
     openPath: (target) => shell.openPath(target),
-    audit: createAuditLog()
+    audit
   })
 
   // M3：新建任务选目录（原生对话框）
@@ -134,6 +138,22 @@ function bootstrappedWindow(): void {
   // M4：默认回放上限 2000 条（避免 3 万条会话把 renderer 拖成 O(n²)）
   const sessionHistory = createSessionHistory({
     sessionRoot: () => sessionIndex.root()
+  })
+
+  // A39：删除本地会话文件（移到系统回收站）。授权全在服务层：
+  // 会话根布局 + 索引成员（`SessionIndex.find`）+ 活跃会话拒绝 + 普通文件闸。
+  // `activeSessionFiles` 必须是**函数**：会话集合随时变化，只能在删除那一刻取。
+  const sessionDelete = createSessionDelete({
+    sessionRoot: () => sessionIndex.root(),
+    findSession: (filePath) => sessionIndex.find(filePath),
+    activeSessionFiles: () =>
+      sessionService.keys().flatMap((key) => {
+        const file = sessionService.sessionFileOf(key)
+        return file === undefined || file.length === 0 ? [] : [file]
+      }),
+    // 只用 shell.trashItem：pi 自己也优先用 trash，系统回收站是唯一可信的恢复渠道
+    trash: (absPath) => shell.trashItem(absPath),
+    audit
   })
 
   // M5：审批扩展的安装状态探测（只读）。开发/未打包时能逐文件比对仓库源；
@@ -228,6 +248,8 @@ function bootstrappedWindow(): void {
       pkgInstaller,
       fsBridge,
       sessionHistory,
+      // A39：删除本地会话（仅历史任务；活跃会话由服务层 SESSION_BUSY 兜底）
+      sessionDelete,
       artifacts,
       permissionDeps
     },

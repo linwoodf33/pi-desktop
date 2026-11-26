@@ -1,9 +1,10 @@
 import { readdir, stat, open } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
 
 import type { SessionListOutput, SessionSummary } from '../../shared/contracts/types'
 
+import { realpathNative } from './realpath-native'
 import {
   DEFAULT_TAIL_MAX_SCAN_BYTES,
   DEFAULT_TAIL_WINDOW_BYTES,
@@ -42,6 +43,15 @@ export interface SessionIndex {
    * 会让 mtime 不变，所以调用方写成功后显式失效一次。
    */
   invalidate(filePath?: string): void
+  /**
+   * A39/A23：判断某绝对路径是否为本会话根布局内的「可解析会话文件」，是则返回摘要。
+   *
+   * 与 `list` 的区别不是性能，而是**语义**：`list` 分页（默认 20 条），只比对首页会把
+   * 第 21 条及之后的历史会话误判成越权（A23 改名 bug F1 的成因）。`find` 不扫目录、不分页，
+   * 等价于「该文件会不会出现在 `list` 的全量结果里」。`filePath` 返回 **realpath 后的长名**。
+   * 不是本根 / 深度不是 2 / 扩展名不是 `.jsonl` / 摘要解析失败 → undefined。
+   */
+  find(filePath: string): Promise<SessionSummary | undefined>
 }
 
 export interface SessionIndexOptions {
@@ -169,12 +179,48 @@ export function createSessionIndex(options: SessionIndexOptions = {}): SessionIn
     }
   }
 
+  /**
+   * A39/A23：单路径判定 —— 这条路径是本会话根布局内「可解析的会话文件」吗？
+   *
+   * 这是 `session:setName` 与 `session:delete` 共用的**唯一**授权事实来源：
+   * 不再为了校验一条路径去 `list` 全目录，也不会被 `pageSize` 截断（F1）。
+   */
+  async function find(filePath: string): Promise<SessionSummary | undefined> {
+    // 词法闸：必须在根之下、深度恰好 2（`<root>/--<path>--/<id>.jsonl`）、扩展名 .jsonl
+    if (!isAbsolute(filePath)) return undefined
+    const lexical = resolve(filePath)
+    const rootLexical = resolve(root())
+    const rootKey = normalizeCacheKey(rootLexical)
+    const lexicalKey = normalizeCacheKey(lexical)
+    if (lexicalKey === rootKey || !lexicalKey.startsWith(`${rootKey}/`)) return undefined
+    if (extname(lexical) !== '.jsonl') return undefined
+    if (normalizeCacheKey(dirname(dirname(lexical))) !== rootKey) return undefined
+
+    // 真实路径闸：junction / 符号链接可以把「词法在根内」映射到根外（§7 约束 8）
+    const realRoot = await realpathNative(rootLexical).catch(() => rootLexical)
+    const realFile = await realpathNative(lexical).catch(() => undefined)
+    if (realFile === undefined) return undefined
+    if (!normalizeCacheKey(realFile).startsWith(`${normalizeCacheKey(realRoot)}/`)) return undefined
+
+    // 摘要闸：解析不出 header 的脏文件不能被当成「可删的会话」（fail-closed）
+    let info: { mtimeMs: number; size?: number }
+    try {
+      info = await statFile(realFile)
+    } catch {
+      return undefined
+    }
+    const summary = await summarizeCached(realFile, info.mtimeMs, info.size)
+    if (summary === undefined) return undefined
+    return { ...summary, filePath: realFile }
+  }
+
   /** 上一次 list 用的根；变化时清空缓存（设置页会话目录覆盖后不能拿旧摘要） */
   let cachedRoot: string | undefined
 
   return {
     root,
     invalidate,
+    find,
 
     async list(query) {
       const sessionsRoot = root()
