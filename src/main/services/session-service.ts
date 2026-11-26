@@ -157,6 +157,13 @@ export interface SessionService {
   /** 已注册的会话键（诊断 / 测试用） */
   keys(): string[]
   /**
+   * 会话文件路径（A23 改名后失效索引缓存用）。
+   *
+   * pi 只在 `switch_session` / 首条消息后才落盘文件；未注册 / 尚未落盘 / 已释放 → undefined，
+   * 调用方必须按「拿不到就跳过」处理（fail-soft）。
+   */
+  sessionFileOf(sessionKey: string): string | undefined
+  /**
    * 会话的工作目录（M6 产物扫用）：工作区根的唯一可信来源。
    * 未注册 / 已释放的会话返回 undefined。
    */
@@ -712,6 +719,8 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
 
   return {
     keys: () => [...sessions.keys()],
+
+    sessionFileOf: (sessionKey) => sessions.get(sessionKey)?.sessionFile,
 
     workspaceOf: (sessionKey) => sessions.get(sessionKey)?.cwd,
 

@@ -1,17 +1,24 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { createSessionIndex, defaultSessionsRoot } from '../../src/main/services/session-index'
+import { findLastRecordInTail } from '../../src/main/services/session-tail'
 
-/** SessionIndex：§10 A3（20 会话 < 1s）+ 只读头部扫描 */
+/** SessionIndex：§10 A3（20 会话 < 1s）+ 头部窗口 + 尾部窗口 */
 
 type DirEntry = { name: string; isDirectory: () => boolean }
 
 interface FakeFs {
   dirs: Record<string, string[]>
   files: Map<string, { content: string; mtimeMs: number }>
+}
+
+/** 头部读取按**字节**截断（旧实现「直接返回整文件内容」正是本 bug 长期假绿的根源） */
+function truncateUtf8(content: string, maxBytes: number): string {
+  const bytes = Buffer.from(content, 'utf8')
+  return bytes.length <= maxBytes ? content : bytes.subarray(0, maxBytes).toString('utf8')
 }
 
 function fakeIndex(
@@ -31,12 +38,12 @@ function fakeIndex(
     statFile: (path) => {
       const file = fs.files.get(path)
       if (!file) throw new Error(`ENOENT ${path}`)
-      return Promise.resolve({ mtimeMs: file.mtimeMs })
+      return Promise.resolve({ mtimeMs: file.mtimeMs, size: Buffer.byteLength(file.content) })
     },
-    readHead: (path) => {
+    readHead: (path, maxBytes) => {
       const file = fs.files.get(path)
       if (!file) return Promise.reject(new Error(`ENOENT ${path}`))
-      return Promise.resolve(file.content)
+      return Promise.resolve(truncateUtf8(file.content, maxBytes))
     }
   })
 }
@@ -189,6 +196,28 @@ describe('SessionIndex：摘要与排序', () => {
     const index = fakeIndex({ dirs: {}, files: new Map() })
     await expect(index.list({})).resolves.toEqual({ items: [] })
   })
+
+  it('小文件（size <= headBytes）不发起尾部读取', async () => {
+    let tailCalls = 0
+    const index = createSessionIndex({
+      sessionDir: () => 'C:/sessions',
+      listDir: (path) =>
+        Promise.resolve<DirEntry[]>(
+          path === 'C:/sessions'
+            ? [{ name: '--a--', isDirectory: () => true }]
+            : [{ name: '1.jsonl', isDirectory: () => false }]
+        ),
+      statFile: () => Promise.resolve({ mtimeMs: 1, size: 120 }),
+      readHead: () => Promise.resolve(sessionFile({ id: 'small', cwd: 'C:/a', name: '小名' })),
+      findTailRecord: () => {
+        tailCalls += 1
+        return Promise.resolve(undefined)
+      }
+    })
+    const result = await index.list({})
+    expect(result.items[0]?.title).toBe('小名')
+    expect(tailCalls).toBe(0)
+  })
 })
 
 describe('SessionIndex：root 解析', () => {
@@ -244,5 +273,193 @@ describe('SessionIndex：真实文件系统（§10 A3 预算）', () => {
     expect(result.items).toHaveLength(20)
     expect(elapsed).toBeLessThan(1000)
     expect(result.items[0]?.cwd).toBe('C:/work')
+  })
+})
+
+/**
+ * S1–S8：本 bug 的回归用例（会话名写在文件尾 / 索引只读头部）。
+ *
+ * 全部用**真实临时文件**：任何「注入 readHead 返回整文件」的 fake 都会让这些用例失去意义。
+ * 典型夹具 = 头部 + 一条 40–60KB 的**单行**用户消息（32KB 头部预算连它都装不下）。
+ */
+describe('SessionIndex：尾部补读与头部回退（A23 改名回归，真实文件）', () => {
+  const dirs: string[] = []
+
+  afterAll(async () => {
+    await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })))
+  })
+
+  const HEADER = `${JSON.stringify({
+    type: 'session',
+    version: 3,
+    id: 'sid-1',
+    timestamp: '2026-11-20T00:00:00.000Z',
+    cwd: 'C:/work'
+  })}\n`
+
+  function infoRecord(name: string): string {
+    return `${JSON.stringify({
+      type: 'session_info',
+      id: 'c1',
+      parentId: 'b1',
+      timestamp: '2026-11-20T00:00:03.000Z',
+      name
+    })}\n`
+  }
+
+  /** 一条**单行**的大用户消息（fillBytes 以字节计；中文 3 字节/字） */
+  function bigUserMessage(text: string, fillBytes: number): string {
+    return `${JSON.stringify({
+      type: 'message',
+      id: 'b1',
+      parentId: null,
+      timestamp: '2026-11-20T00:00:02.000Z',
+      message: {
+        role: 'user',
+        content: `${text}${'填'.repeat(Math.ceil(fillBytes / 3))}`,
+        timestamp: 1
+      }
+    })}\n`
+  }
+
+  /** 一条**单行**的填充消息（默认 assistant 角色，用来把首条用户消息推到头部窗口之外） */
+  function fillerMessage(text: string, fillBytes: number): string {
+    return `${JSON.stringify({
+      type: 'message',
+      id: 'p1',
+      parentId: null,
+      timestamp: '2026-11-20T00:00:04.000Z',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: `${text}${'填'.repeat(Math.ceil(fillBytes / 3))}` }],
+        timestamp: 1
+      }
+    })}
+`
+  }
+
+  async function writeSession(lines: string[]): Promise<{ root: string; file: string }> {
+    const root = await mkdtemp(join(tmpdir(), 'pi-index-tail-'))
+    dirs.push(root)
+    const group = join(root, '--C--work--')
+    await mkdir(group, { recursive: true })
+    const file = join(group, 's.jsonl')
+    await writeFile(file, lines.join(''), 'utf8')
+    return { root, file }
+  }
+
+  it('S1：头部无 name、尾部有 session_info → 用尾部名字（本 bug 的回归断言）', async () => {
+    const { root } = await writeSession([
+      HEADER,
+      bigUserMessage('首条消息', 40 * 1024),
+      infoRecord('新名字')
+    ])
+    const index = createSessionIndex({ sessionDir: () => root })
+    const listed = await index.list({})
+    expect(listed.items).toHaveLength(1)
+    expect(listed.items[0]?.title).toBe('新名字')
+  })
+
+  it('S2：头部有 name、尾部有更新的 name → 用尾部值（last-wins）', async () => {
+    const { root } = await writeSession([
+      HEADER,
+      infoRecord('头部名'),
+      bigUserMessage('中间消息', 40 * 1024),
+      infoRecord('尾部名')
+    ])
+    const index = createSessionIndex({ sessionDir: () => root })
+    expect((await index.list({})).items[0]?.title).toBe('尾部名')
+  })
+
+  it('S3：尾部没有 name、头部有（--name 建的老会话）→ 用头部值，不回归', async () => {
+    const { root } = await writeSession([
+      HEADER,
+      infoRecord('头部名'),
+      bigUserMessage('中间消息', 40 * 1024)
+    ])
+    const index = createSessionIndex({ sessionDir: () => root })
+    expect((await index.list({})).items[0]?.title).toBe('头部名')
+  })
+
+  it('S4：无 name、头部看不到首条消息 → 前向补扫拿到首条消息（P1-2）', async () => {
+    const { root } = await writeSession([HEADER, bigUserMessage('首条消息', 60 * 1024)])
+    const index = createSessionIndex({ sessionDir: () => root })
+    const title = (await index.list({})).items[0]?.title
+    expect(title?.startsWith('首条消息')).toBe(true)
+  })
+
+  it('S5：既无 name 也无任何消息 → 仍是「(未命名会话)」', async () => {
+    const { root } = await writeSession([HEADER])
+    const index = createSessionIndex({ sessionDir: () => root })
+    expect((await index.list({})).items[0]?.title).toBe('(未命名会话)')
+  })
+
+  it('S6：尾部读取抛错（注入 reject）→ 摘要仍返回（fail-soft），走头部/前向回退', async () => {
+    const { root } = await writeSession([
+      HEADER,
+      // 首条用户消息被推到头部 32KB 之外（必须靠前向补扫才看得到）
+      fillerMessage('预热', 40 * 1024),
+      bigUserMessage('首条消息', 10),
+      // 文件总长 > 前向补扫上限（512KB）：尾部那条 session_info 落在补扫范围之外，
+      // 这样「尾部读失败」时既不会误读尾部名，也验证了前向补扫的兜底
+      fillerMessage('长填充', 600 * 1024),
+      infoRecord('尾部名')
+    ])
+    const index = createSessionIndex({
+      sessionDir: () => root,
+      findTailRecord: () => Promise.reject(new Error('尾部读失败（模拟 EPERM/删除）'))
+    })
+    const listed = await index.list({})
+    expect(listed.items).toHaveLength(1)
+    expect(listed.items[0]?.id).toBe('sid-1')
+    expect(listed.items[0]?.title?.startsWith('首条消息')).toBe(true)
+  })
+
+  it('S7：size <= headBytes 的文件零尾部 IO（注入计数器断言 0 次）', async () => {
+    const { root } = await writeSession([HEADER, infoRecord('小文件名字')])
+    let tailCalls = 0
+    const index = createSessionIndex({
+      sessionDir: () => root,
+      findTailRecord: (path, predicate) => {
+        tailCalls += 1
+        return findLastRecordInTail(path, predicate)
+      }
+    })
+    expect((await index.list({})).items[0]?.title).toBe('小文件名字')
+    expect(tailCalls).toBe(0)
+  })
+
+  it('S9：首条消息在头部窗口内（有 title）+ 尾部改名 → 仍取尾部名', async () => {
+    // 最贴近用户实际场景的形态：会话不大，头部能读到首条消息（所以 title 不为空），
+    // 名字只在文件尾。若把尾扫改成「仅在头部拿不到名字时触发」，这条会立刻变红。
+    const { root } = await writeSession([
+      HEADER,
+      bigUserMessage('首条消息', 1024),
+      fillerMessage('后续对话', 40 * 1024),
+      infoRecord('尾部名')
+    ])
+    const index = createSessionIndex({ sessionDir: () => root })
+    const title = (await index.list({})).items[0]?.title
+    expect(title).toBe('尾部名')
+  })
+
+  it('S8：改名后 invalidate() → 再 list 读到新名（mtime 被固定，排除 mtime 驱动）', async () => {
+    const { root, file } = await writeSession([HEADER, infoRecord('旧名字')])
+    // 固定 mtime：摘要缓存必然命中，唯一能让新名字出现的就是 invalidate()
+    const index = createSessionIndex({
+      sessionDir: () => root,
+      statFile: () => Promise.resolve({ mtimeMs: 1_000 })
+    })
+    expect((await index.list({})).items[0]?.title).toBe('旧名字')
+
+    await appendFile(file, infoRecord('新名字'), 'utf8')
+    expect((await index.list({})).items[0]?.title).toBe('旧名字') // 缓存仍在
+
+    index.invalidate(file)
+    expect((await index.list({})).items[0]?.title).toBe('新名字')
+
+    // 无参数 = 清空全部缓存
+    index.invalidate()
+    expect((await index.list({})).items[0]?.title).toBe('新名字')
   })
 })

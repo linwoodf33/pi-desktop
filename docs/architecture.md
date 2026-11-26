@@ -228,17 +228,17 @@ Phase 2 追加：`transport/gateway-connection.ts`、`services/remote-fs.ts`、`
 
 ### 5.2 主进程模块职责
 
-| 模块                     | 职责                                                                                                                                         | 不做什么               |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| `window.ts`              | 创建窗口；`contextIsolation:true`、`nodeIntegration:false`、`sandbox:true`、`webSecurity:true`；拦截 `will-navigate`、`setWindowOpenHandler` | 不注入 Node 能力       |
-| `pi-locator.ts`          | 定位 pi、`--version`、`--mode rpc` 连通性自检                                                                                                | 不解析会话语义         |
-| `PiConnection`（Local）  | 启动/停止子进程；`openChannel` 产出一会话一通道；进程退出上报                                                                                | 不做业务状态机         |
-| `PiTransport`（Channel） | 写命令、读记录、stderr 环形缓冲（末 200 行）                                                                                                 | 不做业务状态机         |
-| `SessionService`         | `create/resume/fork/prompt/abort/dispose`；串行化；LRU 与空闲回收                                                                            | 不解析会话内容         |
-| `SessionIndex`           | 只读扫描 JSONL，产出 id/标题/cwd/mtime/token/成本                                                                                            | 不写会话文件           |
-| `FsBridge`               | 原生对话框；受限读写（`workspaceRoots` 内）；产物列表与 diff                                                                                 | 不做通用 fs 代理       |
-| `ConfigStore`            | 偏好持久化（`userData/config.json`）+ schema 校验 + 迁移                                                                                     | 不存会话内容、不存密钥 |
-| `IpcRouter`              | 通道注册、zod 校验、错误码映射、超时                                                                                                         | 不含业务逻辑           |
+| 模块                     | 职责                                                                                                                                                           | 不做什么               |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| `window.ts`              | 创建窗口；`contextIsolation:true`、`nodeIntegration:false`、`sandbox:true`、`webSecurity:true`；拦截 `will-navigate`、`setWindowOpenHandler`                   | 不注入 Node 能力       |
+| `pi-locator.ts`          | 定位 pi、`--version`、`--mode rpc` 连通性自检                                                                                                                  | 不解析会话语义         |
+| `PiConnection`（Local）  | 启动/停止子进程；`openChannel` 产出一会话一通道；进程退出上报                                                                                                  | 不做业务状态机         |
+| `PiTransport`（Channel） | 写命令、读记录、stderr 环形缓冲（末 200 行）                                                                                                                   | 不做业务状态机         |
+| `SessionService`         | `create/resume/fork/prompt/abort/dispose`；串行化；LRU 与空闲回收                                                                                              | 不解析会话内容         |
+| `SessionIndex`           | 只读扫描 JSONL：头部窗口 32KB 取 header/标题，尾部反向窗口 128KB（最多反扫 2MB）取最新 `session_info`，必要时前向补扫 512KB，产出 id/标题/cwd/mtime/token/成本 | 不写会话文件           |
+| `FsBridge`               | 原生对话框；受限读写（`workspaceRoots` 内）；产物列表与 diff                                                                                                   | 不做通用 fs 代理       |
+| `ConfigStore`            | 偏好持久化（`userData/config.json`）+ schema 校验 + 迁移                                                                                                       | 不存会话内容、不存密钥 |
+| `IpcRouter`              | 通道注册、zod 校验、错误码映射、超时                                                                                                                           | 不含业务逻辑           |
 
 ### 5.3 核心接口
 
@@ -452,9 +452,21 @@ interface PiTransport {
 | 活跃会话         | RPC `set_session_name`，pi 自己落盘                         | 与 TUI 里 `/name` 完全一致                                            |
 | 历史（回放）任务 | **追加**一条 `session_info`（`id/parentId/timestamp/name`） | 进程已不在；只 append、不改旧行 —— 最坏情况是多一行记录，不会损坏会话 |
 
-安全与边界：历史路径要求文件是 `.jsonl` 且**在本地会话索引里**（我们用「索引里列出的文件」作授权依据，而不是比对会话根字符串 —— 会话目录可被 `PI_CODING_AGENT_SESSION_DIR` 改变，根字符串比对在真实环境里会误判，这正是「改名无法保存」的成因）。renderer 侧还有一条兜底：任务被标成 live 但子进程已回收（`SESSION_NOT_FOUND`）时，自动改用会话文件路径重试一次。`SessionIndex` 已经在读 `session_info.name`（优先于首条用户消息），所以改完刷新列表即生效，不需要额外状态。
+安全与边界：历史路径要求文件是 `.jsonl` 且**在本地会话索引里**（我们用「索引里列出的文件」作授权依据，而不是比对会话根字符串 —— 会话目录可被 `PI_CODING_AGENT_SESSION_DIR` 改变，根字符串比对在真实环境里会误判，这正是「改名无法保存」的成因）。renderer 侧还有一条兜底：任务被标成 live 但子进程已回收（`SESSION_NOT_FOUND`）时，自动改用会话文件路径重试一次。`SessionIndex` 读取会话名时会回退到**尾部反向扫描**（见下一小节），所以改完刷新列表即生效，不需要额外状态。
 
 UI：任务标题**双击**进入编辑，`Enter` 保存、`Esc` 取消；失败保持编辑态并报错。刻意**不在失焦时关闭** —— 双击的第二下会立刻让输入框失焦，否则「刚出现就被关掉」。
+
+**会话名的读取位置（A23 补丁修复「重启后名字丢失」）**：改名（`/name`、RPC `set_session_name`、历史任务的 append）产生的 `session_info` **只会追加在文件尾**，而索引原先只读头部 32KB —— 于是出现「当场改名生效、重启后变回 `(未命名会话)`」。现在 `SessionIndex` 的读取顺序是：
+
+| 窗口                 | 大小                     | 用途                                                                                      |
+| -------------------- | ------------------------ | ----------------------------------------------------------------------------------------- |
+| 头部                 | 32KB                     | `session` 记录（id/cwd/timestamp，永远第 1 行）+ 早期 `session_info` + 首条用户消息       |
+| 尾部（反向扫描）     | 窗口 128KB，最多反扫 2MB | **最后一条** `session_info`（last-wins）；截断行与半个 UTF-8 码点丢弃后继续向前，不 break |
+| 前向补扫（条件触发） | 至 512KB                 | 仅当头部连「首条用户消息」都没拿到时（实测单条记录就有 52KB+）                            |
+
+标题优先级：**尾部** `session_info.name` → **头部** `session_info.name` → 首条用户消息 → `(未命名会话)`。空字符串名（trim 后为空）视为「没有名字」，不会把标题清成空白。尾部读失败（文件被删 / 无权限 / 写盘中的半行）一律 fail-soft：不影响列表返回、不丢条目。改名成功后 handler 会显式 `SessionIndex.invalidate(file)`，避免「同一毫秒内两次 append 导致 mtime 不变」时拿到旧摘要。
+
+已知残留缺口（显式记录，不做隐藏处理）：判定量是**最后一条 `session_info` 距文件尾的距离 ` > 2MB`（反扫上限），而不是文件总大小 —— 追加 128KB–2MB 内容时靠多轮反扫仍能找到（`tests/unit/session-tail.test.ts` T2/T9）；`--name` 建会话时写入头部的早期名字仍在头部兜底。彻底消除需要缓存 `nameOffset` 并做增量读，属后续优化。
 
 #### 消息里的图片与文件引用（A21/A22，v0.8）
 
@@ -805,7 +817,7 @@ Phase 2 的连接级断连/重连见附录 A.5。
 - A37 插件面板：清单读 `settings.json#packages`（不解析 `pi list`）；安装只调 `pi install`（argv 恒 `['install', source]`、`shell:false`），只接受 npm/git/https 三类源，拒绝 ssh/本地/`file:`；与更新双向互斥。
 - A38 当前 agent：`get_state` 不返回 agent，主进程在 `session:state` 读会话文件尾部（256KB、锁外、fail-soft），历史任务复用 `session:history`；三态（string/null/undefined）分别更新/清除/保持；不引入监听或轮询。
 - A25 版本与诊断：顶栏显示客户端版本；「诊断」面板列出客户端/pi 版本、配置与会话目录、默认工作目录、Electron/Node 版本，可一键复制；面板只读且不含任何密钥。
-- A23 任务改名：任务标题双击可改名（Enter 保存 / Esc 取消）；活跃会话走 RPC `set_session_name`，历史任务追加 `session_info`（只 append，不改写既有会话内容，且文件必须在会话根内）；刷新列表即读到新名字。
+- A23 任务改名：任务标题双击可改名（Enter 保存 / Esc 取消）；活跃会话走 RPC `set_session_name`，历史任务追加 `session_info`（只 append，不改写既有会话内容，且文件必须在会话根内）；刷新列表即读到新名字；索引同时读**头部与尾部窗口**，**重启后名字仍在**（`tests/unit/session-index.test.ts` S1–S8、`tests/unit/ipc-router.test.ts` I1–I4）。
 - A22 文件引用：输入框可「引用文件」（限本会话工作区内），插入工作区相对路径；越界被主进程拒绝；取消不报错。不提供 `@path` 语义（RPC 不支持）。
 - A21 图片缩略图：用户消息里的图片显示缩略图，点击可在应用内查看原图（Esc/遮罩/按钮关闭，多图可切换）。
 - A20 拖拽与压缩：可把图片文件拖入输入区（含窗口级导航兜底）；超过 2000px 长边或 2MB 的图片在客户端先等比压缩，缩略图标注「已压缩」并保留原图尺寸信息；8MB 以上直接拒绝并说明原因。

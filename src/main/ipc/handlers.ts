@@ -557,7 +557,17 @@ export function createRouter(
     [IPC_INVOKE_CHANNELS.sessionSetName]: async (raw) => {
       const input = raw as { sessionKey?: string; sessionFile?: string; name: string }
       if (input.sessionKey !== undefined) {
-        return service.setName({ sessionKey: input.sessionKey, name: input.name })
+        const result = await service.setName({ sessionKey: input.sessionKey, name: input.name })
+        /**
+         * pi 已把 `session_info` 追加到会话文件尾；索引靠 mtime 也能发现变化，
+         * 但同一毫秒内的两次 append 可能让 mtime 不变，所以这里显式失效一次。
+         * 拿不到会话文件（还没落盘 / 已释放）就跳过 —— 不能让失效失败影响改名结果。
+         */
+        const sessionFile = service.sessionFileOf(input.sessionKey)
+        if (sessionFile !== undefined && sessionFile.length > 0) {
+          deps.sessionIndex.invalidate(sessionFile)
+        }
+        return result
       }
       const sessionFile = input.sessionFile
       if (sessionFile === undefined) {
@@ -587,6 +597,8 @@ export function createRouter(
         throw new IpcFailure('PATH_DENIED', '只能修改本地会话索引里的会话文件', sessionFile)
       }
       appendSessionName({ sessionFile: realFile, name: input.name })
+      // 名字写在文件尾，索引需要重算（尾部窗口才有最新 session_info）
+      deps.sessionIndex.invalidate(realFile)
       return { ok: true }
     },
 

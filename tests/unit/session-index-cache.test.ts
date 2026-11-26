@@ -99,6 +99,36 @@ describe('SessionIndex mtime 缓存', () => {
     expect(result.items[0]?.title).toBe('改名后的任务')
   })
 
+  it('mtime 未变时 invalidate() 会强制重读（A23 改名后显式失效）', async () => {
+    const { index, fs, headReads } = setup()
+    await index.list({})
+    expect(headReads()).toBe(2)
+
+    const target = join('C:/sessions', '--a--', '1.jsonl')
+    // 内容变了但 mtime 没变（同一毫秒写入 / 粗粒度文件系统）→ 缓存仍返回旧摘要
+    fs.files.set(target, {
+      content: headerOnly('id-1').replace('任务 id-1', '改过的名字'),
+      mtimeMs: 1000
+    })
+    const stale = await index.list({})
+    expect(stale.items.find((item) => item.id === 'id-1')?.title).toBe('任务 id-1')
+    expect(headReads()).toBe(2)
+
+    index.invalidate(target)
+    const fresh = await index.list({})
+    expect(fresh.items.find((item) => item.id === 'id-1')?.title).toBe('改过的名字')
+    expect(headReads()).toBe(3)
+  })
+
+  it('invalidate() 无参数清空全部缓存（会话目录覆盖等场景的兜底）', async () => {
+    const { index, headReads } = setup()
+    await index.list({})
+    expect(headReads()).toBe(2)
+    index.invalidate()
+    await index.list({})
+    expect(headReads()).toBe(4)
+  })
+
   it('会话目录切换时清空缓存（不回放旧目录的摘要）', async () => {
     const fileA = join('C:/a', '--x--', '1.jsonl')
     const fileB = join('C:/b', '--y--', '1.jsonl')

@@ -1,5 +1,42 @@
 # 更新日志（Changelog）
 
+## v0.16.4（2026-11-26）
+
+修「任务改名后重启，名字丢失变回 `(未命名会话)`」（A23）。
+
+### 根因
+
+pi 的会话名不是文件头字段，而是会话 JSONL 里的 `session_info` **记录**；`/name`、RPC
+`set_session_name` 以及本项目的「历史任务改名」都**只 append**，所以改名记录一定落在
+**文件尾**。而 `SessionIndex` 只读头部 32KB —— 改名当场生效（renderer 乐观更新），
+下一次启动重新读盘时才暴露：标题回退成首条用户消息，甚至 `(未命名会话)`
+（同一个 32KB 预算连一条 52KB 的单行记录都装不下）。
+
+### 修复
+
+- 新增 `services/session-tail.ts`：从文件尾**反向分块扫描**，取最后一条满足谓词的记录
+  （last-wins）；截断行、CRLF、UTF-8 多字节被切断都容错，IO 失败一律 fail-soft。
+- `SessionIndex` 只要文件超出头部窗口（`size > 32KB`，`size` 未知时同样视为超出）就**无条件**反向扫描尾部（窗口 128KB / 最多反扫 2MB）——last-wins 要求如此：头部即使有旧名，也要扫尾部才能发现更新的名字；
+  头部连首条用户消息都没有时再做**有上限**（512KB）的前向补扫。
+  标题优先级：尾部 name → 头部 name → 首条用户消息 → `(未命名会话)`；空名视为无名字。
+- `session:setName` 两条路径成功后显式 `SessionIndex.invalidate(file)`，
+  消除「同一毫秒两次 append、mtime 不变」时读到旧摘要的可能。
+- 新增 `SessionService.sessionFileOf(sessionKey)`（活跃路径失效缓存用，拿不到就跳过）。
+
+### 测试
+
+- 新增 `tests/unit/session-tail.test.ts`（T1–T9，真实临时文件）。
+- `session-index.test.ts` 的 fake 头部读取改为**按字节真截断**并返回 `size`
+  —— 原来注入「返回整文件内容」等于豁免 32KB 预算，正是这个 bug 长期没被抓住的原因；
+  另新增 S1–S8（含「重启/失效后仍读到新名」「小文件零尾部 IO」）。
+- `pi-session-name.test.ts` 的「索引能读到新名字」改用 > 32KB + 60KB 单行记录的真实会话。
+- `ipc-router.test.ts` 新增 I1–I4（> 64KB 会话改名、重启后仍在、活跃路径、连续改名 3 次）。
+
+### 已知残留缺口
+
+最后一条 `session_info` 距文件尾 > 2MB（反扫上限）时扫不到，改名后又在末尾追加 128KB–2MB 内容仍在范围内；
+`--name` 建会话的早期名字仍在头部兜底。已在 `docs/architecture.md` 显式记录。
+
 ## v0.16.3（2026-11-25）
 
 任务列表观感收尾（A36）。

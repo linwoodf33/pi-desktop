@@ -1,4 +1,11 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -40,6 +47,7 @@ function stubSessionService(overrides: Partial<SessionService> = {}): SessionSer
     respondExtUi: unexpected,
     keys: () => [],
     workspaceOf: () => undefined,
+    sessionFileOf: () => undefined,
     workspaces: () => [],
     disposeAll: () => Promise.resolve(),
     ...overrides
@@ -421,6 +429,146 @@ describe('A23：改会话名（历史任务，追加 session_info）', () => {
       if (!result.ok) expect(result.error.code).toBe('PATH_DENIED')
     } finally {
       rmSync(outer, { recursive: true, force: true })
+    }
+  })
+
+  /**
+   * I1–I4：真实规模会话的改名链路。
+   *
+   * 夹具 = 头部 + 一条 60KB 的**单行**用户消息（> 64KB，索引的 32KB 头部预算装不下），
+   * 这正是用户报的那个会话形态：改名当场生效、重启后名字丢失。
+   */
+  function bigSessionContent(): string {
+    const header = JSON.stringify({
+      type: 'session',
+      version: 3,
+      id: 'bbbb2222',
+      timestamp: '2026-11-20T00:00:00.000Z',
+      cwd: '/work'
+    })
+    const bigRecord = JSON.stringify({
+      type: 'message',
+      id: 'b1',
+      parentId: null,
+      timestamp: '2026-11-20T00:00:02.000Z',
+      message: { role: 'user', content: `首条消息${'填'.repeat(25_000)}`, timestamp: 1 }
+    })
+    return `${header}\n${bigRecord}\n`
+  }
+
+  function bigSessionFile(prefix: string): { dir: string; file: string } {
+    const dir = mkdtempSync(join(tmpdir(), prefix))
+    const cwdKey = join(dir, '--work--')
+    mkdirSync(cwdKey, { recursive: true })
+    const file = join(cwdKey, 'big.jsonl')
+    writeFileSync(file, bigSessionContent(), 'utf8')
+    return { dir, file }
+  }
+
+  /** pi（或本项目的 append 路径）写出的同形 session_info 一行 */
+  function infoLine(name: string): string {
+    return `${JSON.stringify({
+      type: 'session_info',
+      id: 'abcd1234',
+      parentId: 'b1',
+      timestamp: '2026-11-20T00:00:03.000Z',
+      name
+    })}\n`
+  }
+
+  it('I1：> 64KB 会话改名后，session:list 标题 = 新名', async () => {
+    const { dir, file } = bigSessionFile('pi-rename-big-')
+    try {
+      expect(Buffer.byteLength(readFileSync(file, 'utf8'), 'utf8')).toBeGreaterThan(64 * 1024)
+      const index = createSessionIndex({ sessionDir: () => dir })
+      const router = buildRouter({}, undefined, undefined, index)
+
+      const renamed = await router.dispatch(IPC_INVOKE_CHANNELS.sessionSetName, {
+        sessionFile: file,
+        name: '重命名存活'
+      })
+      expect(renamed).toMatchObject({ ok: true })
+
+      const listed = await router.dispatch(IPC_INVOKE_CHANNELS.sessionList, {})
+      expect(listed).toMatchObject({ ok: true })
+      if (!listed.ok) return
+      const items = (listed.data as { items: Array<{ title: string }> }).items
+      expect(items).toHaveLength(1)
+      expect(items[0]?.title).toBe('重命名存活')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('I2：改名后「重启」（全新索引实例 + 空缓存）依然读到新名', async () => {
+    const { dir, file } = bigSessionFile('pi-rename-restart-')
+    try {
+      const index = createSessionIndex({ sessionDir: () => dir })
+      const router = buildRouter({}, undefined, undefined, index)
+      await router.dispatch(IPC_INVOKE_CHANNELS.sessionSetName, {
+        sessionFile: file,
+        name: '重启后仍在'
+      })
+
+      // 模拟应用重启：新进程 = 新索引实例、没有任何缓存
+      const restarted = createSessionIndex({ sessionDir: () => dir })
+      const listed = await restarted.list({})
+      expect(listed.items[0]?.title).toBe('重启后仍在')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('I3：活跃会话路径 —— pi 往文件尾追加 session_info，列表读到新名', async () => {
+    const { dir, file } = bigSessionFile('pi-rename-live-')
+    try {
+      const index = createSessionIndex({ sessionDir: () => dir })
+      const calls: string[] = []
+      const router = buildRouter(
+        {
+          // 真实场景里由 pi 自己落盘；这里由夹具代劳（同形 append）
+          setName: (input: { sessionKey: string; name: string }) => {
+            calls.push(`${input.sessionKey}=${input.name}`)
+            appendFileSync(file, infoLine(input.name), 'utf8')
+            return Promise.resolve({ ok: true } as const)
+          },
+          sessionFileOf: (sessionKey: string) => (sessionKey === 'live-1' ? file : undefined)
+        },
+        undefined,
+        undefined,
+        index
+      )
+
+      const result = await router.dispatch(IPC_INVOKE_CHANNELS.sessionSetName, {
+        sessionKey: 'live-1',
+        name: '活跃改名'
+      })
+      expect(result).toMatchObject({ ok: true })
+      expect(calls).toEqual(['live-1=活跃改名'])
+
+      const listed = await index.list({})
+      expect(listed.items[0]?.title).toBe('活跃改名')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('I4：同一会话连续改名 3 次，列表显示最后一次', async () => {
+    const { dir, file } = bigSessionFile('pi-rename-thrice-')
+    try {
+      const index = createSessionIndex({ sessionDir: () => dir })
+      const router = buildRouter({}, undefined, undefined, index)
+      for (const name of ['第一版', '第二版', '第三版']) {
+        const result = await router.dispatch(IPC_INVOKE_CHANNELS.sessionSetName, {
+          sessionFile: file,
+          name
+        })
+        expect(result).toMatchObject({ ok: true })
+      }
+      const listed = await index.list({})
+      expect(listed.items[0]?.title).toBe('第三版')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 })
