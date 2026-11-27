@@ -957,6 +957,68 @@ kbd {
   white-space: nowrap;
 }
 
+/* 失败消息（模型连接失败 / 超时 / 限流）：红边 + 可展开技术详情。
+   连续的纯失败消息在 lib/timeline.ts 已合并为一条（带次数）。 */
+.msg--error {
+  border-color: color-mix(in srgb, var(--error) 45%, var(--border-strong));
+  background: color-mix(in srgb, var(--error) 6%, var(--bg-panel));
+}
+
+.msg__error {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.msg__error-title {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--danger-text);
+}
+
+.msg__error-retry {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--warn-text);
+}
+
+.msg__error-hint {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.msg__error-detail {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.msg__error-detail > summary {
+  cursor: pointer;
+}
+
+.msg__error-detail pre {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 180px;
+  overflow: auto;
+}
+
+/* 「已中止」淡色注脚（有文本的中止消息） */
+.msg__note {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
 /* 消息里的图片缩略图（A21）：点开看原图 */
 .msg__images {
   display: flex;

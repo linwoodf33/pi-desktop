@@ -167,6 +167,20 @@ describe('回放转换', () => {
     expect((first?.['message'] as { role?: string } | undefined)?.role).toBe('user')
   })
 
+  it('失败消息的 stopReason / errorMessage 原样透传到 message_end（§决策 7 边界）', () => {
+    // 回放与实时共用同一套归约，因此透传边界必须锁住：main 侧不得裁剪、不得重写字段。
+    const message = {
+      role: 'assistant',
+      content: [],
+      stopReason: 'error',
+      errorMessage: 'Request timed out.: Connect Timeout Error (mock)',
+      timestamp: 1735689602000
+    }
+    const records = toReplayRecords([{ type: 'message', message }])
+
+    expect(records).toEqual([{ type: 'message_end', message }])
+  })
+
   it('非 message 条目被忽略，损坏行不拖垮整个回放', async () => {
     await writeFile(
       sessionFile,

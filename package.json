@@ -1,6 +1,6 @@
 {
   "name": "pi-desktop",
-  "version": "0.16.5",
+  "version": "0.16.6",
   "private": true,
   "description": "pi 桌面客户端（Electron + React + TypeScript）",
   "author": "pi-desktop",

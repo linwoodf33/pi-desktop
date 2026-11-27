@@ -43,6 +43,18 @@ const DELAY_MS = Number(process.env['MOCK_PI_DELAY_MS'] ?? '5')
 const TOOL_MODE = process.env['MOCK_PI_TOOL'] === '1'
 
 /**
+ * 失败尝试模拟（`MOCK_PI_ERROR_MODE=1`）：复现 pi 重试失败时的线上形态——
+ * 连续 N 次 `message_start(空 assistant) → message_end(stopReason:'error', errorMessage, content:[])`，
+ * **不发** 任何 text delta、**不发** 成功回复。
+ *
+ * 不设该 env 时行为逐字节不变（其它用例零影响）。
+ */
+const ERROR_MODE = process.env['MOCK_PI_ERROR_MODE'] === '1'
+const ERROR_ATTEMPTS = Number(process.env['MOCK_PI_ERROR_ATTEMPTS'] ?? '3')
+const ERROR_TEXT =
+  process.env['MOCK_PI_ERROR_TEXT'] ?? 'Request timed out.: Connect Timeout Error (mock)'
+
+/**
  * M5 审批模拟（与真实 pi-desktop-permission 扩展的线上格式一致）：
  * - 启动即发一条 `setStatus` 版本握手（`MOCK_PI_PERMISSION_PROTOCOL` 可调协议版本，用来测不兼容）；
  * - 工具执行前发 `extension_ui_request{method:'select'}`，阻塞等待 `extension_ui_response`；
@@ -371,7 +383,7 @@ let sessionFile = SESSION_FILE
 /** 工具调用序号（每次调用唯一，模拟真实 pi 的 toolCallId） */
 let toolSeq = 0
 
-function assistantMessage(text, stopReason) {
+function assistantMessage(text, stopReason, errorMessage) {
   return {
     role: 'assistant',
     content: text.length > 0 ? [{ type: 'text', text }] : [],
@@ -379,8 +391,78 @@ function assistantMessage(text, stopReason) {
     provider: 'mock',
     model: 'mock-model',
     stopReason,
+    // 只有真的失败时才出现（与真实 pi 同形：正常回复不带 errorMessage 字段）
+    ...(errorMessage === undefined ? {} : { errorMessage }),
     timestamp: Date.now()
   }
+}
+
+/** 失败消息同步落盘（仅 `MOCK_PI_SESSION_FILE` 显式设置时，与 recordAgentState 同风格） */
+let sessionEntrySeq = 0
+function appendSessionMessage(message) {
+  if (process.env['MOCK_PI_SESSION_FILE'] === undefined) return
+  sessionEntrySeq += 1
+  try {
+    mkdirSync(dirname(sessionFile), { recursive: true })
+    appendFileSync(
+      sessionFile,
+      `${JSON.stringify({
+        type: 'message',
+        id: `err-${sessionEntrySeq}`,
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        message
+      })}\n`,
+      'utf8'
+    )
+  } catch {
+    /* 夹具落盘失败不影响协议行为 */
+  }
+}
+
+/**
+ * 连续失败尝试序列（`MOCK_PI_ERROR_MODE=1`）。
+ *
+ * 间隔用 `DELAY_MS * 4`：reducer 的去重键含 timestamp，同毫秒内的多条失败会被幂等吞成一条
+ * （产品的已知降级），夹具必须让每条失败的时间戳不同，才能测出「连续 N 次」。
+ * 运行态仍挂在 `activeRun` 上，`abort` 的收尾语义保持不变（timer 由 setTimeout 创建，
+ * 中止时用 clearTimeout 清理）。
+ */
+function startFailedAttempts() {
+  let remaining =
+    Number.isFinite(ERROR_ATTEMPTS) && ERROR_ATTEMPTS >= 1 ? Math.floor(ERROR_ATTEMPTS) : 1
+  const run = { timer: null, text: () => '' }
+
+  const step = () => {
+    if (activeRun !== run) return
+    if (remaining > 0) {
+      remaining -= 1
+      writeRecord({
+        type: 'message_start',
+        message: { role: 'assistant', content: [], timestamp: Date.now() }
+      })
+      const message = assistantMessage('', 'error', ERROR_TEXT)
+      writeRecord({ type: 'message_end', message })
+      appendSessionMessage(message)
+      run.timer = setTimeout(step, DELAY_MS * 4)
+      run.timer.unref?.()
+      return
+    }
+    writeRecord({
+      type: 'turn_end',
+      message: { role: 'assistant', stopReason: 'error' },
+      toolResults: []
+    })
+    writeRecord({ type: 'agent_end', messages: [], willRetry: false })
+    messageCount += 2
+    streaming = false
+    activeRun = null
+    writeRecord({ type: 'agent_settled', aborted: false })
+    drainQueue()
+  }
+
+  activeRun = run
+  step()
 }
 
 /** 工具调用序列（docs/json.md#tool-execution-events）：start → end → toolResult 消息 */
@@ -558,7 +640,7 @@ function abortRun() {
   const run = activeRun
   if (run === null) return false
   activeRun = null
-  clearInterval(run.timer)
+  clearTimeout(run.timer)
   streaming = false
 
   const text = run.text()
@@ -610,6 +692,11 @@ function agentRun(promptText, images = []) {
     type: 'message_end',
     message: { role: 'user', content: userPayload, timestamp: userTimestamp }
   })
+  // 失败模式：只发失败尝试，**不发** 文本 delta / 成功回复
+  if (ERROR_MODE) {
+    startFailedAttempts()
+    return
+  }
   writeRecord({
     type: 'message_start',
     message: { role: 'assistant', content: [], timestamp: Date.now() }

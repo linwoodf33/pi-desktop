@@ -558,22 +558,24 @@ UI：任务标题**双击**进入编辑，`Enter` 保存、`Esc` 取消；失败
 
 ### 5.5 渲染进程模块
 
-| 模块                           | 职责                                                                                                          |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `stores/sessionStore`          | 会话元数据、选中会话、消息树（按 branch）                                                                     |
-| `stores/runStore`              | `idle / streaming / tool_running / awaiting_approval / settling`                                              |
-| `stores/artifactStore`         | 产物列表与选中产物（M6：按 taskId 分桶 + diff/预览缓存 + 显式 scanning/loading/error 位）                     |
-| `lib/reducer.ts`               | 纯函数 `(state, record) => state`：拼接 delta，`message_end` 用权威消息整体替换                               |
-| `lib/artifact-actions.ts`      | M6 产物编排：列表扫描（settled / 手动刷新）、按需拉 diff/预览、确认后调 `artifact:open`                       |
-| `features/chat/ToolCard`       | 工具名、参数摘要（可展开）、耗时、状态、输出前 N 行 + 展开                                                    |
-| `features/chat/Timeline`       | 按 assistant turn 分组的时间线；**按轮窗口化渲染**（只挂载视口 + 上下文缓冲，见 `lib/use-virtual-timeline`）  |
-| `lib/virtual-window.ts`        | 虚拟滚动纯计算：槽位几何 / 窗口范围 / 滚动锚点补偿 / 按会话隔离的高度缓存（A7 方案 A）                        |
-| `lib/use-virtual-timeline.ts`  | 虚拟滚动状态机：测量后缓存高度、跟随底部、回底/跳转到某轮、会话切换重置                                       |
-| `lib/virtual-bridge.ts`        | 非可视观测钩子 `window.__piDesktopVirtual`（挂载/总轮数等计数，供压测与 E2E，不含消息内容）                   |
-| `features/artifacts/DiffView`  | unified diff 着色、按文件折叠（补丁内容只作为 React 文本节点渲染，无 HTML sink）                              |
-| `features/artifacts/Artifacts` | M6 右栏：变更数量徽标、非 git 说明、预览/diff 切换、「系统程序打开」二次确认                                  |
-| `features/settings`            | 模型/provider、推理档位、审批策略、pi 路径、主题（M4：可编辑并持久化到 ConfigStore，pi 路径含三步自检可视化） |
-| `features/tasks/NewTaskDialog` | M4 新建任务弹层：目录（必填）/ 模型 / 推理档位 / 会话名 / 起始模式（M4 仅对话模式）                           |
+| 模块                           | 职责                                                                                                                                                                                                                               |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stores/sessionStore`          | 会话元数据、选中会话、消息树（按 branch）                                                                                                                                                                                          |
+| `stores/runStore`              | `idle / streaming / tool_running / awaiting_approval / settling`                                                                                                                                                                   |
+| `stores/artifactStore`         | 产物列表与选中产物（M6：按 taskId 分桶 + diff/预览缓存 + 显式 scanning/loading/error 位）                                                                                                                                          |
+| `lib/reducer.ts`               | 纯函数 `(state, record) => state`：拼接 delta，`message_end` 用权威消息整体替换；`stopReason`/`errorMessage` 透传到 `ChatMessage`（pi 连接失败重试的空消息不再被吞）                                                               |
+| `lib/message-error.ts`         | 模型失败原因可读化（纯函数）：`errorMessage` → 分类/中文标题/建议，文案只在这一处                                                                                                                                                  |
+| `features/chat/MessageError`   | 错误块：可懂标题 + 重试次数 + 可展开技术详情（原文只进 `<details>`）                                                                                                                                                               |
+| `lib/artifact-actions.ts`      | M6 产物编排：列表扫描（settled / 手动刷新）、按需拉 diff/预览、确认后调 `artifact:open`                                                                                                                                            |
+| `features/chat/ToolCard`       | 工具名、参数摘要（可展开）、耗时、状态、输出前 N 行 + 展开                                                                                                                                                                         |
+| `features/chat/Timeline`       | 按 assistant turn 分组的时间线；**按轮窗口化渲染**（只挂载视口 + 上下文缓冲，见 `lib/use-virtual-timeline`）；连续纯失败消息由 `lib/timeline.ts` 在**展示层**折叠为一个 `error-group`（数据不合并、去重 key 不变，回放与实时同构） |
+| `lib/virtual-window.ts`        | 虚拟滚动纯计算：槽位几何 / 窗口范围 / 滚动锚点补偿 / 按会话隔离的高度缓存（A7 方案 A）                                                                                                                                             |
+| `lib/use-virtual-timeline.ts`  | 虚拟滚动状态机：测量后缓存高度、跟随底部、回底/跳转到某轮、会话切换重置                                                                                                                                                            |
+| `lib/virtual-bridge.ts`        | 非可视观测钩子 `window.__piDesktopVirtual`（挂载/总轮数等计数，供压测与 E2E，不含消息内容）                                                                                                                                        |
+| `features/artifacts/DiffView`  | unified diff 着色、按文件折叠（补丁内容只作为 React 文本节点渲染，无 HTML sink）                                                                                                                                                   |
+| `features/artifacts/Artifacts` | M6 右栏：变更数量徽标、非 git 说明、预览/diff 切换、「系统程序打开」二次确认                                                                                                                                                       |
+| `features/settings`            | 模型/provider、推理档位、审批策略、pi 路径、主题（M4：可编辑并持久化到 ConfigStore，pi 路径含三步自检可视化）                                                                                                                      |
+| `features/tasks/NewTaskDialog` | M4 新建任务弹层：目录（必填）/ 模型 / 推理档位 / 会话名 / 起始模式（M4 仅对话模式）                                                                                                                                                |
 
 ---
 

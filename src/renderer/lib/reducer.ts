@@ -51,6 +51,19 @@ export interface ChatMessage {
    * 归约时转成 data URL，回放与实时走同一条路径。
    */
   images?: string[]
+  /**
+   * pi 的 `stopReason`（`'stop' | 'length' | 'toolUse' | 'aborted' | 'error'`）。
+   * 只在 assistant 消息上、且字段是字符串时写入；缺字段时不产生属性（保持既有消息形状）。
+   * 用途：展示层区分「用户中止的空收尾」（stopReason='aborted'）与「真失败」（error）。
+   */
+  stopReason?: string
+  /**
+   * 失败原因原文（pi 的 `errorMessage`，如
+   * `Request timed out.: Connect Timeout Error (...)`）。
+   * **只有真的失败时才有**：reducer 不做合并、不做文案加工（文案在
+   * `lib/message-error.ts`），一条失败尝试就是一条消息，与 JSONL 一一对应。
+   */
+  error?: string
 }
 
 export interface ChatState {
@@ -382,6 +395,17 @@ function applyMessageEnd(build: Build, record: JsonRecord): void {
     return
   }
 
+  /**
+   * 失败信息透传（pi 重试失败时 message 形如
+   * `{ role:'assistant', content:[], stopReason:'error', errorMessage, usage }`）。
+   * 非字符串（如对象 / 空串）一律忽略，不产生属性。
+   *
+   * 已知降级：pi 若**不下发** `timestamp`，多条失败会共用 key `assistant:na:`
+   * 被幂等吞成 1 条。**不得**为此改 key 形态（会破坏历史回放的幂等，§9.1 U6）。
+   */
+  const stopReason = role === 'assistant' ? asString(message['stopReason']) : undefined
+  const errorMessage = role === 'assistant' ? asString(message['errorMessage']) : undefined
+
   const declared = collectToolCalls(message['content'])
   const tools =
     role === 'assistant' ? mergeTools(build.streamingTools, declared) : mergeTools([], declared)
@@ -392,7 +416,9 @@ function applyMessageEnd(build: Build, record: JsonRecord): void {
     text,
     ...(typeof timestamp === 'number' ? { timestamp } : {}),
     ...(tools.length === 0 ? {} : { tools }),
-    ...(images.length === 0 ? {} : { images })
+    ...(images.length === 0 ? {} : { images }),
+    ...(stopReason === undefined ? {} : { stopReason }),
+    ...(errorMessage === undefined ? {} : { error: errorMessage })
   }
 
   // optimistic 插入的用户消息会被 pi 原样回显一条 message_end(user)：

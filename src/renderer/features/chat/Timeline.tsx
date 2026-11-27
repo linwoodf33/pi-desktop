@@ -2,11 +2,12 @@ import { memo, useCallback, useEffect, useMemo, useState, type RefObject } from 
 
 import type { ChatMessage } from '../../lib/reducer'
 import { useThrottledStreaming } from '../../lib/streaming-throttle'
-import { groupTimeline, turnToolCount, type TimelineTurn } from '../../lib/timeline'
+import { groupTimeline, isErrorGroup, turnToolCount, type TimelineTurn } from '../../lib/timeline'
 import { useVirtualTimeline, type VirtualTimelineControls } from '../../lib/use-virtual-timeline'
 import { TURN_GAP_PX } from '../../lib/virtual-window'
 import { ImageLightbox } from './ImageLightbox'
 import { Markdown } from './Markdown'
+import { MessageErrorBlock } from './MessageError'
 import { ToolCard } from './ToolCard'
 
 /**
@@ -209,17 +210,42 @@ const TimelineTurnView = memo(function TimelineTurnView({ turn }: { turn: Timeli
           />
         )}
 
-        {turn.items.map((message) => (
-          <article className="msg msg--assistant" key={message.key} data-testid="msg-assistant">
-            <div className="msg__role">pi</div>
-            <div className="msg__body">
-              {message.text.length === 0 ? null : <Markdown text={message.text} />}
-              {(message.tools ?? []).map((tool) => (
-                <ToolCard key={tool.toolCallId} tool={tool} />
-              ))}
-            </div>
-          </article>
-        ))}
+        {turn.items.map((item) =>
+          isErrorGroup(item) ? (
+            // 连续失败合并项：独立 testid，不参与既有 msg-assistant 计数
+            <article
+              className="msg msg--assistant msg--error"
+              key={item.key}
+              data-testid="msg-error"
+              data-error-count={item.count}
+            >
+              <div className="msg__role">pi</div>
+              <div className="msg__body">
+                <MessageErrorBlock error={item.error} count={item.count} />
+              </div>
+            </article>
+          ) : (
+            <article className="msg msg--assistant" key={item.key} data-testid="msg-assistant">
+              <div className="msg__role">pi</div>
+              <div className="msg__body">
+                {item.text.length === 0 ? null : <Markdown text={item.text} />}
+                {(item.tools ?? []).map((tool) => (
+                  <ToolCard key={tool.toolCallId} tool={tool} />
+                ))}
+                {/* 带文本/工具的失败消息不折叠，但错误块照样显示（次数恒为 1）。
+                    aborted 不是失败（pi 会给中止消息带 errorMessage），只用下方「已中止」注脚表达 */}
+                {item.error === undefined || item.stopReason === 'aborted' ? null : (
+                  <MessageErrorBlock error={item.error} />
+                )}
+                {item.stopReason === 'aborted' && item.text.length > 0 ? (
+                  <span className="msg__note" data-testid="msg-aborted">
+                    已中止
+                  </span>
+                ) : null}
+              </div>
+            </article>
+          )
+        )}
       </div>
     </section>
   )
