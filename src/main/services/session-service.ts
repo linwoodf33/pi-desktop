@@ -1,4 +1,5 @@
 import type { EventChannel } from '../../shared/ipc-channels'
+import { agentSwitchCommand } from '../../shared/contracts/agents'
 import { IpcFailure } from '../../shared/contracts/result'
 import type {
   AgentState,
@@ -10,6 +11,7 @@ import type {
   SessionToolMode,
   RecordEvent,
   RunStatus,
+  SessionCompactResult,
   SessionForkPointsOutput,
   SessionStats,
   StatusEvent
@@ -59,6 +61,8 @@ export interface SessionServiceOptions {
   commandTimeoutMs?: number
   /** abort / fork 前等待 idle 的上限 */
   settleTimeoutMs?: number
+  /** A41：`compact` 的超时（摘要由模型生成，分钟级；默认 240s） */
+  compactTimeoutMs?: number
   /** 空闲回收扫描间隔（默认 60s） */
   reaperIntervalMs?: number
   /** text_delta 合并窗口（默认 16ms，§5.4） */
@@ -101,6 +105,11 @@ interface SessionRecord {
   batcher: RecordBatcher
   /** 主动关停时为 true：区分「预期退出」与「崩溃」 */
   closing: boolean
+  /**
+   * A41：压缩中（`session:compact` 在途或 pi 已发 `compaction_start`）。
+   * 事件与动作**双源幂等**写入：两种到达顺序都不会残留（R6）。
+   */
+  compacting: boolean
 }
 
 export interface SessionService {
@@ -139,6 +148,16 @@ export interface SessionService {
   listModels(): Promise<ModelInfo[]>
   /** A23：改会话显示名（活跃会话） */
   setName(input: { sessionKey: string; name: string }): Promise<{ ok: true }>
+  /**
+   * A40：运行中切换专家：发扩展命令 `/agent <name|none>`，只认 `disposition === 'handled'`。
+   * 名字是否合法（在目录里 / 单 token）由 handler 前置校验，本层只管发命令。
+   */
+  switchAgent(input: { sessionKey: string; agent: string | null }): Promise<{ ok: true }>
+  /**
+   * A41：手动压缩上下文（仅 idle）；只返回数值。
+   * `customInstructions` 目前只接收不透传（V1 无 UI，V2 再落 RPC）。
+   */
+  compact(input: { sessionKey: string; customInstructions?: string }): Promise<SessionCompactResult>
   setModel(input: { sessionKey: string; model: string; thinkingLevel?: string }): Promise<{
     ok: true
   }>
@@ -176,10 +195,13 @@ export interface SessionService {
 const DEFAULT_COMMAND_TIMEOUT_MS = 60_000
 const DEFAULT_SETTLE_TIMEOUT_MS = 60_000
 const DEFAULT_REAPER_INTERVAL_MS = 60_000
+/** A41：摘要由模型生成，可能要几分钟；240s 后再判超时（router 侧预算 300s 留余量） */
+const DEFAULT_COMPACT_TIMEOUT_MS = 240_000
 
 export function createSessionService(options: SessionServiceOptions): SessionService {
   const commandTimeoutMs = options.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS
   const settleTimeoutMs = options.settleTimeoutMs ?? DEFAULT_SETTLE_TIMEOUT_MS
+  const compactTimeoutMs = options.compactTimeoutMs ?? DEFAULT_COMPACT_TIMEOUT_MS
   const reaperIntervalMs = options.reaperIntervalMs ?? DEFAULT_REAPER_INTERVAL_MS
   const baseCwd = options.baseCwd ?? (() => process.cwd())
   const now = options.now ?? (() => Date.now())
@@ -386,6 +408,14 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
       return
     }
 
+    // A41：压缩状态以事件为准（覆盖「事件先于/后于响应」两种到达顺序）。
+    // **不 return**：记录仍要走下面的 batcher 透传给 renderer（F8，renderer 靠它驱动按钮）。
+    if (record.type === 'compaction_start') {
+      session.compacting = true
+    } else if (record.type === 'compaction_end') {
+      session.compacting = false
+    }
+
     if (record.type === 'agent_start') {
       session.busy = true
       emitStatus(session, 'running')
@@ -587,6 +617,7 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
         ...(options.textDeltaWindowMs === undefined ? {} : { windowMs: options.textDeltaWindowMs })
       }),
       closing: false,
+      compacting: false,
       ...(extras.model === undefined ? {} : { model: extras.model }),
       ...(extras.thinkingLevel === undefined ? {} : { thinkingLevel: extras.thinkingLevel })
     }
@@ -607,6 +638,8 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
     if (typeof data['thinkingLevel'] === 'string') session.thinkingLevel = data['thinkingLevel']
     const model = toModelInfo(data['model'])
     if (model) session.model = `${model.provider}/${model.id}`
+    // A41：用 pi 的权威值校准（事件可能丢/晚到）；仍在 compact 调用里时由 finally 兜底
+    session.compacting = data['isCompacting'] === true
 
     // A38：agent 不在 `get_state` 里，只能读会话文件。放在 `withLock` 之外，
     // 且整段 fail-soft —— 读不到就当作「未知」（不返回该字段），不能让 state 失败。
@@ -892,6 +925,10 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
 
       // busy 判定必须在锁内做：等锁期间会话可能已经从 idle 变成 streaming
       const data = await withLock(session, async () => {
+        // A41：压缩中 pi 不接受新的 prompt（F6：压缩与对话互斥）
+        if (session.compacting) {
+          throw new IpcFailure('SESSION_BUSY', '正在压缩上下文，请等压缩结束后再发送')
+        }
         if (session.busy && input.streamingBehavior === undefined) {
           // §6.2 / §7 约束 5：busy 时必须显式选择 steer 或 followUp
           throw new IpcFailure(
@@ -984,6 +1021,63 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
         await sendCommand(session, { type: 'set_session_name', name })
       })
       return { ok: true }
+    },
+
+    /**
+     * A40：运行中切换专家（扩展命令，**不重建会话**）。
+     *
+     * 为什么只认 `handled`：`/agent` 是 `pi-open-agents` 注册的扩展命令，pi 对它回
+     * `disposition: 'handled'`；收到 `started/queued` 说明它被当成了普通聊天消息 ——
+     * 那时候直接把文本发出去比报错更糟（会污染对话）。
+     * 注意 `handled` **不等于切换成功**（F1：未知名字扩展也只 notify 后返回），
+     * 所以权威状态由调用方的 `syncTaskState` 读回并比对。
+     */
+    async switchAgent(input) {
+      const session = requireSession(input.sessionKey)
+      if (session.compacting) {
+        throw new IpcFailure('SESSION_BUSY', '正在压缩上下文，请稍后再切换专家')
+      }
+      if (session.busy) {
+        throw new IpcFailure('SESSION_BUSY', '会话正在运行：本轮结束后再切换专家')
+      }
+      const data = await withLock(session, () =>
+        sendCommand(
+          session,
+          { type: 'prompt', message: agentSwitchCommand(input.agent) },
+          settleTimeoutMs
+        )
+      )
+      const disposition = readDisposition(data)
+      if (disposition !== 'handled') {
+        throw new IpcFailure(
+          'PI_COMMAND_FAILED',
+          'pi 未把 /agent 当作扩展命令处理：请确认已安装 pi-open-agents 扩展',
+          `disposition=${String(disposition)}`
+        )
+      }
+      return { ok: true as const }
+    },
+
+    /**
+     * A41：手动压缩上下文（仅 idle）。
+     *
+     * **刻意不持 `withLock`**：摘要生成可达数分钟，持锁会让 `abort` 永远排不进去；
+     * 并发保护由 `session.compacting` 承担（事件与动作双源幂等写入，R5/R6）。
+     */
+    async compact(input) {
+      const session = requireSession(input.sessionKey)
+      if (session.busy) {
+        throw new IpcFailure('SESSION_BUSY', '会话正在运行：等本轮结束后再压缩上下文')
+      }
+      if (session.compacting) throw new IpcFailure('SESSION_BUSY', '已经在压缩上下文')
+      // 先置位：覆盖「compaction_start 事件晚于响应」的顺序；finally 兜底复位
+      session.compacting = true
+      try {
+        const data = await sendCommand(session, { type: 'compact' }, compactTimeoutMs)
+        return toCompactResult(data)
+      } finally {
+        session.compacting = false
+      }
     },
 
     async setModel(input) {
@@ -1113,6 +1207,30 @@ export function toForkPoints(data: unknown): ForkPoint[] {
     points.push({ entryId, text })
   }
   return points
+}
+
+/**
+ * `compact` 响应 → 只回数值（A41）。
+ *
+ * **刻意丢弃** `summary` / `usage` / `details`：摘要正文可能巨大且含完整会话内容，
+ * 回传 renderer 既无展示价值，又扩大了注入/泄漏面（F5）。
+ */
+export function toCompactResult(data: unknown): SessionCompactResult {
+  const record = toRecord(data)
+  const result: SessionCompactResult = {}
+  const tokensBefore = record['tokensBefore']
+  if (typeof tokensBefore === 'number' && Number.isFinite(tokensBefore)) {
+    result.tokensBefore = tokensBefore
+  }
+  const estimatedTokensAfter = record['estimatedTokensAfter']
+  if (typeof estimatedTokensAfter === 'number' && Number.isFinite(estimatedTokensAfter)) {
+    result.estimatedTokensAfter = estimatedTokensAfter
+  }
+  const firstKeptEntryId = record['firstKeptEntryId']
+  if (typeof firstKeptEntryId === 'string' && firstKeptEntryId.length > 0) {
+    result.firstKeptEntryId = firstKeptEntryId
+  }
+  return result
 }
 
 function countOf(value: unknown): number {

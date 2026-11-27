@@ -36,6 +36,10 @@ export const IPC_INVOKE_CHANNELS = {
   sessionDelete: 'session:delete',
   /** M4：可分叉点列表（pi `get_fork_messages`，§5.4 注） */
   sessionForkPoints: 'session:forkPoints',
+  /** A40：运行中切换会话专家（扩展命令 /agent，不重建会话） */
+  sessionSwitchAgent: 'session:switchAgent',
+  /** A41：手动压缩上下文（pi compact） */
+  sessionCompact: 'session:compact',
   modelList: 'model:list',
   modelSet: 'model:set',
   /** 模型管理：读 pi 的 models.json / settings.json（apiKey 已脱敏） */

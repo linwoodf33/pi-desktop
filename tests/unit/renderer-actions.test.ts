@@ -6,6 +6,7 @@ import type {
   AgentState,
   AppConfigView,
   ModelInfo,
+  SessionCompactResult,
   SessionForkPointsOutput,
   SessionHistoryOutput,
   SessionStats,
@@ -14,6 +15,7 @@ import type {
 
 import {
   abortRun,
+  compactContext,
   continueConversation,
   createTask,
   deleteTask,
@@ -26,6 +28,7 @@ import {
   saveSettings,
   selectTask,
   sendMessage,
+  switchAgent,
   switchModel,
   titleFromMessage
 } from '../../src/renderer/lib/actions'
@@ -96,6 +99,10 @@ interface FakeApiOptions {
   modelList?: Result<ModelInfo[]>
   modelSet?: Result<{ ok: true }>
   configUpdate?: Result<AppConfigView>
+  /** A40：session:switchAgent 的结果 */
+  switchAgent?: Result<{ ok: true }>
+  /** A41：session:compact 的结果（只回数值） */
+  compact?: Result<SessionCompactResult>
 }
 
 function createFakeApi(options: FakeApiOptions = {}) {
@@ -182,6 +189,16 @@ function createFakeApi(options: FakeApiOptions = {}) {
       forkPoints: (input: { sessionKey: string }) => {
         calls.push({ method: 'session.forkPoints', input })
         return Promise.resolve(options.forkPoints ?? { ok: true as const, data: { points: [] } })
+      },
+      switchAgent: (input: { sessionKey: string; agent: string | null }) => {
+        calls.push({ method: 'session.switchAgent', input })
+        return Promise.resolve(
+          options.switchAgent ?? { ok: true as const, data: { ok: true as const } }
+        )
+      },
+      compact: (input: { sessionKey: string }) => {
+        calls.push({ method: 'session.compact', input })
+        return Promise.resolve(options.compact ?? { ok: true as const, data: {} })
       }
     },
     config: {
@@ -274,6 +291,8 @@ function resetStores(): void {
     aborted: {},
     switching: {},
     forking: {},
+    switchingAgent: {},
+    compacting: {},
     ending: {},
     locating: false
   })
@@ -1235,5 +1254,171 @@ describe('A39：删除会话（session:delete → 本地移除）', () => {
       )
       expect(banners.some((item) => item.level === 'info')).toBe(false)
     }
+  })
+})
+
+describe('A40：运行中切换专家（session:switchAgent）', () => {
+  /** 建一个活跃任务（newTask 会顺带回填 session:state / stats） */
+  async function seedLive(fake: ReturnType<typeof createFakeApi>): Promise<string> {
+    await newTask({ api: fake.api })
+    return useSessionStore.getState().selectedId as string
+  }
+
+  it('无活会话（历史任务）→ 告警条 + false，且不发 IPC', async () => {
+    const fake = createFakeApi({
+      list: { ok: true, data: { items: [summary()] } },
+      history: {
+        ok: true,
+        data: { records: [], truncated: false, messageCount: 0, totalRecords: 0 }
+      }
+    })
+    await loadTasks({ api: fake.api })
+    const before = fake.calls.length
+
+    const ok = await switchAgent('scout', { api: fake.api })
+
+    expect(ok).toBe(false)
+    expect(fake.calls).toHaveLength(before)
+    expect(useRunStore.getState().banners[0]?.level).toBe('warn')
+    expect(useRunStore.getState().banners[0]?.message).toContain('继续对话')
+  })
+
+  it('成功：调 session:switchAgent + 读回 session:state，终态清空 switchingAgent', async () => {
+    const fake = createFakeApi({
+      state: { ok: true as const, data: { ...AGENT_STATE, agent: 'scout' } }
+    })
+    const taskId = await seedLive(fake)
+
+    const ok = await switchAgent('scout', { api: fake.api })
+
+    expect(ok).toBe(true)
+    expect(fake.calls.find((call) => call.method === 'session.switchAgent')?.input).toEqual({
+      sessionKey: 's1',
+      agent: 'scout'
+    })
+    // 权威回填：切换后必须再读一次 session:state（agent + 模型 + 档位，F3）
+    expect(
+      fake.calls.filter((call) => call.method === 'session.state').length
+    ).toBeGreaterThanOrEqual(2)
+    expect(useRunStore.getState().switchingAgent[taskId]).toBeUndefined()
+    const task = useSessionStore.getState().tasks.find((item) => item.id === taskId)
+    expect(task?.agent).toBe('scout')
+  })
+
+  it('失败 → 错误条带错误码，switchingAgent 仍被清空', async () => {
+    const fake = createFakeApi({
+      switchAgent: {
+        ok: false,
+        error: { code: 'PI_COMMAND_FAILED', message: 'pi 未把 /agent 当作扩展命令处理' }
+      }
+    })
+    const taskId = await seedLive(fake)
+
+    const ok = await switchAgent('scout', { api: fake.api })
+
+    expect(ok).toBe(false)
+    expect(useRunStore.getState().banners[0]?.message).toContain('PI_COMMAND_FAILED')
+    expect(useRunStore.getState().switchingAgent[taskId]).toBeUndefined()
+  })
+
+  it('读回不一致 → 告警条「专家切换未生效」（F1：扩展对未知名字静默失败）', async () => {
+    const fake = createFakeApi({
+      state: { ok: true as const, data: { ...AGENT_STATE, agent: 'child' } }
+    })
+    await seedLive(fake)
+
+    const ok = await switchAgent('scout', { api: fake.api })
+
+    expect(ok).toBe(true)
+    const banner = useRunStore.getState().banners[0]
+    expect(banner?.level).toBe('warn')
+    expect(banner?.message).toContain('专家切换未生效')
+    expect(banner?.message).toContain('child')
+  })
+
+  it('重复点击（switchingAgent 已置位）→ 第二次不发 IPC', async () => {
+    const fake = createFakeApi({
+      state: { ok: true as const, data: { ...AGENT_STATE, agent: 'scout' } }
+    })
+    await seedLive(fake)
+
+    let release: (value: Result<{ ok: true }>) => void = () => {}
+    let sent = 0
+    fake.api.session.switchAgent = () => {
+      sent += 1
+      return new Promise((resolve) => {
+        release = resolve
+      })
+    }
+
+    const first = switchAgent('scout', { api: fake.api })
+    const second = switchAgent('scout', { api: fake.api })
+
+    expect(await second).toBe(false)
+    release({ ok: true, data: { ok: true } })
+    expect(await first).toBe(true)
+    expect(sent).toBe(1)
+  })
+})
+
+describe('A41：手动压缩上下文（session:compact）', () => {
+  it('成功：只传 sessionKey，info 条含 token 数值，终态清空 compacting', async () => {
+    const fake = createFakeApi({
+      compact: { ok: true, data: { tokensBefore: 120000, estimatedTokensAfter: 20000 } }
+    })
+    await newTask({ api: fake.api })
+    const taskId = useSessionStore.getState().selectedId as string
+
+    const ok = await compactContext({ api: fake.api })
+
+    expect(ok).toBe(true)
+    expect(fake.calls.find((call) => call.method === 'session.compact')?.input).toEqual({
+      sessionKey: 's1'
+    })
+    const banner = useRunStore.getState().banners[0]
+    expect(banner?.level).toBe('info')
+    expect(banner?.message).toContain('上下文已压缩：')
+    expect(banner?.message).toContain('120.0k')
+    expect(banner?.message).toContain('→')
+    // 压缩后刷新统计（F7：contextUsage 可能变 null，属正常）
+    expect(fake.calls.some((call) => call.method === 'session.stats')).toBe(true)
+    expect(useRunStore.getState().compacting[taskId]).toBeUndefined()
+  })
+
+  it('pi 未给 token 数值 → 只用「上下文已压缩」', async () => {
+    const fake = createFakeApi({ compact: { ok: true, data: {} } })
+    await newTask({ api: fake.api })
+
+    await compactContext({ api: fake.api })
+
+    expect(useRunStore.getState().banners[0]?.message).toBe('上下文已压缩')
+  })
+
+  it('失败 → 错误条（带错误码）且 compacting 复位', async () => {
+    const fake = createFakeApi({
+      compact: { ok: false, error: { code: 'PI_COMMAND_FAILED', message: 'mock compact failed' } }
+    })
+    await newTask({ api: fake.api })
+    const taskId = useSessionStore.getState().selectedId as string
+
+    const ok = await compactContext({ api: fake.api })
+
+    expect(ok).toBe(false)
+    expect(useRunStore.getState().banners[0]?.message).toContain('PI_COMMAND_FAILED')
+    expect(useRunStore.getState().compacting[taskId]).toBeUndefined()
+  })
+
+  it('TIMEOUT → warn 特判文案（不显示成红色失败）', async () => {
+    const fake = createFakeApi({
+      compact: { ok: false, error: { code: 'TIMEOUT', message: 'compact 超时' } }
+    })
+    await newTask({ api: fake.api })
+
+    const ok = await compactContext({ api: fake.api })
+
+    expect(ok).toBe(false)
+    const banner = useRunStore.getState().banners[0]
+    expect(banner?.level).toBe('warn')
+    expect(banner?.message).toContain('压缩超时')
   })
 })

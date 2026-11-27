@@ -31,6 +31,14 @@ export interface RunStoreState {
   switching: Record<string, true>
   /** 分叉在途（禁用重复提交，M4） */
   forking: Record<string, true>
+  /** A40：专家切换在途（禁用重复提交） */
+  switchingAgent: Record<string, true>
+  /**
+   * A41：上下文压缩在途。
+   * 事件（compaction_start / compaction_end）与动作自身**双源幂等**写入，
+   * 两种到达顺序都不会残留（R6）。
+   */
+  compacting: Record<string, true>
   /**
    * A36：结束会话在途（`session:dispose` 未返回）。
    * 必须在 await **之前**置位：`exited` 事件可能先于 IPC 响应到达，届时要靠它区分
@@ -43,6 +51,8 @@ export interface RunStoreState {
   setLocating: (locating: boolean) => void
   setSwitching: (taskId: string, value: boolean) => void
   setForking: (taskId: string, value: boolean) => void
+  setSwitchingAgent: (taskId: string, value: boolean) => void
+  setCompacting: (taskId: string, value: boolean) => void
   setEnding: (taskId: string, value: boolean) => void
   setPhase: (taskId: string, phase: RunPhase) => void
   setStatus: (sessionKey: string, status: RunStatus) => void
@@ -58,7 +68,8 @@ export interface RunStoreState {
    * A39：任务被删除后清掉所有按 taskId 存的运行态。
    *
    * 为什么必须有：`sessionStore.removeTask` 只管 session 侧（tasks/chats/stats/truncated），
-   * `phases/aborting/aborted/switching/forking/ending` 都按 taskId 存在这里 —— 任务被删后
+   * `phases/aborting/aborted/switching/forking/ending/switchingAgent/compacting`
+   * 都按 taskId 存在这里 —— 任务被删后
    * 这些键永远读不到，并行开关任务久了就是一堆孤儿键。
    */
   forgetTask: (taskId: string) => void
@@ -103,6 +114,8 @@ export const useRunStore = create<RunStoreState>()((set, get) => ({
   aborted: {},
   switching: {},
   forking: {},
+  switchingAgent: {},
+  compacting: {},
   ending: {},
   locating: false,
 
@@ -123,6 +136,22 @@ export const useRunStore = create<RunStoreState>()((set, get) => ({
       if (value) forking[taskId] = true
       else delete forking[taskId]
       return { forking }
+    })
+  },
+  setSwitchingAgent: (taskId, value) => {
+    set((state) => {
+      const switchingAgent = { ...state.switchingAgent }
+      if (value) switchingAgent[taskId] = true
+      else delete switchingAgent[taskId]
+      return { switchingAgent }
+    })
+  },
+  setCompacting: (taskId, value) => {
+    set((state) => {
+      const compacting = { ...state.compacting }
+      if (value) compacting[taskId] = true
+      else delete compacting[taskId]
+      return { compacting }
     })
   },
   setEnding: (taskId, value) => {
@@ -230,6 +259,16 @@ export const useRunStore = create<RunStoreState>()((set, get) => ({
         const ending = { ...state.ending }
         delete ending[taskId]
         patch.ending = ending
+      }
+      if (state.switchingAgent[taskId] !== undefined) {
+        const switchingAgent = { ...state.switchingAgent }
+        delete switchingAgent[taskId]
+        patch.switchingAgent = switchingAgent
+      }
+      if (state.compacting[taskId] !== undefined) {
+        const compacting = { ...state.compacting }
+        delete compacting[taskId]
+        patch.compacting = compacting
       }
       // 一个键都没有 = 本来就没有孤儿，原样返回（zustand 不会因此触发订阅者）
       return Object.keys(patch).length === 0 ? state : patch

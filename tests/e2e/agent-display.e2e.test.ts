@@ -103,6 +103,8 @@ describe('A38：输入区显示 agent（文件 marker = scout）', () => {
     await createTask(page, 'scout')
 
     await expect.poll(async () => agentText(page), { timeout: 30_000 }).toContain('scout')
+    // A40：文案前缀锁定为「专家：」（旧文案「agent：」不得回归）
+    expect(await agentText(page)).toMatch(/^专家：/)
     // 回归：agent 与 composer-state 是同一个分组里的两个元素，不能互相挤掉
     expect(await page.textContent('[data-testid="composer-state"]')).not.toBeNull()
     // A39：状态颜色靠 data-phase 驱动（CSS 按 phase 上色），必须真的有这个属性

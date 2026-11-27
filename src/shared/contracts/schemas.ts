@@ -146,6 +146,39 @@ export const sessionKeyInputSchema = z
   .strict()
 
 /**
+ * A40：专家名。消息体是**单行命令文本**（`/agent <name>`），所以禁止 CR/LF 与控制字符
+ * ——否则一个名字就能在扩展命令里注入第二行/第二个参数（F4、R10）。
+ */
+const agentNameSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  // 排除控制字符是本 schema 的**目的**（防扩展命令注入换行/第二参数），并非误报
+  // eslint-disable-next-line no-control-regex
+  .regex(/^[^\r\n\u0000-\u001f\u007f]+$/)
+
+/** A40：运行中切换专家（扩展命令 `/agent <name|none>`，不重建会话） */
+export const sessionSwitchAgentInputSchema = z
+  .object({
+    sessionKey: sessionKeySchema,
+    /** `null` = 清除（回落到默认专家） */
+    agent: agentNameSchema.nullable()
+  })
+  .strict()
+
+/**
+ * A41：手动压缩上下文（pi `compact`）。
+ *
+ * `customInstructions` 在 V1 只做 schema 预留（UI 不发；服务层接收但不落 RPC）。
+ */
+export const sessionCompactInputSchema = z
+  .object({
+    sessionKey: sessionKeySchema,
+    customInstructions: z.string().min(1).max(2000).optional()
+  })
+  .strict()
+
+/**
  * ��置持久化入参（M4 补充通道 `config:update`）。
  *
  * 只接受偏好字段，且**显式拒绝**任何疑似密钥字段（§3.2、§7 约束 9/12、§9.1 U14）。
@@ -340,6 +373,8 @@ export const invokeInputSchemas = {
   [IPC_INVOKE_CHANNELS.sessionSetName]: sessionSetNameInputSchema,
   [IPC_INVOKE_CHANNELS.sessionDelete]: sessionDeleteInputSchema,
   [IPC_INVOKE_CHANNELS.sessionForkPoints]: sessionKeyInputSchema,
+  [IPC_INVOKE_CHANNELS.sessionSwitchAgent]: sessionSwitchAgentInputSchema,
+  [IPC_INVOKE_CHANNELS.sessionCompact]: sessionCompactInputSchema,
   [IPC_INVOKE_CHANNELS.modelList]: emptyInputSchema,
   [IPC_INVOKE_CHANNELS.modelSet]: modelSetInputSchema,
   [IPC_INVOKE_CHANNELS.modelsRead]: emptyInputSchema,

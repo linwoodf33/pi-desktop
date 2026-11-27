@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import {
   SESSION_TOOL_MODES,
@@ -8,6 +8,7 @@ import {
 } from '../../../shared/contracts/types'
 import type { AgentCatalogView } from '../../../shared/contracts/agents'
 import { createTask, loadModels } from '../../lib/actions'
+import { buildAgentTree } from '../../lib/agent-tree'
 import { getApi } from '../../lib/client'
 import { shortenPath } from '../../lib/format'
 import { useAppStore } from '../../stores/appStore'
@@ -55,27 +56,8 @@ export function NewTaskDialog({
   const [agentCatalog, setAgentCatalog] = useState<AgentCatalogView | undefined>(undefined)
   const [agent, setAgent] = useState('')
 
-  /**
-   * A29：按目录把 agent 组织成树。
-   *
-   * pi 的 frontmatter 没有 parent 字段，唯一的层级信息是**定义文件所在目录**
-   * （`agents/intranet/*.md` 属于 intranet 组），所以这里按 `group` 分段分组：
-   * 根目录的 agent 直接列在最上面，其余每组一个 `<optgroup>`，条目按深度缩进。
-   */
-  const agentTree = useMemo(() => {
-    const agents = agentCatalog?.agents ?? []
-    const root = agents.filter((item) => item.group.length === 0)
-    const grouped = new Map<string, typeof agents>()
-    for (const item of agents) {
-      if (item.group.length === 0) continue
-      const key = item.group.join('/')
-      const bucket = grouped.get(key)
-      if (bucket === undefined) grouped.set(key, [item])
-      else bucket.push(item)
-    }
-    const groups = [...grouped.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-    return { root, groups }
-  }, [agentCatalog])
+  // A29 / A40：按目录把专家组织成树（与 Composer 的运行中切换共用 `lib/agent-tree.ts`）
+  const agentTree = buildAgentTree(agentCatalog?.agents ?? [])
 
   /**
    * A33：不可用时**不隐藏整个控件**，而是禁用 + 说明原因。
@@ -87,12 +69,13 @@ export function NewTaskDialog({
   const agentDisabled = agentCatalog === undefined || !agentSupported || agentCount === 0
   const agentHint =
     agentCatalog === undefined
-      ? '正在检测 pi 是否支持 --agent…'
+      ? '正在检测可用的专家…'
       : !agentSupported
-        ? (agentCatalog.note ?? '当前 pi 未注册 --agent（需要安装 pi-open-agents 扩展）')
+        ? (agentCatalog.note ??
+          '当前 pi 未注册 --agent（安装 pi-open-agents 扩展后才能选择/切换专家）')
         : agentCount === 0
-          ? '未发现主 agent（mode: primary/all）：放到 ~/.pi/agent/agents/ 或项目 .pi/agents/'
-          : '只列主 agent（与 TUI /agent 一致）；以它的 system prompt / 模型 / 工具开始会话'
+          ? '未发现可用的专家（mode: primary/all）：放到 ~/.pi/agent/agents/ 或项目 .pi/agents/'
+          : '只列可作会话身份的专家（与 TUI /agent 一致）；会话将以它的 system prompt / 模型 / 工具运行'
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | undefined>()
 
@@ -256,7 +239,7 @@ export function NewTaskDialog({
           </label>
 
           <label className="field">
-            <span className="field__label">Agent（会话身份）</span>
+            <span className="field__label">专家（会话身份）</span>
             <select
               className="field__input"
               data-testid="new-task-agent"
@@ -266,7 +249,7 @@ export function NewTaskDialog({
                 setAgent(event.target.value)
               }}
             >
-              <option value="">默认（不加 --agent）</option>
+              <option value="">默认（不指定专家）</option>
               {agentTree.root.map((item) => (
                 <option key={item.name} value={item.name} title={item.description}>
                   {item.name}

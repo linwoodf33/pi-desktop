@@ -1509,11 +1509,14 @@ kbd {
 }
 
 .model-switch,
-.fork-menu {
+.fork-menu,
+.agent-switch {
   position: relative;
 }
 
-.model-switch__body {
+/* A40：专家下拉与模型下拉共用弹出层定位/底色（同一位置、同一视觉层级） */
+.model-switch__body,
+.agent-switch__body {
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
@@ -1527,6 +1530,16 @@ kbd {
   border-radius: 8px;
   background: var(--bg-elevated);
   box-shadow: 0 12px 28px rgb(0 0 0 / 40%);
+}
+
+/* A40：`<summary>` 是 Composer 里的常驻「专家：X」，去掉默认三角但不破坏键盘可达 */
+.agent-switch summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.agent-switch summary::-webkit-details-marker {
+  display: none;
 }
 
 .notice--muted {

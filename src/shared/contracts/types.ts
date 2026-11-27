@@ -471,3 +471,16 @@ export interface ExtUiEvent {
   sessionKey: string
   request: { type: string; [key: string]: unknown }
 }
+
+/**
+ * `session:compact` 出参（A41）：只回数值。
+ *
+ * **刻意不回传** `summary` / `usage` / `details`：摘要正文可能巨大且含完整会话内容，
+ * renderer 既不需要展示它，回传只会扩大泄漏/注入面（F5）。
+ */
+export const sessionCompactResultSchema = z.object({
+  tokensBefore: z.number().optional(),
+  estimatedTokensAfter: z.number().optional(),
+  firstKeptEntryId: z.string().optional()
+})
+export type SessionCompactResult = z.infer<typeof sessionCompactResultSchema>

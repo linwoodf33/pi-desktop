@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import { expandPastes, planPaste, pruneBlocks, type PasteBlock } from '../../lib/paste'
+import { AgentSwitcher, type AgentSwitcherProps } from './AgentSwitcher'
 import { WorkspacePicker } from '../reference/WorkspacePicker'
 import { phaseLabel } from '../../lib/format'
 import {
@@ -34,10 +35,19 @@ export interface ComposerProps {
    */
   referenceTarget?: { sessionKey?: string; sessionFile?: string }
   /**
-   * A38：当前会话生效的 agent（来自会话文件的 `open-agents-state` 条目）。
-   * 没有时显示「默认」—— pi 本来就有默认 agent，隐藏反而让「加载中/未知/真没有」不可区分。
+   * A38：当前会话生效的专家（来自会话文件的 `open-agents-state` / `active_agent` 条目）。
+   * 没有时显示「默认」—— pi 本来就有默认专家，隐藏反而让「加载中/未知/真没有」不可区分。
+   *
+   * A40：传了 `agentSwitcher` 就渲染下拉（就地升级这个展示位）；不传时退回纯文本。
    */
   agent?: string
+  /** A40：专家下拉（活跃任务才有；历史回放时控件仍常驻但禁用） */
+  agentSwitcher?: AgentSwitcherProps
+  /** A41：上下文压缩在途（事件与动作双源写入） */
+  compacting: boolean
+  /** A41：压缩按钮可用（live + 有消息 + idle，由 Conversation 计算） */
+  compactionAvailable: boolean
+  onCompact: () => void
 }
 
 export function Composer({
@@ -48,7 +58,11 @@ export function Composer({
   onSend,
   onAbort,
   referenceTarget,
-  agent
+  agent,
+  agentSwitcher,
+  compacting,
+  compactionAvailable,
+  onCompact
 }: ComposerProps) {
   const [input, setInput] = useState('')
   /** 已粘贴、待发送的图片（A19） */
@@ -63,6 +77,19 @@ export function Composer({
   // 只有图片、没有文字也应允许发送（截图直接问「这是什么」）
   const canSend = !disabled && !aborting && (input.trim().length > 0 || images.length > 0)
   const canAbort = !disabled && !aborting && phase !== 'idle'
+  /**
+   * A41：压缩按钮的 title 按禁用原因给（**不静默禁用**，A33 教训）。
+   * 顺序：压缩中 → 可用 → 历史回放 → 本轮运行中 → 无消息。
+   */
+  const compactTitle = compacting
+    ? '正在压缩上下文：请等压缩结束'
+    : compactionAvailable
+      ? '把较早的对话总结成摘要以释放上下文（pi compact）；摘要由模型生成，期间不能发消息'
+      : referenceTarget?.sessionKey === undefined
+        ? '历史回放没有运行中的会话：点「继续对话」后可压缩'
+        : phase !== 'idle'
+          ? '本轮正在运行：结束后可压缩上下文'
+          : '还没有消息，无需压缩'
 
   const submit = (): void => {
     const raw = input.trim()
@@ -232,13 +259,17 @@ export function Composer({
           右侧留给「引用 / 停止 / 发送」，避免两个 auto 边距把状态文字挤到中间。
         */}
         <div className="composer__meta">
-          <span
-            className="composer__agent"
-            data-testid="composer-agent"
-            title={`当前 agent：${agent ?? '默认'}`}
-          >
-            agent：{agent ?? '默认'}
-          </span>
+          {agentSwitcher === undefined ? (
+            <span
+              className="composer__agent"
+              data-testid="composer-agent"
+              title={`当前专家：${agent ?? '默认'}；点开可切换`}
+            >
+              专家：{agent ?? '默认'}
+            </span>
+          ) : (
+            <AgentSwitcher {...agentSwitcher} />
+          )}
           <span
             className="composer__state"
             data-testid="composer-state"
@@ -248,6 +279,17 @@ export function Composer({
             {aborted ? '已中止' : aborting ? '正在中止…' : phaseLabel(phase)}
           </span>
         </div>
+        {/* A41：与「引用/停止/发送」同组 —— 用户心智是「对这次对话做的事」 */}
+        <button
+          type="button"
+          className="btn btn--ghost"
+          data-testid="compact-button"
+          disabled={!compactionAvailable || compacting}
+          title={compactTitle}
+          onClick={onCompact}
+        >
+          {compacting ? '压缩中…' : '压缩上下文'}
+        </button>
         <button
           type="button"
           className="btn btn--ghost"

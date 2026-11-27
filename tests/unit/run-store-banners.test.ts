@@ -89,3 +89,30 @@ describe('renameTaskTitle（A23）', () => {
     expect(useSessionStore.getState().tasks[0]?.title).toBe('新标题')
   })
 })
+
+describe('A40/A41：专家切换 / 压缩上下文的在途标记', () => {
+  it('setSwitchingAgent / setCompacting 置位与清除', () => {
+    const run = useRunStore.getState()
+
+    run.setSwitchingAgent('t1', true)
+    run.setCompacting('t1', true)
+    expect(useRunStore.getState().switchingAgent['t1']).toBe(true)
+    expect(useRunStore.getState().compacting['t1']).toBe(true)
+
+    run.setSwitchingAgent('t1', false)
+    run.setCompacting('t1', false)
+    expect(useRunStore.getState().switchingAgent['t1']).toBeUndefined()
+    expect(useRunStore.getState().compacting['t1']).toBeUndefined()
+  })
+
+  it('forgetTask 清掉两个键（任务删除后不留孤儿键）', () => {
+    const run = useRunStore.getState()
+    run.setSwitchingAgent('t2', true)
+    run.setCompacting('t2', true)
+
+    run.forgetTask('t2')
+
+    expect(useRunStore.getState().switchingAgent['t2']).toBeUndefined()
+    expect(useRunStore.getState().compacting['t2']).toBeUndefined()
+  })
+})

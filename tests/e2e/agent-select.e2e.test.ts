@@ -119,6 +119,11 @@ describe('新建任务：agent 选择', () => {
     // 根目录的 scout + 子目录 team/child 都列出
     expect(options).toEqual(['', 'scout', 'child'])
 
+    // A40：用户可见文案统一为「专家」（testid / 选项值不变）
+    const labelText = await select.evaluate((node) => node.closest('label')?.textContent ?? '')
+    expect(labelText).toContain('专家（会话身份）')
+    expect(labelText).toContain('默认（不指定专家）')
+
     // A29：子目录成组（optgroup label = 'team'），条目带树形缩进
     const groupLabels = await select
       .locator('optgroup')
@@ -195,10 +200,11 @@ describe('A33：不支持 --agent 时选择器仍在（不静默消失）', () =
       await expect.poll(async () => select.count(), { timeout: 30_000 }).toBe(1)
       expect(await select.isDisabled()).toBe(true)
 
-      // 并且给出可操作的原因
-      const hint = (await page2.textContent('[data-testid="new-task-agent-hint"]')) ?? ''
-      expect(hint.length).toBeGreaterThan(0)
-      expect(hint).toMatch(/--agent|pi-open-agents|未注册/)
+      // 并且给出可操作的原因（探测是异步的：poll 到最终文案，避免「检测中」态的竞态）
+      const hintLocator = page2.locator('[data-testid="new-task-agent-hint"]')
+      await expect
+        .poll(async () => (await hintLocator.textContent()) ?? '', { timeout: 30_000 })
+        .toMatch(/--agent|pi-open-agents|未注册/)
     } finally {
       await app2.close().catch(() => {})
       await rm(tempRoot2, { recursive: true, force: true }).catch(() => {})

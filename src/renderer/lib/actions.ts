@@ -10,6 +10,7 @@ import type {
 } from '../../shared/contracts/types'
 
 import { getApi } from './client'
+import { formatTokens } from './format'
 import { useAppStore } from '../stores/appStore'
 import { useRunStore } from '../stores/runStore'
 import { useSessionStore, liveTaskId, type TaskItem } from '../stores/sessionStore'
@@ -289,6 +290,112 @@ export async function switchModel(
     return true
   } finally {
     run.setSwitching(task.id, false)
+  }
+}
+
+/**
+ * A40：运行中切换专家（扩展命令 `/agent <name|none>`，不重建会话）。
+ *
+ * 为什么**不做乐观写入**（方案备选 A 被否）：`/agent` 对未知名字是**静默失败**（F1），
+ * 乐观写会把「没切成」显示成「切成了」。改为两步：
+ * ① `session:switchAgent` 只拿到「pi 接受了命令」；
+ * ② `syncTaskState` 从 pi 读回权威状态（agent + 模型 + 推理档位，F3 切换会一并改），
+ *    再与期望值比对，不一致给 warn。
+ */
+export async function switchAgent(name: string | null, deps: ActionDeps = {}): Promise<boolean> {
+  const api = resolveApi(deps)
+  if (api === undefined) return false
+  const task = selectedTask()
+  if (task === undefined) return false
+  const sessionKey = task.sessionKey
+  if (sessionKey === undefined) {
+    useRunStore.getState().pushBanner({
+      level: 'warn',
+      message: '该任务还没有运行中的 pi 会话：点「继续对话」后才能切换专家'
+    })
+    return false
+  }
+
+  const run = useRunStore.getState()
+  if (run.switchingAgent[task.id] === true) return false
+  run.setSwitchingAgent(task.id, true)
+  try {
+    const result = await api.session.switchAgent({ sessionKey, agent: name })
+    if (!result.ok) {
+      reportError(result.error)
+      return false
+    }
+
+    // 权威回填：顺带刷新模型徽标（F3：切换会应用该专家 pin 的模型/档位/工具集）
+    await syncTaskState(task.id, deps)
+
+    const after = useSessionStore.getState().tasks.find((item) => item.id === task.id)
+    if (name !== null && after?.agent !== name) {
+      useRunStore.getState().pushBanner({
+        level: 'warn',
+        message: `专家切换未生效：pi 仍在使用「${after?.agent ?? '默认'}」`
+      })
+    }
+    return true
+  } finally {
+    run.setSwitchingAgent(task.id, false)
+  }
+}
+
+/**
+ * A41：手动压缩上下文（pi `compact`，仅 idle）。
+ *
+ * 只回数值（摘要正文不回传）；成功后刷新统计 —— 注意压缩后 `contextUsage` 可能变 `null`
+ * （F7），统计徽标显示「—」是正常现象，不要当失败。
+ */
+export async function compactContext(deps: ActionDeps = {}): Promise<boolean> {
+  const api = resolveApi(deps)
+  if (api === undefined) return false
+  const task = selectedTask()
+  if (task === undefined) return false
+  const sessionKey = task.sessionKey
+  if (sessionKey === undefined) {
+    useRunStore.getState().pushBanner({
+      level: 'warn',
+      message: '历史回放没有运行中的会话：点「继续对话」后可压缩'
+    })
+    return false
+  }
+
+  const run = useRunStore.getState()
+  if (run.compacting[task.id] === true) return false
+  run.setCompacting(task.id, true)
+  try {
+    const result = await api.session.compact({ sessionKey })
+    if (!result.ok) {
+      if (result.error.code === 'TIMEOUT') {
+        // 超时不等于失败：pi 可能仍在后台生成摘要（R5），别让用户以为白点了
+        useRunStore.getState().pushBanner({
+          level: 'warn',
+          message: '压缩超时：pi 可能仍在后台生成摘要，稍后会自动刷新状态',
+          ...(result.error.detail === undefined ? {} : { detail: result.error.detail })
+        })
+        return false
+      }
+      reportError(result.error)
+      return false
+    }
+
+    const before = result.data.tokensBefore
+    const after = result.data.estimatedTokensAfter
+    useRunStore.getState().pushBanner(
+      typeof before === 'number' && typeof after === 'number'
+        ? {
+            level: 'info',
+            message: `上下文已压缩：${formatTokens(before)} → ${formatTokens(after)} tokens`
+          }
+        : { level: 'info', message: '上下文已压缩' }
+    )
+    await refreshStats(task.id, deps)
+    return true
+  } finally {
+    // 与 compaction_end 事件幂等（两种到达顺序都不会留下「压缩中…」）
+    run.setCompacting(task.id, false)
   }
 }
 

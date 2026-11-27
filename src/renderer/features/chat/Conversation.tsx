@@ -42,6 +42,10 @@ export interface ConversationProps {
   switching: boolean
   /** 分叉在途 */
   forking: boolean
+  /** A40：专家切换在途 */
+  agentSwitching: boolean
+  /** A41：上下文压缩在途（事件与动作双源） */
+  compacting: boolean
   /** `images` 是 data URL 数组（A19：粘贴截图） */
   onSend: (text: string, images: string[]) => void
   onAbort: () => void
@@ -55,6 +59,10 @@ export interface ConversationProps {
   onLoadForkPoints: () => Promise<ForkPoint[]>
   onFork: (entryId: string) => void
   onSwitchModel: (input: { model: string; thinkingLevel?: string }) => void
+  /** A40：切换专家（`null` = 清除，回落到默认） */
+  onSwitchAgent: (name: string | null) => void
+  /** A41：手动压缩上下文 */
+  onCompact: () => void
 }
 
 export function Conversation({
@@ -70,6 +78,8 @@ export function Conversation({
   stats,
   switching,
   forking,
+  agentSwitching,
+  compacting,
   onSend,
   onAbort,
   referenceTarget,
@@ -78,10 +88,19 @@ export function Conversation({
   onContinue,
   onLoadForkPoints,
   onFork,
-  onSwitchModel
+  onSwitchModel,
+  onSwitchAgent,
+  onCompact
 }: ConversationProps) {
   const empty = chat.messages.length === 0 && chat.streaming.length === 0
   const hasSession = task?.sessionKey !== undefined
+  const sessionKey = task?.sessionKey
+  /**
+   * A41：压缩只在「有活会话 + 有消息 + 空闲 + 非压缩中」时可用。
+   * `messages.length > 0` 是刻意的：空会话没什么可压，点了只会让 pi 白跑一次摘要。
+   */
+  const compactionAvailable =
+    sessionKey !== undefined && phase === 'idle' && !compacting && chat.messages.length > 0
 
   /*
    * 虚拟滚动（A7 方案 A）接线：
@@ -195,8 +214,24 @@ export function Conversation({
         disabled={task === undefined}
         onSend={onSend}
         onAbort={onAbort}
+        compacting={compacting}
+        compactionAvailable={compactionAvailable}
+        onCompact={onCompact}
         {...(referenceTarget === undefined ? {} : { referenceTarget })}
         {...(task?.agent === undefined ? {} : { agent: task.agent })}
+        {...(task === undefined
+          ? {}
+          : {
+              agentSwitcher: {
+                current: task.agent,
+                sessionKey,
+                cwd: task.cwd,
+                busy: phase !== 'idle',
+                compacting,
+                switching: agentSwitching,
+                onSwitch: onSwitchAgent
+              }
+            })}
       />
     </section>
   )

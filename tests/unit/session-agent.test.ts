@@ -5,6 +5,11 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import {
+  agentNameFromEntry,
+  agentNameFromRecord,
+  sanitizeAgentName
+} from '../../src/shared/contracts/agents'
+import {
   extractAgentFromEntries,
   extractAgentFromJsonl,
   readSessionAgent
@@ -136,5 +141,86 @@ describe('readSessionAgent：fail-soft', () => {
 
     // 只扫最后 24 字节：必然把两条 marker 都切在窗口外 → 未知（不是「没有 agent」）
     expect(await readSessionAgent(file, { maxBytes: 24 })).toBeUndefined()
+  })
+})
+
+/**
+ * A40：单条 entry 的三态解析（`agentNameFromEntry`）。
+ *
+ * renderer 要实时校准 `entry_appended`，而 main 读会话文件 —— 两边必须用同一份规则，
+ * 否则「事件读出来的」和「文件读出来的」会不一致。这里把每个分支钉死。
+ */
+describe('agentNameFromEntry：单条 entry 的三态', () => {
+  it('两种 customType 都识别（active_agent / open-agents-state）', () => {
+    expect(agentNameFromEntry(custom('active_agent', 'scout'))).toBe('scout')
+    expect(agentNameFromEntry(custom('open-agents-state', 'scout'))).toBe('scout')
+  })
+
+  it('name:null → null（显式清除），name:"" → null（净化后为空同样是清除）', () => {
+    expect(agentNameFromEntry(custom('active_agent', null))).toBeNull()
+    expect(agentNameFromEntry(custom('active_agent', ''))).toBeNull()
+    expect(agentNameFromEntry(custom('open-agents-state', '   '))).toBeNull()
+  })
+
+  it('name 不是字符串（数字/对象/缺失）→ undefined（跳过，不当作清除）', () => {
+    expect(agentNameFromEntry(custom('active_agent', 123))).toBeUndefined()
+    expect(agentNameFromEntry(custom('active_agent', { nested: true }))).toBeUndefined()
+    expect(
+      agentNameFromEntry({ type: 'custom', customType: 'active_agent', data: {} })
+    ).toBeUndefined()
+    expect(agentNameFromEntry({ type: 'custom', customType: 'active_agent' })).toBeUndefined()
+  })
+
+  it('控制字符被净化、超 64 字符被截断', () => {
+    expect(agentNameFromEntry(custom('active_agent', '  sc\u0000out  '))).toBe('scout')
+    expect(agentNameFromEntry(custom('active_agent', 'a'.repeat(100)))).toBe('a'.repeat(64))
+  })
+
+  it('非 custom / 非目标 customType / 非对象 → undefined', () => {
+    expect(agentNameFromEntry({ type: 'message', role: 'user' })).toBeUndefined()
+    expect(agentNameFromEntry(custom('web-search-results', 'scout'))).toBeUndefined()
+    expect(agentNameFromEntry(null)).toBeUndefined()
+    expect(agentNameFromEntry('scout')).toBeUndefined()
+    expect(agentNameFromEntry([])).toBeUndefined()
+  })
+})
+
+/**
+ * A40：记录级解析（`agentNameFromRecord`）——除裸 `custom` 外还认 pi 的
+ * `entry_appended` 包装（扩展每次 `appendEntry` 都会发）。
+ */
+describe('agentNameFromRecord：entry_appended 包装与裸 custom', () => {
+  it('entry_appended{entry} 与裸 custom 两条路径等价', () => {
+    expect(
+      agentNameFromRecord({ type: 'entry_appended', entry: custom('active_agent', 'scout') })
+    ).toBe('scout')
+    expect(agentNameFromRecord(custom('active_agent', 'scout'))).toBe('scout')
+    expect(
+      agentNameFromRecord({ type: 'entry_appended', entry: custom('active_agent', null) })
+    ).toBeNull()
+  })
+
+  it('entry_appended 的 entry 不是 agent 标记 → undefined', () => {
+    expect(
+      agentNameFromRecord({ type: 'entry_appended', entry: { type: 'message', role: 'user' } })
+    ).toBeUndefined()
+    expect(agentNameFromRecord({ type: 'entry_appended' })).toBeUndefined()
+  })
+
+  it('其它 customType / compaction 记录 / 未知类型 → undefined（必须不动现值）', () => {
+    expect(agentNameFromRecord(custom('web-search-results', 'scout'))).toBeUndefined()
+    expect(agentNameFromRecord({ type: 'compaction', summary: '…' })).toBeUndefined()
+    expect(agentNameFromRecord({ type: 'agent_start' })).toBeUndefined()
+    expect(agentNameFromRecord({})).toBeUndefined()
+  })
+})
+
+describe('sanitizeAgentName：净化规则与 main 侧读文件一致', () => {
+  it('去控制字符 → trim → 截 64；净化后为空 → null', () => {
+    expect(sanitizeAgentName(' scout ')).toBe('scout')
+    expect(sanitizeAgentName('sc\u0000out')).toBe('scout')
+    expect(sanitizeAgentName('a'.repeat(100))).toBe('a'.repeat(64))
+    expect(sanitizeAgentName('   ')).toBeNull()
+    expect(sanitizeAgentName('\u0001\u0002')).toBeNull()
   })
 })

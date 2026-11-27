@@ -99,6 +99,34 @@ describe('client: evt:status=exited（A6 可操作入口）', () => {
     unsubscribe()
   })
 
+  it('B1：压缩中会话终止（exited/recycled/ending）后 compacting 复位', () => {
+    // compaction_end 在会话终止后永不到达（main 侧不发），键若不在此清理，
+    // 恢复会话后「压缩上下文 / 切换专家」会永久禁用且没有任何事件能解
+    const { api, emitStatus } = createFakeApi()
+    const unsubscribe = subscribeEvents(api)
+
+    // 意外退出（exited）
+    const exitedTask = seedLiveTask('live-key-b1-exited')
+    useRunStore.getState().setCompacting(exitedTask, true)
+    emitStatus({ sessionKey: 'live-key-b1-exited', status: 'exited' })
+    expect(useRunStore.getState().compacting[exitedTask]).toBeFalsy()
+
+    // 空闲回收（recycled）
+    const recycledTask = seedLiveTask('live-key-b1-recycled')
+    useRunStore.getState().setCompacting(recycledTask, true)
+    emitStatus({ sessionKey: 'live-key-b1-recycled', status: 'recycled' })
+    expect(useRunStore.getState().compacting[recycledTask]).toBeFalsy()
+
+    // 用户主动结束（ending 早退分支）
+    const endingTask = seedLiveTask('live-key-b1-ending')
+    useRunStore.getState().setEnding(endingTask, true)
+    useRunStore.getState().setCompacting(endingTask, true)
+    emitStatus({ sessionKey: 'live-key-b1-ending', status: 'exited' })
+    expect(useRunStore.getState().compacting[endingTask]).toBeFalsy()
+
+    unsubscribe()
+  })
+
   it('用户主动结束（ending）：只压 settling，不降级、不提示「继续对话」', () => {
     const { api, emitStatus } = createFakeApi()
     const unsubscribe = subscribeEvents(api)

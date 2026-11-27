@@ -1,5 +1,7 @@
 import { open } from 'node:fs/promises'
 
+import { agentNameFromEntry } from '../../shared/contracts/agents'
+
 import { parseEntries } from './session-history'
 
 /**
@@ -24,45 +26,26 @@ import { parseEntries } from './session-history'
  * - `undefined` 文件里没有该标记 / 读不出来 → **未知**，调用方必须保持现值
  */
 
-const AGENT_CUSTOM_TYPES: ReadonlySet<string> = new Set(['open-agents-state', 'active_agent'])
-
 /** 读取会话文件尾部时默认扫多少字节（长会话里 agent 条目通常出现在开头，故给足 256KB） */
 const DEFAULT_MAX_BYTES = 256 * 1024
 
-/** 控制字符（U+0000–U+001F、U+007F）：用码点构造，避免 lint 对字面控制字符的误报 */
-const CONTROL_CHARS_RE = new RegExp(
-  `[${String.fromCharCode(0)}-${String.fromCharCode(0x1f)}${String.fromCharCode(0x7f)}]`,
-  // 必须带 g：`replace` 只换第一个匹配，漏掉 g 会留下第 2 个控制字符
-  'g'
-)
-
-/** 名字净化：控制字符会污染 UI/日志，超长会撑爆输入区 */
-function sanitizeAgentName(value: string): string | null {
-  const cleaned = value.replace(CONTROL_CHARS_RE, '').trim().slice(0, 64)
-  return cleaned.length === 0 ? null : cleaned
-}
-
-/** 从已解析的 entries 提取（`session-history` 已有 entries 时直接复用，避免二次解析） */
+/**
+ * 从已解析的 entries 提取（`session-history` 已有 entries 时直接复用，避免二次解析）。
+ *
+ * 单条 entry 的判定（类型集合、`data.name` 三态、净化规则）已上移到
+ * `shared/contracts/agents.ts#agentNameFromEntry`：renderer 侧要实时校准 `entry_appended`，
+ * 两边必须用**同一份**规则，否则「文件读出来的」和「事件读出来的」会不一致。
+ * 这里只负责「按文件顺序取最后一条匹配」，语义与 A38 完全一致。
+ */
 export function extractAgentFromEntries(
   entries: ReadonlyArray<Record<string, unknown>>
 ): string | null | undefined {
   let result: string | null | undefined
   for (const entry of entries) {
-    if (entry['type'] !== 'custom') continue
-    const customType = entry['customType']
-    if (typeof customType !== 'string' || !AGENT_CUSTOM_TYPES.has(customType)) continue
-
-    const data = entry['data']
-    if (typeof data !== 'object' || data === null || Array.isArray(data)) continue
-    const name = (data as Record<string, unknown>)['name']
-    // 非字符串（含缺失）不是「清除」，只是这条不匹配
+    const name = agentNameFromEntry(entry)
+    // undefined = 与该标记无关（含非 custom / 非目标 customType / name 非字符串）
     if (name === undefined) continue
-    if (name === null) {
-      result = null
-      continue
-    }
-    if (typeof name !== 'string') continue
-    result = sanitizeAgentName(name)
+    result = name
   }
   return result
 }

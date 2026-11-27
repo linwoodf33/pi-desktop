@@ -41,6 +41,9 @@ describe('IPC 通道白名单（§5.4）', () => {
         // A39 补充：删除本地会话文件（移到回收站；仅历史任务）
         'session:delete',
         'session:forkPoints',
+        // A40/A41 补充：运行中切换专家（扩展命令 /agent）/ 手动压缩上下文（pi compact）
+        'session:switchAgent',
+        'session:compact',
         'config:update',
         // M5 补充：审批扩展安装状态（只读）
         'permission:status',
@@ -169,5 +172,43 @@ describe('入参 schema 细节', () => {
     expect(schema.safeParse({ sessionKey: 'k1', entryId: 'e1', messageId: 'm1' }).success).toBe(
       false
     )
+  })
+})
+
+describe('A40/A41：专家切换与上下文压缩的入参 schema', () => {
+  it('session:switchAgent 接受 {agent:name} 与 {agent:null}，拒绝缺失/空名/控制字符/多余字段', () => {
+    const schema = getInputSchema(IPC_INVOKE_CHANNELS.sessionSwitchAgent)
+
+    expect(schema.safeParse({ sessionKey: 'k1', agent: 'scout' }).success).toBe(true)
+    // null = 清除（回落到默认专家），是合法入参
+    expect(schema.safeParse({ sessionKey: 'k1', agent: null }).success).toBe(true)
+
+    // 缺字段 / 空名
+    expect(schema.safeParse({ sessionKey: 'k1' }).success).toBe(false)
+    expect(schema.safeParse({ sessionKey: 'k1', agent: '' }).success).toBe(false)
+    // 消息体是单行命令文本（/agent <name>）：CR/LF 与控制字符会造成命令注入
+    expect(schema.safeParse({ sessionKey: 'k1', agent: 'a\nb' }).success).toBe(false)
+    expect(schema.safeParse({ sessionKey: 'k1', agent: 'a\u0001b' }).success).toBe(false)
+    // 长度边界：64 通过、65 拒绝
+    expect(schema.safeParse({ sessionKey: 'k1', agent: 'a'.repeat(64) }).success).toBe(true)
+    expect(schema.safeParse({ sessionKey: 'k1', agent: 'a'.repeat(65) }).success).toBe(false)
+    // strict：多余字段直接 VALIDATION
+    expect(schema.safeParse({ sessionKey: 'k1', agent: 'scout', extra: 1 }).success).toBe(false)
+  })
+
+  it('session:compact 接受 {sessionKey} 与自定义指令 ≤2000，拒绝缺 sessionKey/超长/未知字段', () => {
+    const schema = getInputSchema(IPC_INVOKE_CHANNELS.sessionCompact)
+
+    expect(schema.safeParse({ sessionKey: 'k1' }).success).toBe(true)
+    expect(
+      schema.safeParse({ sessionKey: 'k1', customInstructions: 'x'.repeat(2000) }).success
+    ).toBe(true)
+    expect(
+      schema.safeParse({ sessionKey: 'k1', customInstructions: 'x'.repeat(2001) }).success
+    ).toBe(false)
+    expect(schema.safeParse({ sessionKey: 'k1', customInstructions: '' }).success).toBe(false)
+    // 缺 sessionKey（空对象）
+    expect(schema.safeParse({}).success).toBe(false)
+    expect(schema.safeParse({ sessionKey: 'k1', unknown: true }).success).toBe(false)
   })
 })

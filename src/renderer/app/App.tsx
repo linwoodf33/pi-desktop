@@ -15,6 +15,7 @@ import { NewTaskDialog } from '../features/tasks/NewTaskDialog'
 import { TaskList } from '../features/tasks/TaskList'
 import {
   abortRun,
+  compactContext,
   deleteTask,
   endTask,
   renameTask,
@@ -26,6 +27,7 @@ import {
   locatePi,
   selectTask,
   sendMessage,
+  switchAgent,
   switchModel
 } from '../lib/actions'
 import { getApi, subscribeEvents } from '../lib/client'
@@ -98,6 +100,10 @@ export function App() {
   const aborted = useRunStore((state) => state.aborted)
   const switching = useRunStore((state) => state.switching)
   const forking = useRunStore((state) => state.forking)
+  /** A40：专家切换在途 */
+  const switchingAgent = useRunStore((state) => state.switchingAgent)
+  /** A41：上下文压缩在途（事件与动作双源） */
+  const compacting = useRunStore((state) => state.compacting)
   const locating = useRunStore((state) => state.locating)
 
   const artifactsCollapsed = useArtifactStore((state) => state.collapsed)
@@ -295,6 +301,8 @@ export function App() {
           stats={selectedId === undefined ? undefined : stats[selectedId]}
           switching={selectedId !== undefined && switching[selectedId] === true}
           forking={selectedId !== undefined && forking[selectedId] === true}
+          agentSwitching={selectedId !== undefined && switchingAgent[selectedId] === true}
+          compacting={selectedId !== undefined && compacting[selectedId] === true}
           onSend={(text, images) => {
             void sendMessage(text, { images })
           }}
@@ -327,6 +335,12 @@ export function App() {
           }}
           onSwitchModel={(input) => {
             void switchModel(input)
+          }}
+          onSwitchAgent={(name) => {
+            void switchAgent(name)
+          }}
+          onCompact={() => {
+            void compactContext()
           }}
         />
 

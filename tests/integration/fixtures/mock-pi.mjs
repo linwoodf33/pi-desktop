@@ -9,7 +9,15 @@
  *
  * 支持命令（M4 起补齐保真度）：
  *   get_state / get_available_models / get_session_stats / get_fork_messages /
- *   prompt / abort / set_model / set_thinking_level / fork
+ *   prompt / abort / set_model / set_thinking_level / fork / compact
+ *
+ * A40/A41（专家切换与上下文压缩，只在这些输入出现时生效）：
+ * - `prompt` 收到 `/agent <name|none>` → 按 pi-open-agents 的扩展命令回放：先回
+ *   `{disposition:'handled'}`，再把 `custom/active_agent` 条目追加到会话文件并发
+ *   `entry_appended`（客户端据此实时校准，不需要新通道）；
+ * - `compact` → `compaction_start` → `compaction_end` → response（真实顺序），
+ *   `get_state.isCompacting` 随之翻转；`MOCK_PI_COMPACT_FAIL=1` 走失败路径。
+ * 其它用例的输入不含这两个触发条件，行为逐字节不变。
  * prompt 触发的流式序列：agent_start → turn_start → message_start(user) → message_end(user)
  *   → message_start(assistant) → message_update(text_delta ×N) → message_end(assistant)
  *   → turn_end → agent_end → agent_settled{aborted:false}
@@ -344,6 +352,33 @@ function recordAgentState() {
 
 recordAgentState()
 
+/**
+ * A40：把 `/agent` 的结果写成扩展条目（与 pi-open-agents 的 `active_agent` 同形）。
+ *
+ * 只在显式指定会话文件时落盘（与 `appendSessionMessage` 同风格）：其它用例不产生磁盘副作用。
+ */
+function appendAgentEntry(name) {
+  if (process.env['MOCK_PI_SESSION_FILE'] === undefined) return
+  agentEntrySeq += 1
+  try {
+    mkdirSync(dirname(sessionFile), { recursive: true })
+    appendFileSync(
+      sessionFile,
+      `${JSON.stringify({
+        type: 'custom',
+        customType: 'active_agent',
+        data: { name },
+        id: `agent-switch-${agentEntrySeq}`,
+        parentId: null,
+        timestamp: new Date().toISOString()
+      })}\n`,
+      'utf8'
+    )
+  } catch {
+    /* 夹具落盘失败不影响协议行为 */
+  }
+}
+
 function writeRecord(record) {
   process.stdout.write(`${JSON.stringify(record)}\n`)
 }
@@ -369,6 +404,10 @@ const MODEL = {
 
 let messageCount = 0
 let streaming = false
+/** A41：压缩中（`get_state.isCompacting` 的事实来源） */
+let compacting = false
+/** A40：`/agent` 写的 active_agent 条目序号 */
+let agentEntrySeq = 0
 /** 未决 extension_ui_request：id → resolve(value | undefined) */
 const pendingUi = new Map()
 let uiSeq = 0
@@ -744,7 +783,7 @@ function handleCommand(command) {
         model: MODEL,
         thinkingLevel: 'medium',
         isStreaming: streaming,
-        isCompacting: false,
+        isCompacting: compacting,
         steeringMode: 'one-at-a-time',
         followUpMode: 'one-at-a-time',
         sessionFile: sessionFile,
@@ -760,6 +799,36 @@ function handleCommand(command) {
       return
     case 'prompt': {
       const text = String(command.message ?? '')
+      /**
+       * A40：扩展命令（pi-open-agents 的 `/agent`）。
+       * 必须在 streaming / 排队判定**之前**处理：真实 pi 对扩展命令立即执行并回 handled，
+       * 不管当前是否在流式中（这里仍按只回 handled 处理，不推进 busy）。
+       */
+      if (text.startsWith('/agent')) {
+        const arg = text.slice('/agent'.length).trim()
+        if (process.env['MOCK_PI_AGENT_SWITCH_FILE'] !== undefined) {
+          try {
+            appendFileSync(process.env['MOCK_PI_AGENT_SWITCH_FILE'], `${arg}\n`, 'utf8')
+          } catch {
+            /* 夹具落盘失败不影响协议行为 */
+          }
+        }
+        respond(id, 'prompt', { disposition: 'handled' })
+        const name = arg.length === 0 || arg === 'none' || arg === 'clear' ? null : arg
+        appendAgentEntry(name)
+        writeRecord({
+          type: 'entry_appended',
+          entry: {
+            type: 'custom',
+            customType: 'active_agent',
+            data: { name },
+            id: `agent-switch-${agentEntrySeq + 1}`,
+            parentId: null,
+            timestamp: new Date().toISOString()
+          }
+        })
+        return
+      }
       /**
        * A19：记录收到的 prompt 载荷（含图片），供 E2E 断言「粘贴的截图真的发出去了」。
        * 只记数量与 MIME，不落图片内容（夹具不处理真实像素）。
@@ -814,6 +883,52 @@ function handleCommand(command) {
       }
       respond(id, 'prompt', { disposition: 'started' })
       agentRun(text, promptImages)
+      return
+    }
+    case 'compact': {
+      /**
+       * A41：手动压缩。
+       *
+       * 顺序与真实 pi 一致：`compaction_start` → `compaction_end` → response。
+       * 客户端必须在「事件先到 / 响应先到」两种顺序下都不残留「压缩中」状态。
+       */
+      compacting = true
+      writeRecord({ type: 'compaction_start', reason: 'manual' })
+      if (process.env['MOCK_PI_COMPACT_FAIL'] === '1') {
+        compacting = false
+        writeRecord({
+          type: 'compaction_end',
+          reason: 'manual',
+          aborted: false,
+          errorMessage: 'mock compact failed'
+        })
+        writeRecord({
+          type: 'response',
+          id,
+          command: 'compact',
+          success: false,
+          error: 'mock compact failed'
+        })
+        return
+      }
+      const compactResult = {
+        summary: '（mock 压缩摘要）',
+        firstKeptEntryId: 'entry-1',
+        tokensBefore: 120000,
+        estimatedTokensAfter: 20000
+      }
+      writeRecord({
+        type: 'compaction_end',
+        reason: 'manual',
+        aborted: false,
+        result: compactResult
+      })
+      compacting = false
+      respond(id, 'compact', {
+        ...compactResult,
+        usage: { inputTokens: 1000, outputTokens: 200 },
+        details: {}
+      })
       return
     }
     case 'abort':

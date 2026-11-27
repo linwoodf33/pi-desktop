@@ -10,6 +10,7 @@ import type {
 import { createSessionService } from '../../src/main/services/session-service'
 import {
   splitModelRef,
+  toCompactResult,
   toImageContent,
   toModelList,
   toSessionStats
@@ -189,6 +190,7 @@ function setup(
   overrides: {
     limits?: { maxActiveSessions: number; idleRecycleMinutes: number }
     commandTimeoutMs?: number
+    compactTimeoutMs?: number
     textDeltaWindowMs?: number
     responder?: Responder
   } = {}
@@ -213,6 +215,9 @@ function setup(
     commandTimeoutMs: overrides.commandTimeoutMs ?? 1000,
     settleTimeoutMs: 1000,
     reaperIntervalMs: 10_000_000,
+    ...(overrides.compactTimeoutMs === undefined
+      ? {}
+      : { compactTimeoutMs: overrides.compactTimeoutMs }),
     ...(overrides.textDeltaWindowMs === undefined
       ? {}
       : { textDeltaWindowMs: overrides.textDeltaWindowMs }),
@@ -909,5 +914,198 @@ describe('纯函数辅助', () => {
       models: [{ id: 'a', provider: 'p' }, { nope: true }, { id: 'b' }]
     })
     expect(models.map((model) => model.id)).toEqual(['a'])
+  })
+
+  it('toCompactResult 只保留数值字段（summary/usage/details 一律丢弃）', () => {
+    expect(
+      toCompactResult({
+        summary: '巨大的摘要正文',
+        usage: { inputTokens: 1 },
+        details: {},
+        firstKeptEntryId: 'entry-1',
+        tokensBefore: 120000,
+        estimatedTokensAfter: 20000
+      })
+    ).toEqual({
+      tokensBefore: 120000,
+      estimatedTokensAfter: 20000,
+      firstKeptEntryId: 'entry-1'
+    })
+    // 非有限数字 / 空串 firstKeptEntryId 不填（缺失由 UI 显示「—」）
+    expect(toCompactResult({ tokensBefore: Number.NaN, firstKeptEntryId: '' })).toEqual({})
+    expect(toCompactResult(null)).toEqual({})
+  })
+})
+
+describe('A40：switchAgent（扩展命令 /agent，不重建会话）', () => {
+  const handled: Responder = (command, id) =>
+    command.type === 'prompt'
+      ? { respond: true, data: { disposition: 'handled' } }
+      : defaultResponder(command, id)
+
+  it('发送 {type:"prompt", message:"/agent scout"}，disposition=handled → ok 且不进入 running', async () => {
+    const { service, connection } = setup({ responder: handled })
+    const { sessionKey } = await service.create({ cwd: 'C:/work' })
+
+    await expect(service.switchAgent({ sessionKey, agent: 'scout' })).resolves.toEqual({
+      ok: true
+    })
+
+    const prompt = connection.last().sent.find((item) => item.command.type === 'prompt')
+    expect(prompt?.command).toEqual({ type: 'prompt', message: '/agent scout' })
+    // handled = 扩展命令：本轮不会有 agent_settled，busy 必须保持 false
+    expect((await service.state({ sessionKey })).busy).toBe(false)
+  })
+
+  it('agent=null → /agent none（清除，回落到默认专家）', async () => {
+    const { service, connection } = setup({ responder: handled })
+    const { sessionKey } = await service.create({ cwd: 'C:/work' })
+
+    await expect(service.switchAgent({ sessionKey, agent: null })).resolves.toEqual({ ok: true })
+
+    const prompt = connection.last().sent.find((item) => item.command.type === 'prompt')
+    expect(prompt?.command).toEqual({ type: 'prompt', message: '/agent none' })
+  })
+
+  it('disposition=started / queued → PI_COMMAND_FAILED（会被当成聊天消息发出去）', async () => {
+    for (const disposition of ['started', 'queued'] as const) {
+      const { service } = setup({
+        responder: (command, id) =>
+          command.type === 'prompt'
+            ? { respond: true, data: { disposition } }
+            : defaultResponder(command, id)
+      })
+      const { sessionKey } = await service.create({ cwd: 'C:/work' })
+
+      await expect(service.switchAgent({ sessionKey, agent: 'scout' })).rejects.toMatchObject({
+        code: 'PI_COMMAND_FAILED'
+      })
+    }
+  })
+
+  it('busy → SESSION_BUSY 且未发送命令', async () => {
+    const { service, connection } = setup({ responder: handled })
+    const { sessionKey } = await service.create({ cwd: 'C:/work' })
+    connection.last().emit({ type: 'agent_start' })
+
+    await expect(service.switchAgent({ sessionKey, agent: 'scout' })).rejects.toMatchObject({
+      code: 'SESSION_BUSY'
+    })
+    expect(connection.last().commandsSent()).not.toContain('prompt')
+  })
+
+  it('压缩中 → SESSION_BUSY（F6：压缩与切换互斥）', async () => {
+    const { service, connection } = setup({ responder: handled })
+    const { sessionKey } = await service.create({ cwd: 'C:/work' })
+    connection.last().emit({ type: 'compaction_start', reason: 'manual' })
+
+    await expect(service.switchAgent({ sessionKey, agent: 'scout' })).rejects.toMatchObject({
+      code: 'SESSION_BUSY'
+    })
+    expect(connection.last().commandsSent()).not.toContain('prompt')
+  })
+})
+
+describe('A41：compact（手动压缩，仅 idle）', () => {
+  const compactData = {
+    summary: '（巨大的摘要正文，必须被丢弃）',
+    usage: { inputTokens: 1000, outputTokens: 200 },
+    details: {},
+    firstKeptEntryId: 'entry-1',
+    tokensBefore: 120000,
+    estimatedTokensAfter: 20000
+  }
+
+  it('发送 {type:"compact"}，只回三个数值字段（summary/usage/details 丢弃）', async () => {
+    const { service, connection } = setup({
+      responder: (command, id) =>
+        command.type === 'compact'
+          ? { respond: true, data: compactData }
+          : defaultResponder(command, id)
+    })
+    const { sessionKey } = await service.create({ cwd: 'C:/work' })
+
+    const result = await service.compact({ sessionKey })
+
+    expect(connection.last().commandsSent()).toContain('compact')
+    expect(result).toEqual({
+      tokensBefore: 120000,
+      estimatedTokensAfter: 20000,
+      firstKeptEntryId: 'entry-1'
+    })
+    expect(result).not.toHaveProperty('summary')
+  })
+
+  it('连续两次 compact：第二次 SESSION_BUSY；超时后 compacting 复位（prompt 恢复）', async () => {
+    const { service } = setup({
+      compactTimeoutMs: 20,
+      responder: (command, id) =>
+        command.type === 'compact' ? { respond: false } : defaultResponder(command, id)
+    })
+    const { sessionKey } = await service.create({ cwd: 'C:/work' })
+
+    const first = service.compact({ sessionKey })
+    // 第一次仍在途：并发保护由 session.compacting 承担（compact 不持 withLock）
+    await expect(service.compact({ sessionKey })).rejects.toMatchObject({ code: 'SESSION_BUSY' })
+    await expect(first).rejects.toMatchObject({ code: 'TIMEOUT' })
+
+    // finally 已复位：压缩结束后 prompt 不再被 SESSION_BUSY 挡住
+    await expect(service.prompt({ sessionKey, message: 'after compact' })).resolves.toMatchObject({
+      disposition: 'started'
+    })
+  })
+
+  it('compaction_start 期间 prompt 被拒，compaction_end 之后恢复', async () => {
+    const { service, connection } = setup()
+    const { sessionKey } = await service.create({ cwd: 'C:/work' })
+    const transport = connection.last()
+
+    transport.emit({ type: 'compaction_start', reason: 'threshold' })
+    await expect(service.prompt({ sessionKey, message: 'x' })).rejects.toMatchObject({
+      code: 'SESSION_BUSY'
+    })
+
+    transport.emit({ type: 'compaction_end', reason: 'threshold', aborted: false })
+    await expect(service.prompt({ sessionKey, message: 'x' })).resolves.toMatchObject({
+      disposition: 'started'
+    })
+  })
+
+  it('get_state.isCompacting=true 会被校准（事件丢失也不放行 prompt）', async () => {
+    const { service } = setup({
+      responder: (command, id) =>
+        command.type === 'get_state'
+          ? { respond: true, data: { ...STATE_DATA, isCompacting: true } }
+          : defaultResponder(command, id)
+    })
+    const { sessionKey } = await service.create({ cwd: 'C:/work' })
+
+    expect((await service.state({ sessionKey })).isCompacting).toBe(true)
+    await expect(service.prompt({ sessionKey, message: 'x' })).rejects.toMatchObject({
+      code: 'SESSION_BUSY'
+    })
+  })
+
+  it('compact 超时（注入 10ms 且不响应）→ TIMEOUT 且 compacting 复位', async () => {
+    const { service } = setup({
+      compactTimeoutMs: 10,
+      responder: (command, id) =>
+        command.type === 'compact' ? { respond: false } : defaultResponder(command, id)
+    })
+    const { sessionKey } = await service.create({ cwd: 'C:/work' })
+
+    await expect(service.compact({ sessionKey })).rejects.toMatchObject({ code: 'TIMEOUT' })
+    await expect(service.prompt({ sessionKey, message: 'after timeout' })).resolves.toMatchObject({
+      disposition: 'started'
+    })
+  })
+
+  it('busy 时 compact → SESSION_BUSY 且未发送命令', async () => {
+    const { service, connection } = setup()
+    const { sessionKey } = await service.create({ cwd: 'C:/work' })
+    connection.last().emit({ type: 'agent_start' })
+
+    await expect(service.compact({ sessionKey })).rejects.toMatchObject({ code: 'SESSION_BUSY' })
+    expect(connection.last().commandsSent()).not.toContain('compact')
   })
 })

@@ -12,13 +12,15 @@ import type {
   modelSetInputSchema,
   piLocateInputSchema,
   sessionCreateInputSchema,
+  sessionCompactInputSchema,
   sessionDeleteInputSchema,
   sessionForkInputSchema,
   sessionHistoryInputSchema,
   sessionKeyInputSchema,
   sessionListInputSchema,
   sessionPromptInputSchema,
-  sessionResumeInputSchema
+  sessionResumeInputSchema,
+  sessionSwitchAgentInputSchema
 } from '../../shared/contracts/schemas'
 import type {
   ModelConfigView,
@@ -33,6 +35,7 @@ import type {
 } from '../../shared/contracts/types'
 import type { PiUpdateApplyInput } from '../../shared/contracts/update'
 
+import { isAgentNameSwitchable } from '../../shared/contracts/agents'
 import { IpcFailure } from '../../shared/contracts/result'
 
 import { statSync } from 'node:fs'
@@ -144,6 +147,10 @@ const DEFAULT_TIMEOUTS: Partial<Record<InvokeChannel, number>> = {
   [IPC_INVOKE_CHANNELS.sessionState]: 65_000,
   [IPC_INVOKE_CHANNELS.sessionStats]: 65_000,
   [IPC_INVOKE_CHANNELS.sessionForkPoints]: 65_000,
+  // A40：目录探测(≤20s)+扩展切换(≤60s)+余量
+  [IPC_INVOKE_CHANNELS.sessionSwitchAgent]: 120_000,
+  // A41：服务层 240s，router 留余量（摘要由模型生成，可能很慢）
+  [IPC_INVOKE_CHANNELS.sessionCompact]: 300_000,
   [IPC_INVOKE_CHANNELS.permissionStatus]: 5_000,
   [IPC_INVOKE_CHANNELS.modelList]: 65_000,
   // M6：扫描/diff 会起 git 子进程或扫目录树，给 20s（§7 约束 14 的产物上限在这之内）
@@ -189,6 +196,8 @@ type SessionResumeInput = z.infer<typeof sessionResumeInputSchema>
 type SessionForkInput = z.infer<typeof sessionForkInputSchema>
 type SessionPromptInput = z.infer<typeof sessionPromptInputSchema>
 type SessionKeyInput = z.infer<typeof sessionKeyInputSchema>
+type SessionSwitchAgentInput = z.infer<typeof sessionSwitchAgentInputSchema>
+type SessionCompactInput = z.infer<typeof sessionCompactInputSchema>
 type ModelSetInput = z.infer<typeof modelSetInputSchema>
 type PiLocateInput = z.infer<typeof piLocateInputSchema>
 type ConfigUpdateInput = z.infer<typeof configUpdateInputSchema>
@@ -559,6 +568,57 @@ export function createRouter(
 
     [IPC_INVOKE_CHANNELS.sessionForkPoints]: (raw) =>
       service.forkPoints({ sessionKey: (raw as SessionKeyInput).sessionKey }),
+
+    /**
+     * A40：运行中切换专家（扩展命令 `/agent <name|none>`，不重建会话）。
+     *
+     * 三层前置校验（R1）：
+     * ① 扩展必须支持 `--agent` —— 未装扩展时 `/agent x` 会变成普通聊天消息；
+     * ② 名字必须在目录里 —— F1：扩展对未知名字**静默失败**且仍回 `handled`；
+     * ③ 名字必须是单 token —— F4：扩展把 `args.trim()` 整体当名。
+     * 扫描根来自主进程核实的会话工作区（`workspaceOf`），不接受 renderer 指定 cwd。
+     */
+    [IPC_INVOKE_CHANNELS.sessionSwitchAgent]: (raw) => {
+      const input = raw as SessionSwitchAgentInput
+      return (async () => {
+        const cwd = service.workspaceOf(input.sessionKey) ?? defaultCwd()
+        const view = await deps.agentCatalog.list(cwd)
+        if (!view.supportsAgentFlag) {
+          throw new IpcFailure(
+            'VALIDATION',
+            '当前 pi 未注册 --agent（需要安装 pi-open-agents 扩展）'
+          )
+        }
+        if (input.agent !== null) {
+          if (!deps.agentCatalog.has(view, input.agent)) {
+            throw new IpcFailure('VALIDATION', `未知专家：${input.agent}`)
+          }
+          if (!isAgentNameSwitchable(input.agent)) {
+            throw new IpcFailure(
+              'VALIDATION',
+              `专家名包含空白或控制字符，暂不支持运行中切换：${input.agent}`
+            )
+          }
+        }
+        return service.switchAgent({ sessionKey: input.sessionKey, agent: input.agent })
+      })()
+    },
+
+    /**
+     * A41：手动压缩上下文（pi `compact`）。
+     *
+     * 本层只搬移入参：仅 idle、超时、状态翻转全在服务层（重复一遍就有了第二个事实来源）。
+     * `customInstructions` 目前只搬移不透传（V1 无 UI，V2 再落 RPC）。
+     */
+    [IPC_INVOKE_CHANNELS.sessionCompact]: (raw) => {
+      const input = raw as SessionCompactInput
+      return service.compact({
+        sessionKey: input.sessionKey,
+        ...(input.customInstructions === undefined
+          ? {}
+          : { customInstructions: input.customInstructions })
+      })
+    },
 
     /**
      * A23：改会话显示名。

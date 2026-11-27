@@ -47,6 +47,7 @@ import type {
   RecordEvent,
   SessionListOutput,
   SessionForkPointsOutput,
+  SessionCompactResult,
   SessionHistoryOutput,
   SessionStats,
   StatusEvent,
@@ -135,6 +136,25 @@ export interface PiInvokeApi {
     }): Promise<Result<{ sessionKey: string }>>
     /** M4：可分叉点（pi `get_fork_messages`，只列用户消息） */
     forkPoints(input: { sessionKey: string }): Promise<Result<SessionForkPointsOutput>>
+    /**
+     * A40：运行中切换专家（扩展命令 `/agent <name|none>`，不重建会话）。
+     *
+     * 主进程前置校验：扩展支持 `--agent`、名字在目录里、名字是单 token；
+     * 成功只代表 pi **接受**了命令，权威状态仍以随后读回的 `session:state` 为准（F1/F3）。
+     */
+    switchAgent(input: {
+      sessionKey: string
+      /** `null` = 清除（回落到默认专家） */
+      agent: string | null
+    }): Promise<Result<{ ok: true }>>
+    /**
+     * A41：手动压缩上下文（pi `compact`，仅 idle）。
+     * 只回数值（`tokensBefore` / `estimatedTokensAfter` / `firstKeptEntryId`），不回摘要正文。
+     */
+    compact(input: {
+      sessionKey: string
+      customInstructions?: string
+    }): Promise<Result<SessionCompactResult>>
     prompt(input: {
       sessionKey: string
       message: string
