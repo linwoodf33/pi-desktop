@@ -1514,12 +1514,13 @@ kbd {
   position: relative;
 }
 
-/* A40：专家下拉与模型下拉共用弹出层定位/底色（同一位置、同一视觉层级） */
+/* A40：专家下拉与模型下拉共用弹出层视觉（同一层级/底色）。
+   定位必须分开：模型控件在会话头部，向下弹；专家控件在 Composer 底部，
+   向下弹会整体跑出对话框（用户报障），必须向上弹。 */
 .model-switch__body,
 .agent-switch__body {
   position: absolute;
   right: 0;
-  top: calc(100% + 6px);
   z-index: 20;
   display: flex;
   flex-direction: column;
@@ -1530,6 +1531,14 @@ kbd {
   border-radius: 8px;
   background: var(--bg-elevated);
   box-shadow: 0 12px 28px rgb(0 0 0 / 40%);
+}
+
+.model-switch__body {
+  top: calc(100% + 6px);
+}
+
+.agent-switch__body {
+  bottom: calc(100% + 6px);
 }
 
 /* A40：`<summary>` 是 Composer 里的常驻「专家：X」，去掉默认三角但不破坏键盘可达 */
