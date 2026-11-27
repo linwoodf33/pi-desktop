@@ -5,12 +5,7 @@
  * 输出给 UI 直接渲染：一句可懂的中文标题 + 一句建议，原文另行折叠展示。
  */
 export type ModelErrorKind =
-  | 'timeout'
-  | 'connection'
-  | 'auth'
-  | 'rate_limit'
-  | 'context'
-  | 'unknown'
+  'timeout' | 'connection' | 'auth' | 'rate_limit' | 'context' | 'unknown'
 
 export interface ModelErrorText {
   kind: ModelErrorKind

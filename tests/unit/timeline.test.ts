@@ -230,11 +230,7 @@ describe('error-group：连续失败的展示折叠', () => {
       timestamp: 9,
       stopReason: 'aborted'
     }
-    const turns = groupTimeline([
-      message('user', 'q1'),
-      emptyAborted,
-      message('assistant', 'a1')
-    ])
+    const turns = groupTimeline([message('user', 'q1'), emptyAborted, message('assistant', 'a1')])
     expect(turns).toHaveLength(1)
     expect(allItems(turns).map(labelOf)).toEqual(['a1'])
     // 单独一条空助手消息连一轮都不成

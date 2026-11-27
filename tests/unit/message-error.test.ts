@@ -38,9 +38,7 @@ describe('describeModelError：错误归类', () => {
   })
 
   it('未知文本 / undefined / 空串 → unknown 兜底且不抛', () => {
-    for (const input of ['something weird happened', undefined, ''] as Array<
-      string | undefined
-    >) {
+    for (const input of ['something weird happened', undefined, ''] as Array<string | undefined>) {
       const info = describeModelError(input)
       expect(info.kind).toBe('unknown')
       expect(info.title).toBe('模型调用失败')
